@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tarot-wechat-v1';
+const CACHE_NAME = 'tarot-wechat-v3'; // 每次改动都提升版本号，强制客户端更新
 const ASSETS = [
   './', './index.html', './style.css',
   './js/tarot.js', './js/wordcards.js', './js/ai.js', './js/app.js',
@@ -6,21 +6,25 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS).catch(()=>{})));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  // network-first，保证你每次改代码后能第一时间看到最新版本，而不是吃旧缓存
   e.respondWith(
-    caches.match(e.request).then(res => res || fetch(e.request))
+    fetch(e.request).then(res => {
+      const resClone = res.clone();
+      caches.open(CACHE_NAME).then(c => c.put(e.request, resClone));
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
