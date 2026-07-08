@@ -1,256 +1,709 @@
-// ============ 初始数据 ============
-const state = {
-  peerName: "未知旅人",
-  messages: [],     // {id, from:'me'|'peer', text, cards, shield, ts}
-  moments: [],
-  pendingUserBatch: [], // 短时间内用户连续发来的消息缓冲
-  batchTimer: null
+/* ============ 持久化 ============ */
+function loadJSON(key, def) { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : def; }
+function saveJSON(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+const STORE = {
+  contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
+  moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1'
 };
 
-let longPressTimer = null;
-
-// ============ 页面切换 ============
-function showPage(id) {
-  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
+const state = {
+  contacts: loadJSON(STORE.contacts, []),      // {id,name,persona,avatar,wordCardMode,customWordCards}
+  groups: loadJSON(STORE.groups, []),          // {id,name,memberIds:[]}
+  chats: loadJSON(STORE.chats, {}),            // key: contactId(string) 或 'g_'+groupId -> [messages]
+  moments: loadJSON(STORE.moments, []),
+  avatarLibrary: loadJSON(STORE.avatarLib, []),// {id,dataUrl,tag}
+  myAvatar: localStorage.getItem(STORE.myAvatar) || null,
+  activeChatId: null,
+  pendingBatch: {},
+  batchTimer: {}
+};
+function persist() {
+  saveJSON(STORE.contacts, state.contacts);
+  saveJSON(STORE.groups, state.groups);
+  saveJSON(STORE.chats, state.chats);
+  saveJSON(STORE.moments, state.moments);
+  saveJSON(STORE.avatarLib, state.avatarLibrary);
+  localStorage.setItem(STORE.myAvatar, state.myAvatar || '');
 }
 
-document.querySelectorAll('.tab-item').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    if (tab.dataset.tab === 'discover') showPage('page-moments');
-    else showPage('page-chatlist');
-  });
-});
+function hashColor(str) {
+  let h = 0;
+  for (let i = 0; i < String(str).length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return `hsl(${Math.abs(h) % 360},55%,55%)`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function getContactById(id) { return state.contacts.find(c => String(c.id) === String(id)); }
+function getGroupById(id) { return state.groups.find(g => String(g.id) === String(id)); }
+function isGroupChat(chatId) { return typeof chatId === 'string' && chatId.startsWith('g_'); }
+function avatarHtml(dataUrl, name, size = 40) {
+  if (dataUrl) return `<div class="avatar img" style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
+  return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
+}
 
-// ============ 渲染聊天列表 ============
+/* ============ 页面切换 ============ */
+function showPage(id) { document.querySelectorAll('.page').forEach(p => p.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+function setActiveTab(tabName) { document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName)); }
+
+const TAB_ITEMS = [
+  {tab:'chat', label:'微信', page:'page-chatlist', icon:'<path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'},
+  {tab:'contacts', label:'通讯录', page:'page-contacts', icon:'<circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6" fill="none" stroke="currentColor" stroke-width="1.6"/>'},
+  {tab:'discover', label:'发现', page:'page-discover', icon:'<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 9l-2 6-6 2 2-6z" fill="currentColor"/>'},
+  {tab:'me', label:'我', page:'page-me', icon:'<circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21c1.5-5 5-7 8-7s6.5 2 8 7" fill="none" stroke="currentColor" stroke-width="1.6"/>'}
+];
+function renderTabBars() {
+  document.querySelectorAll('[data-tabbar]').forEach(bar => {
+    bar.innerHTML = TAB_ITEMS.map(t => `<div class="tab-item" data-tab="${t.tab}" data-page="${t.page}"><svg class="tab-icon" viewBox="0 0 24 24">${t.icon}</svg><span>${t.label}</span></div>`).join('');
+  });
+  document.querySelectorAll('.tab-item').forEach(el => el.addEventListener('click', () => { setActiveTab(el.dataset.tab); showPage(el.dataset.page); }));
+  setActiveTab('chat');
+}
+
+/* ============ 我 页面头像渲染 ============ */
+function renderMePage() {
+  document.getElementById('meAvatar').outerHTML = avatarHtml(state.myAvatar, '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
+  document.getElementById('meAvatar').addEventListener('click', () => document.getElementById('myAvatarFileInput').click());
+}
+
+/* ============ 聊天列表（角色+群聊合并） ============ */
 function renderChatList() {
   const box = document.getElementById('chatListItems');
-  box.innerHTML = `
-    <div class="chat-item" id="openChatBtn">
-      <div class="avatar"></div>
+  const items = [
+    ...state.contacts.map(c => ({ id: String(c.id), name: c.name, avatar: c.avatar })),
+    ...state.groups.map(g => ({ id: 'g_' + g.id, name: g.name, avatar: null }))
+  ];
+  if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; return; }
+  box.innerHTML = items.map(it => {
+    const msgs = state.chats[it.id] || [];
+    const last = msgs[msgs.length - 1];
+    return `<div class="chat-item" data-id="${it.id}">
+      ${avatarHtml(it.avatar, it.name, 48)}
       <div class="info">
-        <div class="row1"><span class="name">${state.peerName}</span><span class="time">刚刚</span></div>
-        <div class="last-msg">${state.messages.at(-1)?.text ?? '开始一段对话...'}</div>
-      </div>
-    </div>`;
-  document.getElementById('openChatBtn').addEventListener('click', () => showPage('page-chat'));
+        <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : ''}</span></div>
+        <div class="last-msg">${last ? (last.type==='redpacket' ? '[红包]' : escapeHtml(last.text)) : '开始一段对话...'}</div>
+      </div></div>`;
+  }).join('');
 }
 
-// ============ 渲染消息列表 ============
+function renderContactList() {
+  const box = document.getElementById('contactListItems');
+  if (!state.contacts.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色</div>`; return; }
+  box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 48)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
+}
+
+function bindListDelegation(containerId) {
+  const box = document.getElementById(containerId);
+  let pressTimer = null;
+  box.addEventListener('click', e => { const item = e.target.closest('[data-id]'); if (item) openChat(item.dataset.id); });
+  box.addEventListener('pointerdown', e => {
+    const item = e.target.closest('[data-id]'); if (!item) return;
+    pressTimer = setTimeout(() => {
+      if (isGroupChat(item.dataset.id)) {
+        const g = getGroupById(item.dataset.id.slice(2));
+        if (g && confirm(`删除群聊「${g.name}」？`)) { state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[item.dataset.id]; persist(); renderChatList(); }
+      } else {
+        const c = getContactById(item.dataset.id);
+        if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[item.dataset.id]; persist(); renderChatList(); renderContactList(); }
+      }
+    }, 550);
+  });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
+}
+
+/* ============ 打开聊天 ============ */
+function openChat(chatId) {
+  state.activeChatId = chatId;
+  const name = isGroupChat(chatId) ? (getGroupById(chatId.slice(2))?.name || '群聊') : (getContactById(chatId)?.name || '角色');
+  document.getElementById('chatPeerName').textContent = name;
+  if (!state.chats[chatId]) state.chats[chatId] = [];
+  renderMessages();
+  showPage('page-chat');
+}
+
+/* ============ 渲染消息 ============ */
 function renderMessages() {
   const box = document.getElementById('msgList');
-  box.innerHTML = state.messages.map(m => `
-    <div class="msg-row ${m.from === 'me' ? 'me' : ''}" data-id="${m.id}">
-      <div class="avatar"></div>
-      <div class="bubble">${escapeHtml(m.text)}</div>
-    </div>`).join('');
+  const chatId = state.activeChatId;
+  const msgs = state.chats[chatId] || [];
+  const group = isGroupChat(chatId);
+
+  box.innerHTML = msgs.map(m => {
+    if (m.systemNote) return `<div class="msg-system">${escapeHtml(m.text)}</div>`;
+    const isMe = m.from === 'me';
+    const senderContact = !isMe ? getContactById(m.from) : null;
+    const name = isMe ? '我' : (senderContact?.name || '角色');
+    const avatarDataUrl = isMe ? state.myAvatar : (senderContact?.avatar || null);
+
+    let bubbleHtml;
+    if (m.type === 'redpacket') {
+      bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}">
+        <svg class="rp-icon" viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.4" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
+        <div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-sub">${m.redpacket.status === 'claimed' ? '已领取' : '微信红包'}</div></div>
+      </div>`;
+    } else if (m.voiceUrl) {
+      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round(m.text.length / 4))}″</span></div>`;
+    } else {
+      bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
+    }
+
+    const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
+    return `<div class="msg-col ${isMe ? 'me' : ''}">
+      ${senderLabel}
+      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 38)}${bubbleHtml}</div>
+    </div>`;
+  }).join('');
   box.scrollTop = box.scrollHeight;
+}
 
-  // 绑定长按事件
-  box.querySelectorAll('.msg-row').forEach(row => {
-    row.addEventListener('touchstart', () => startLongPress(row.dataset.id));
-    row.addEventListener('touchend', cancelLongPress);
-    row.addEventListener('touchmove', cancelLongPress);
-    row.addEventListener('mousedown', () => startLongPress(row.dataset.id));
-    row.addEventListener('mouseup', cancelLongPress);
-    row.addEventListener('mouseleave', cancelLongPress);
+function bindMsgListDelegation() {
+  const box = document.getElementById('msgList');
+  let pressTimer = null;
+  box.addEventListener('pointerdown', e => { const row = e.target.closest('.msg-row'); if (row) pressTimer = setTimeout(() => openTarotSheet(row.dataset.id), 480); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
+  box.addEventListener('contextmenu', e => e.preventDefault());
+  box.addEventListener('click', e => {
+    const playEl = e.target.closest('[data-play]');
+    if (playEl) {
+      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
+      if (msg?.voiceUrl) new Audio(msg.voiceUrl).play().catch(()=>{});
+      return;
+    }
+    const rpEl = e.target.closest('[data-redpacket]');
+    if (rpEl) openRedPacketDetail(rpEl.dataset.redpacket);
   });
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-// ============ 长按查看牌面/保护罩 ============
-function startLongPress(msgId) {
-  longPressTimer = setTimeout(() => openTarotSheet(msgId), 480);
-}
-function cancelLongPress() {
-  clearTimeout(longPressTimer);
 }
 
 function openTarotSheet(msgId) {
-  const msg = state.messages.find(m => m.id == msgId);
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
-
-  document.getElementById('tarotCardsView').innerHTML = (msg.cards || []).map(c => `
-    <div class="tarot-card-mini ${c.reversed ? 'reversed' : ''}">
-      <div class="card-face">${c.name}</div>
-      <div>${c.reversed ? '逆位' : '正位'}</div>
-    </div>`).join('');
-
-  document.getElementById('shieldCardsView').innerHTML = (msg.shieldCards || []).map(c => `
-    <div class="tarot-card-mini ${c.reversed ? 'reversed' : ''}">
-      <div class="card-face">${c.name}</div>
-      <div>${c.reversed ? '逆位' : '正位'}</div>
-    </div>`).join('');
-
+  document.getElementById('tarotCardsView').innerHTML = (msg.cards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('') || '<div style="font-size:13px;color:#999;">这条消息没有抽牌记录</div>';
+  document.getElementById('shieldCardsView').innerHTML = (msg.shieldCards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('');
   const shield = msg.shield ?? 0;
   document.getElementById('shieldFill').style.width = shield + '%';
   document.getElementById('shieldNum').textContent = shield;
-
   document.getElementById('tarotSheet').classList.remove('hidden');
 }
-document.getElementById('sheetClose').addEventListener('click', () => {
-  document.getElementById('tarotSheet').classList.add('hidden');
-});
 
-// ============ 字卡管理弹层 ============
-function renderWordCardList() {
-  const list = WordCards.getAll();
-  document.getElementById('wordCardList').innerHTML = list.map(t => `
-    <div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" data-t="${escapeHtml(t)}" class="wc-del">删除</a></div>
-  `).join('');
-  document.querySelectorAll('.wc-del').forEach(el => {
-    el.addEventListener('click', e => {
-      e.preventDefault();
-      WordCards.remove(el.dataset.t);
-      renderWordCardList();
-    });
-  });
-}
-document.getElementById('btnMore').addEventListener('click', () => {
-  renderWordCardList();
-  document.getElementById('wordCardSheet').classList.remove('hidden');
-});
-document.getElementById('wordCardClose').addEventListener('click', () => {
-  document.getElementById('wordCardSheet').classList.add('hidden');
-});
-document.getElementById('addWordCardBtn').addEventListener('click', () => {
-  const input = document.getElementById('newWordCard');
-  if (input.value.trim()) {
-    WordCards.add(input.value.trim());
-    input.value = '';
-    renderWordCardList();
-  }
-});
-
-// ============ 核心流程 1：用户发消息 -> AI理解 -> 抽牌 -> 回复 ============
-function addMessage(from, text, extra = {}) {
+/* ============ 发消息 ============ */
+function addMessage(chatId, from, text, extra = {}) {
   const msg = { id: Date.now() + Math.random(), from, text, ts: Date.now(), ...extra };
-  state.messages.push(msg);
-  renderMessages();
+  if (!state.chats[chatId]) state.chats[chatId] = [];
+  state.chats[chatId].push(msg);
+  persist();
+  if (chatId === state.activeChatId) renderMessages();
   renderChatList();
   return msg;
 }
 
-document.getElementById('msgInput').addEventListener('keydown', async e => {
-  if (e.key === 'Enter') {
-    const val = e.target.value.trim();
-    if (!val) return;
-    e.target.value = '';
-    addMessage('me', val);
+const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '改头像'];
 
-    // 收集短时间内连续发送的多条消息，做批处理判断
-    state.pendingUserBatch.push(val);
-    clearTimeout(state.batchTimer);
-    state.batchTimer = setTimeout(() => processUserBatch(), 900);
+function handleSend(text) {
+  const chatId = state.activeChatId;
+  if (!chatId || !text.trim()) return;
+  addMessage(chatId, 'me', text.trim());
+
+  if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
+    if (isGroupChat(chatId)) {
+      const g = getGroupById(chatId.slice(2));
+      if (g?.memberIds?.length) requestAvatarChange(g.memberIds[secureRandomInt(g.memberIds.length)], chatId);
+    } else {
+      requestAvatarChange(chatId, chatId);
+    }
   }
-});
 
-async function processUserBatch() {
-  const batch = [...state.pendingUserBatch];
-  state.pendingUserBatch = [];
-  if (batch.length === 0) return;
-
-  // 第2步：AI判断这些消息是"同一件事"还是"不同的事"，决定抽几组牌
-  const groups = await groupMessages(batch);
-
-  for (const group of groups) {
-    const combinedText = group.join('；');
-
-    // 第3步：真随机抽3张塔罗牌
-    const cards = drawCards(3);
-
-    // 额外抽3张算保护罩
-    const shieldCards = drawCards(3);
-    const shield = calcShield(shieldCards);
-
-    // 第4-5步：AI结合牌意 + 字卡库，挑选回复内容
-    const pool = WordCards.getAll();
-    const picks = await interpretAndReply(combinedText, cards, pool);
-
-    // 可能回复多条消息
-    picks.forEach((text, i) => {
-      setTimeout(() => {
-        addMessage('peer', text, {
-          cards,
-          shieldCards,
-          shield
-        });
-      }, (i + 1) * 500);
-    });
-  }
+  state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
+  state.pendingBatch[chatId].push(text.trim());
+  clearTimeout(state.batchTimer[chatId]);
+  state.batchTimer[chatId] = setTimeout(() => {
+    if (isGroupChat(chatId)) processGroupBatch(chatId);
+    else processSingleBatch(chatId);
+  }, 900);
 }
 
-// ============ 核心流程 2：AI自主决定发消息 ============
-async function aiAutoSendMessage() {
+async function replyWithTarot(chatId, fromId, text, persona) {
   const cards = drawCards(3);
   const shieldCards = drawCards(3);
   const shield = calcShield(shieldCards);
-  const pool = WordCards.getAll();
-  const picks = await interpretAndReply("(主动发起对话)", cards, pool);
-  picks.forEach((text, i) => {
-    setTimeout(() => addMessage('peer', text, { cards, shieldCards, shield }), i * 500);
-  });
-}
+  const pool = WordCards.getForContact(getContactById(fromId));
 
-// 举例：每隔一段随机时间，有一定概率触发主动发消息（可自行调整策略/开关）
-setInterval(() => {
-  if (secureRandomInt(100) < 3) { // 概率示例
-    aiAutoSendMessage();
+  if (shouldSendRedPacket(cards)) {
+    const amount = randomRedPacketAmount();
+    const note = pool[secureRandomInt(pool.length)] || '恭喜发财';
+    addMessage(chatId, fromId, note, { type:'redpacket', cards, shieldCards, shield, redpacket:{ amount, note, status:'unclaimed', claimedBy:null } });
+    return;
   }
-}, 60 * 1000);
 
-// ============ 核心流程 3：AI自主决定发朋友圈 ============
-async function aiAutoPostMoment() {
-  const cards = drawCards(3);
-  const pool = WordCards.getAll();
-  const picks = await interpretAndReply("(发一条朋友圈)", cards, pool);
-  const content = picks.join(' ');
-  state.moments.unshift({
-    id: Date.now(),
-    name: state.peerName,
-    content,
-    cards,
-    ts: Date.now()
-  });
-  renderMoments();
+  const picks = await interpretAndReply(text, cards, pool, persona);
+  for (let i = 0; i < picks.length; i++) {
+    await new Promise(r => setTimeout(r, 450));
+    const voiceUrl = await synthesizeVoice(picks[i]);
+    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
+  }
 }
 
-// ============ 核心流程 4：AI自主决定回复用户朋友圈 ============
+async function processSingleBatch(contactId) {
+  const batch = state.pendingBatch[contactId] || [];
+  state.pendingBatch[contactId] = [];
+  if (!batch.length) return;
+  const contact = getContactById(contactId);
+  const groups = await groupMessages(batch);
+  for (const group of groups) await replyWithTarot(contactId, contactId, group.join('；'), contact?.persona);
+}
+
+async function processGroupBatch(groupId) {
+  const batch = state.pendingBatch[groupId] || [];
+  state.pendingBatch[groupId] = [];
+  if (!batch.length) return;
+  const g = getGroupById(groupId.slice(2));
+  if (!g) return;
+  const groups = await groupMessages(batch);
+  const combinedText = groups.map(g2 => g2.join('；')).join('；');
+  // 每个成员独立走一次完整的抽牌→解读→回复流程
+  for (const memberId of g.memberIds) {
+    const member = getContactById(memberId);
+    await replyWithTarot(groupId, memberId, combinedText, member?.persona);
+  }
+}
+
+/* ============ 头像更换（塔罗抽牌驱动）============ */
+async function requestAvatarChange(contactId, chatId) {
+  const contact = getContactById(contactId);
+  if (!contact || !state.avatarLibrary.length) return;
+  const cards = drawCards(3);
+  const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
+  if (!chosen) return;
+  contact.avatar = chosen.dataUrl;
+  persist();
+  addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
+  renderChatList(); renderContactList();
+}
+
+/* ============ AI 自主行为 ============ */
+async function aiAutoSendMessage() {
+  const cfg = getAIConfig();
+  if (!cfg.autoMsg || !state.contacts.length) return;
+  const contact = state.contacts[secureRandomInt(state.contacts.length)];
+  await replyWithTarot(String(contact.id), String(contact.id), '(主动发起对话)', contact.persona);
+}
+async function aiAutoPostMoment() {
+  const cfg = getAIConfig();
+  if (!cfg.autoMoment || !state.contacts.length) return;
+  const contact = state.contacts[secureRandomInt(state.contacts.length)];
+  const cards = drawCards(3);
+  const pool = WordCards.getForContact(contact);
+  const picks = await interpretAndReply('(发一条朋友圈)', cards, pool, contact.persona);
+  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content: picks.join(' '), cards, ts: Date.now(), comments: [] });
+  persist(); renderMoments();
+}
+async function aiAutoChangeAvatar() {
+  const cfg = getAIConfig();
+  if (!cfg.autoAvatar || !state.contacts.length || !state.avatarLibrary.length) return;
+  const contact = state.contacts[secureRandomInt(state.contacts.length)];
+  await requestAvatarChange(String(contact.id), String(contact.id));
+}
 async function aiReplyToMoment(momentId, userComment) {
   const moment = state.moments.find(m => m.id === momentId);
   if (!moment) return;
+  const contact = getContactById(moment.contactId);
   const cards = drawCards(3);
-  const pool = WordCards.getAll();
-  const picks = await interpretAndReply(userComment, cards, pool);
-  moment.replies = moment.replies || [];
-  moment.replies.push({ text: picks.join(' '), cards, from: state.peerName });
-  renderMoments();
+  const pool = WordCards.getForContact(contact);
+  const picks = await interpretAndReply(userComment, cards, pool, contact?.persona);
+  moment.comments = moment.comments || [];
+  moment.comments.push({ from: 'me', text: userComment });
+  moment.comments.push({ from: moment.name, text: picks.join(' '), cards });
+  persist(); renderMoments();
 }
+setInterval(() => { if (secureRandomInt(100) < 3) aiAutoSendMessage(); }, 60000);
+setInterval(() => { if (secureRandomInt(100) < 2) aiAutoPostMoment(); }, 120000);
+setInterval(() => { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); }, 150000);
 
-// ============ 渲染朋友圈 ============
+/* ============ 朋友圈渲染 ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   box.innerHTML = state.moments.map(m => `
-    <div class="moment-item">
-      <div class="avatar"></div>
-      <div>
-        <div class="name">${m.name}</div>
+    <div class="moment-item" data-id="${m.id}">
+      ${avatarHtml(m.avatar, m.name, 42)}
+      <div class="moment-body">
+        <div class="mname">${escapeHtml(m.name)}</div>
         <div class="content">${escapeHtml(m.content)}</div>
-        <div class="time">${new Date(m.ts).toLocaleString()}</div>
-      </div>
-    </div>`).join('');
+        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span><span class="comment-btn" data-toggle-comment="${m.id}">评论</span></div>
+        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? '我' : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
+        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
+      </div></div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
+}
+function bindMomentsDelegation() {
+  const box = document.getElementById('momentsList');
+  box.addEventListener('click', e => {
+    const toggle = e.target.closest('[data-toggle-comment]');
+    if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
+    const submit = e.target.closest('[data-comment-submit]');
+    if (submit) {
+      const id = Number(submit.dataset.commentSubmit);
+      const input = box.querySelector(`[data-comment-input="${id}"]`);
+      if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
+    }
+  });
 }
 
-// ============ 初始化 ============
-renderChatList();
-renderMessages();
-renderMoments();
+/* ============ 红包：发送 ============ */
+function openSendRedPacket() { document.getElementById('sendRedPacketSheet').classList.remove('hidden'); }
+function bindRedPacket() {
+  document.getElementById('rpCancel').addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
+  document.getElementById('rpConfirm').addEventListener('click', () => {
+    const amount = parseFloat(document.getElementById('rpAmount').value);
+    const note = document.getElementById('rpNote').value.trim() || '恭喜发财，大吉大利';
+    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
+    const chatId = state.activeChatId;
+    const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
+    document.getElementById('sendRedPacketSheet').classList.add('hidden');
+    document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js');
+    // 模拟对方（单聊）或群成员之一（群聊）在几秒后自动领取
+    setTimeout(() => {
+      const list = state.chats[chatId] || [];
+      const target = list.find(m => m.id === msg.id);
+      if (!target || target.redpacket.status === 'claimed') return;
+      let claimer;
+      if (isGroupChat(chatId)) {
+        const g = getGroupById(chatId.slice(2));
+        claimer = g?.memberIds?.[secureRandomInt(g.memberIds.length)];
+      } else claimer = chatId;
+      const claimerName = getContactById(claimer)?.name || '对方';
+      target.redpacket.status = 'claimed';
+      target.redpacket.claimedBy = claimer;
+      persist(); renderMessages();
+      addMessage(chatId, claimer, `${claimerName} 领取了你的红包`, { systemNote: true });
+      // AI收到红包后，走一次塔罗流程说声感谢
+      replyWithTarot(chatId, claimer, '(收到了你发的红包，表达感谢)', getContactById(claimer)?.persona);
+    }, 1500 + secureRandomInt(3000));
+  });
 }
+
+function openRedPacketDetail(msgId) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
+  if (!msg) return;
+  const senderName = msg.from === 'me' ? '我' : (getContactById(msg.from)?.name || '对方');
+  const senderAvatar = msg.from === 'me' ? state.myAvatar : getContactById(msg.from)?.avatar;
+  document.getElementById('rpDetailAvatar').style.backgroundImage = senderAvatar ? `url('${senderAvatar}')` : '';
+  document.getElementById('rpDetailNote').textContent = msg.redpacket.note;
+  const resultBox = document.getElementById('rpDetailResult');
+  const midBox = document.getElementById('rpDetailMid');
+  const amountShow = document.getElementById('rpAmountShow');
+
+  if (msg.redpacket.status === 'claimed') {
+    midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
+    amountShow.textContent = `¥${msg.redpacket.amount}`;
+  } else {
+    midBox.classList.remove('hidden'); resultBox.classList.add('hidden');
+    midBox.onclick = () => {
+      if (msg.from === 'me') { alert('自己发的红包不能自己领取哦'); return; }
+      msg.redpacket.status = 'claimed'; msg.redpacket.claimedBy = 'me';
+      persist(); renderMessages();
+      midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
+      amountShow.textContent = `¥${msg.redpacket.amount}`;
+    };
+  }
+  document.getElementById('redPacketOpenSheet').classList.remove('hidden');
+}
+
+/* ============ 长按塔罗弹层关闭 & 字卡管理 ============ */
+function bindSheetClose() { document.getElementById('sheetClose').addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
+
+function renderWordCardList(contactId) {
+  const list = contactId ? WordCards.getContactList(contactId) : WordCards.getAll();
+  document.getElementById('wordCardList').innerHTML = list.map(t => `<div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" class="wc-del" data-t="${escapeHtml(t)}">删除</a></div>`).join('');
+}
+let currentWordCardContactId = null;
+function openWordCardSheet(contactId = null) {
+  currentWordCardContactId = contactId;
+  document.getElementById('wordCardSheetTitle').textContent = contactId ? `字卡管理（${getContactById(contactId)?.name || ''} 专属）` : '字卡管理（全局）';
+  renderWordCardList(contactId);
+  document.getElementById('wordCardSheet').classList.remove('hidden');
+}
+function bindWordCardSheet() {
+  document.getElementById('btnMore').addEventListener('click', () => openChatMoreMenu());
+  document.getElementById('rowWordCards').addEventListener('click', () => openWordCardSheet(null));
+  document.getElementById('wordCardClose').addEventListener('click', () => document.getElementById('wordCardSheet').classList.add('hidden'));
+  document.getElementById('addWordCardBtn').addEventListener('click', () => {
+    const input = document.getElementById('newWordCard');
+    if (!input.value.trim()) return;
+    if (currentWordCardContactId) WordCards.addContactCard(currentWordCardContactId, input.value.trim());
+    else WordCards.add(input.value.trim());
+    input.value = ''; renderWordCardList(currentWordCardContactId);
+  });
+  document.getElementById('wordCardList').addEventListener('click', e => {
+    const del = e.target.closest('.wc-del'); if (!del) return; e.preventDefault();
+    if (currentWordCardContactId) WordCards.removeContactCard(currentWordCardContactId, del.dataset.t);
+    else WordCards.remove(del.dataset.t);
+    renderWordCardList(currentWordCardContactId);
+  });
+}
+
+/* 聊天内"+"号：简单菜单选择 发红包 / 字卡 */
+function openChatMoreMenu() {
+  const choice = confirm('点击"确定"发红包，点击"取消"打开字卡管理');
+  if (choice) openSendRedPacket();
+  else openWordCardSheet(isGroupChat(state.activeChatId) ? null : state.activeChatId);
+}
+
+/* ============ 添加菜单：角色 / 群聊 ============ */
+function bindAddMenu() {
+  const open = () => document.getElementById('addMenuSheet').classList.remove('hidden');
+  document.getElementById('btnAddMenu').addEventListener('click', open);
+  document.getElementById('btnAddMenu2').addEventListener('click', open);
+  document.getElementById('addMenuClose').addEventListener('click', () => document.getElementById('addMenuSheet').classList.add('hidden'));
+  document.getElementById('menuAddContact').addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); document.getElementById('addContactSheet').classList.remove('hidden'); });
+  document.getElementById('menuAddGroup').addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); openAddGroupSheet(); });
+}
+function bindAddContact() {
+  document.getElementById('addContactCancel').addEventListener('click', () => document.getElementById('addContactSheet').classList.add('hidden'));
+  document.getElementById('addContactConfirm').addEventListener('click', () => {
+    const name = document.getElementById('newContactName').value.trim();
+    const persona = document.getElementById('newContactPersona').value.trim();
+    if (!name) { alert('请输入昵称'); return; }
+    const contact = { id: Date.now(), name, persona, avatar: null, wordCardMode: 'global', customWordCards: [] };
+    state.contacts.push(contact); state.chats[String(contact.id)] = [];
+    persist();
+    document.getElementById('newContactName').value = ''; document.getElementById('newContactPersona').value = '';
+    document.getElementById('addContactSheet').classList.add('hidden');
+    renderChatList(); renderContactList(); openChat(String(contact.id));
+  });
+}
+function openAddGroupSheet() {
+  document.getElementById('groupMemberChecklist').innerHTML = state.contacts.map(c => `
+    <div class="wc-item"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" value="${c.id}" class="group-member-check"> ${escapeHtml(c.name)}</label></div>`).join('') || '<div style="padding:10px;color:#999;">还没有角色，请先添加角色</div>';
+  document.getElementById('addGroupSheet').classList.remove('hidden');
+}
+function bindAddGroup() {
+  document.getElementById('addGroupCancel').addEventListener('click', () => document.getElementById('addGroupSheet').classList.add('hidden'));
+  document.getElementById('addGroupConfirm').addEventListener('click', () => {
+    const name = document.getElementById('newGroupName').value.trim();
+    const memberIds = [...document.querySelectorAll('.group-member-check:checked')].map(el => Number(el.value));
+    if (!name || !memberIds.length) { alert('请输入群名并至少选一个成员'); return; }
+    const group = { id: Date.now(), name, memberIds };
+    state.groups.push(group);
+    const chatId = 'g_' + group.id;
+    state.chats[chatId] = [];
+    persist();
+    document.getElementById('newGroupName').value = '';
+    document.getElementById('addGroupSheet').classList.add('hidden');
+    renderChatList(); openChat(chatId);
+  });
+}
+
+/* ============ 聊天设置弹层（头像/人设/字卡模式 或 群成员）============ */
+function openChatSettings() {
+  const chatId = state.activeChatId;
+  const body = document.getElementById('chatSettingsBody');
+  if (isGroupChat(chatId)) {
+    const g = getGroupById(chatId.slice(2));
+    document.getElementById('chatSettingsTitle').textContent = '群聊设置';
+    body.innerHTML = `<div class="settings-group-title">群成员</div>` + g.memberIds.map(id => {
+      const c = getContactById(id); if (!c) return '';
+      return `<div class="chat-item" style="border-radius:6px;">${avatarHtml(c.avatar, c.name, 40)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`;
+    }).join('') + `<div class="sheet-btn cancel" id="deleteGroupBtn" style="margin-top:14px;">解散群聊</div>`;
+    document.getElementById('deleteGroupBtn').addEventListener('click', () => {
+      if (confirm('确定解散该群聊？')) {
+        state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[chatId]; persist();
+        document.getElementById('chatSettingsSheet').classList.add('hidden');
+        showPage('page-chatlist'); renderChatList();
+      }
+    });
+  } else {
+    const c = getContactById(chatId);
+    document.getElementById('chatSettingsTitle').textContent = '角色设置';
+    body.innerHTML = `
+      <div class="settings-group-title">头像（点击从头像库指定）</div>
+      <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;"></div>
+      <div class="settings-group-title">角色设定</div>
+      <textarea id="editPersona" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;">${escapeHtml(c.persona || '')}</textarea>
+      <div class="settings-group-title">字卡来源</div>
+      <div class="form-row"><label>使用专属字卡（而非全局）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
+      <div class="menu-row" id="editContactCustomCards">编辑专属字卡</div>
+      <button class="save-btn" id="savePersonaBtn">保存</button>`;
+    const grid = document.getElementById('assignAvatarGrid');
+    grid.innerHTML = state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>';
+    grid.addEventListener('click', e => {
+      const item = e.target.closest('[data-avatar-id]'); if (!item) return;
+      const a = state.avatarLibrary.find(x => String(x.id) === item.dataset.avatarId);
+      if (a) { c.avatar = a.dataUrl; persist(); renderMessages(); renderChatList(); renderContactList(); alert('头像已更新'); }
+    });
+    document.getElementById('editContactCustomCards').addEventListener('click', () => openWordCardSheet(String(c.id)));
+    document.getElementById('savePersonaBtn').addEventListener('click', () => {
+      c.persona = document.getElementById('editPersona').value.trim();
+      c.wordCardMode = document.getElementById('editWordCardMode').checked ? 'custom' : 'global';
+      persist(); alert('已保存'); document.getElementById('chatSettingsSheet').classList.add('hidden');
+    });
+  }
+  document.getElementById('chatSettingsSheet').classList.remove('hidden');
+}
+
+/* ============ 头像库管理页 ============ */
+function renderAvatarLibGrid() {
+  const grid = document.getElementById('avatarLibGrid');
+  grid.innerHTML = state.avatarLibrary.map(a => `
+    <div class="avatar-lib-item" data-id="${a.id}">
+      <img src="${a.dataUrl}">
+      <div class="del-x" data-del="${a.id}">×</div>
+      <input placeholder="标签(如:开心)" value="${escapeHtml(a.tag || '')}" data-tag="${a.id}">
+    </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:30px;">还没有头像，点右上角 + 添加</div>';
+}
+function bindAvatarLib() {
+  document.getElementById('rowAvatarLib').addEventListener('click', () => { renderAvatarLibGrid(); showPage('page-avatarlib'); });
+  document.getElementById('backFromAvatarLib').addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
+  document.getElementById('btnAddAvatarImg').addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
+  document.getElementById('avatarLibFileInput').addEventListener('change', e => {
+    [...e.target.files].forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now() + Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  });
+  document.getElementById('avatarLibGrid').addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) { state.avatarLibrary = state.avatarLibrary.filter(a => String(a.id) !== del.dataset.del); persist(); renderAvatarLibGrid(); }
+  });
+  document.getElementById('avatarLibGrid').addEventListener('change', e => {
+    const tagInput = e.target.closest('[data-tag]'); if (!tagInput) return;
+    const a = state.avatarLibrary.find(x => String(x.id) === tagInput.dataset.tag);
+    if (a) { a.tag = tagInput.value.trim(); persist(); }
+  });
+}
+
+/* ============ 自己头像上传 ============ */
+function bindMyAvatarUpload() {
+  document.getElementById('myAvatarFileInput').addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============ 导出 / 导入数据 ============ */
+function exportData() {
+  const data = {
+    contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
+    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar,
+    wordCards: WordCards.getAll(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `塔罗对话备份_${Date.now()}.json`; a.click();
+  URL.revokeObjectURL(url);
+}
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.contacts) state.contacts = data.contacts;
+      if (data.groups) state.groups = data.groups;
+      if (data.chats) state.chats = data.chats;
+      if (data.moments) state.moments = data.moments;
+      if (data.avatarLibrary) state.avatarLibrary = data.avatarLibrary;
+      if (data.myAvatar) state.myAvatar = data.myAvatar;
+      if (data.wordCards) WordCards.save(data.wordCards);
+      if (data.aiConfig) saveAIConfig(data.aiConfig);
+      persist();
+      alert('导入成功，即将刷新页面'); location.reload();
+    } catch (err) { alert('文件格式有误: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+function bindExportImport() {
+  document.getElementById('rowExport').addEventListener('click', exportData);
+  document.getElementById('rowImport').addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('importFileInput').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
+}
+
+/* ============ 导航按钮 ============ */
+function bindNavButtons() {
+  document.getElementById('backFromChat').addEventListener('click', () => { setActiveTab('chat'); showPage('page-chatlist'); });
+  document.getElementById('backFromMoments').addEventListener('click', () => { setActiveTab('discover'); showPage('page-discover'); });
+  document.getElementById('backFromSettings').addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
+  document.getElementById('rowMoments').addEventListener('click', () => { renderMoments(); showPage('page-moments'); });
+  document.getElementById('rowSettings').addEventListener('click', () => { loadSettingsForm(); showPage('page-settings'); });
+  document.getElementById('btnChatSettings').addEventListener('click', openChatSettings);
+  document.getElementById('chatSettingsClose').addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
+  document.getElementById('rpDetailClose').addEventListener('click', () => document.getElementById('redPacketOpenSheet').classList.add('hidden'));
+}
+
+/* ============ 设置表单 ============ */
+function loadSettingsForm() {
+  const cfg = getAIConfig();
+  document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
+  document.getElementById('cfgEndpoint').value = cfg.endpoint;
+  document.getElementById('cfgApiKey').value = cfg.apiKey;
+  document.getElementById('cfgModel').value = cfg.model;
+  document.getElementById('cfgVoiceEnabled').checked = cfg.voiceEnabled;
+  document.getElementById('cfgVoiceEndpoint').value = cfg.voiceEndpoint;
+  document.getElementById('cfgVoiceApiKey').value = cfg.voiceApiKey;
+  document.getElementById('cfgVoiceModel').value = cfg.voiceModel;
+  document.getElementById('cfgVoiceName').value = cfg.voiceName;
+  document.getElementById('cfgAutoMsg').checked = cfg.autoMsg;
+  document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
+  document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
+  document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
+}
+function bindSettingsSave() {
+  document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+    saveAIConfig({
+      textEnabled: document.getElementById('cfgTextEnabled').checked,
+      endpoint: document.getElementById('cfgEndpoint').value.trim(),
+      apiKey: document.getElementById('cfgApiKey').value.trim(),
+      model: document.getElementById('cfgModel').value.trim(),
+      voiceEnabled: document.getElementById('cfgVoiceEnabled').checked,
+      voiceEndpoint: document.getElementById('cfgVoiceEndpoint').value.trim(),
+      voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
+      voiceModel: document.getElementById('cfgVoiceModel').value.trim(),
+      voiceName: document.getElementById('cfgVoiceName').value,
+      autoMsg: document.getElementById('cfgAutoMsg').checked,
+      autoMoment: document.getElementById('cfgAutoMoment').checked,
+      autoAvatar: document.getElementById('cfgAutoAvatar').checked,
+      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
+    });
+    alert('已保存');
+  });
+}
+
+/* ============ 输入框 & 语音输入 ============ */
+function bindInputBar() {
+  const msgInput = document.getElementById('msgInput');
+  const holdBtn = document.getElementById('holdTalkBtn');
+  const micBtn = document.getElementById('micBtn');
+  msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && msgInput.value.trim()) { handleSend(msgInput.value); msgInput.value = ''; } });
+  micBtn.addEventListener('click', () => {
+    const voiceMode = !msgInput.classList.contains('hidden');
+    msgInput.classList.toggle('hidden', voiceMode);
+    holdBtn.classList.toggle('hidden', !voiceMode);
+  });
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognizer = null;
+  if (SR) {
+    recognizer = new SR(); recognizer.lang = 'zh-CN'; recognizer.continuous = false;
+    recognizer.onresult = ev => { const text = ev.results[0][0].transcript; if (text) handleSend(text); };
+    recognizer.onerror = () => holdBtn.classList.remove('active');
+    recognizer.onend = () => holdBtn.classList.remove('active');
+  }
+  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) try { recognizer.start(); } catch(e){} });
+  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) try { recognizer.stop(); } catch(e){} else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
+  holdBtn.addEventListener('pointerup', stopTalk);
+  holdBtn.addEventListener('pointerleave', stopTalk);
+}
+
+/* ============ 初始化 ============ */
+function init() {
+  try {
+    renderTabBars(); renderMePage(); renderChatList(); renderContactList(); renderMoments();
+    bindListDelegation('chatListItems'); bindListDelegation('contactListItems');
+    bindMsgListDelegation(); bindMomentsDelegation(); bindSheetClose(); bindWordCardSheet();
+    bindAddMenu(); bindAddContact(); bindAddGroup(); bindNavButtons(); bindSettingsSave();
+    bindInputBar(); bindRedPacket(); bindAvatarLib(); bindMyAvatarUpload(); bindExportImport();
+    showPage('page-chatlist');
+  } catch (e) { console.error('初始化失败', e); }
+}
+document.addEventListener('DOMContentLoaded', init);
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW注册失败', e)));
