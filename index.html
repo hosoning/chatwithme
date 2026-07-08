@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>塔罗对话</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ========== 页面1：聊天列表 ========== -->
+  <div class="page" id="page-chatlist">
+    <div class="nav-bar">
+      <span class="nav-title">微信</span>
+      <div class="nav-right">
+        <svg class="icon-add" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+    <div class="chat-list" id="chatListItems">
+      <!-- JS渲染会话列表 -->
+    </div>
+    <div class="tab-bar">
+      <div class="tab-item active" data-tab="chat">
+        <svg viewBox="0 0 24 24" class="tab-icon"><path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <span>微信</span>
+      </div>
+      <div class="tab-item" data-tab="contacts">
+        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>通讯录</span>
+      </div>
+      <div class="tab-item" data-tab="discover">
+        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 9l-2 6-6 2 2-6z" fill="currentColor"/></svg>
+        <span>发现</span>
+      </div>
+      <div class="tab-item" data-tab="me">
+        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21c1.5-5 5-7 8-7s6.5 2 8 7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>我</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 页面2：聊天详情 ========== -->
+  <div class="page hidden" id="page-chat">
+    <div class="nav-bar">
+      <svg class="nav-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title" id="chatPeerName">角色</span>
+      <svg class="nav-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+    </div>
+    <div class="msg-list" id="msgList"></div>
+    <div class="input-bar">
+      <svg class="icon-voice" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#666" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#666" stroke-width="1.6"/></svg>
+      <input type="text" id="msgInput" placeholder="">
+      <svg class="icon-face" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#666" stroke-width="1.6"/></svg>
+      <button class="btn-add" id="btnMore">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========== 页面3：朋友圈 ========== -->
+  <div class="page hidden" id="page-moments">
+    <div class="nav-bar transparent">
+      <svg class="nav-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span></span>
+      <svg class="icon-camera" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="13.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
+    </div>
+    <div class="moments-cover"></div>
+    <div class="moments-list" id="momentsList"></div>
+  </div>
+
+  <!-- ========== 长按弹层：查看抽出的牌面 + 保护罩 ========== -->
+  <div class="mask hidden" id="tarotSheet">
+    <div class="sheet">
+      <div class="sheet-title">本条消息抽到的塔罗牌</div>
+      <div class="tarot-cards" id="tarotCardsView"></div>
+      <div class="shield-block">
+        <div class="shield-title">保护罩强度</div>
+        <div class="shield-bar"><div class="shield-fill" id="shieldFill"></div></div>
+        <div class="shield-num" id="shieldNum">0</div>
+        <div class="shield-cards" id="shieldCardsView"></div>
+      </div>
+      <div class="sheet-close" id="sheetClose">关闭</div>
+    </div>
+  </div>
+
+  <!-- ========== 字卡管理弹层 ========== -->
+  <div class="mask hidden" id="wordCardSheet">
+    <div class="sheet">
+      <div class="sheet-title">字卡管理</div>
+      <div class="wordcard-list" id="wordCardList"></div>
+      <div class="wordcard-add">
+        <input id="newWordCard" placeholder="输入新字卡内容">
+        <button id="addWordCardBtn">添加</button>
+      </div>
+      <div class="sheet-close" id="wordCardClose">关闭</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/tarot.js"></script>
+<script src="js/wordcards.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
