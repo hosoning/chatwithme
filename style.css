@@ -81,3 +81,51 @@ body { font-family:-apple-system, "PingFang SC", "Helvetica Neue", sans-serif; b
 .wordcard-add { display:flex; gap:8px; margin-top:10px; }
 .wordcard-add input { flex:1; border:1px solid #ddd; border-radius:6px; padding:6px 8px; }
 .wordcard-add button { background:#07c160; color:#fff; border:none; border-radius:6px; padding:6px 12px; }
+
+/* ===== 头像图片支持 ===== */
+.avatar.img { background-size:cover; background-position:center; }
+
+/* ===== 头像库网格 ===== */
+.avatar-grid { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:14px; }
+.avatar-lib-item { position:relative; }
+.avatar-lib-item img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; display:block; }
+.avatar-lib-item input { width:100%; margin-top:4px; font-size:11px; border:1px solid #ddd; border-radius:4px; padding:3px; }
+.avatar-lib-item .del-x { position:absolute; top:2px; right:2px; width:18px; height:18px; background:rgba(0,0,0,.55); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; }
+
+/* ===== 菜单弹层选项行 ===== */
+.menu-row { padding:14px 4px; text-align:center; font-size:16px; border-bottom:1px solid #f2f2f2; }
+.menu-row:active { background:#f7f7f7; }
+
+/* ===== 群聊消息发送者名字 ===== */
+.sender-label { font-size:12px; color:#999; margin-bottom:2px; margin-left:46px; }
+.msg-col { display:flex; flex-direction:column; }
+.msg-col.me { align-items:flex-end; }
+
+/* ===== 系统提示消息（换头像等）===== */
+.msg-system { text-align:center; font-size:12px; color:#999; margin:4px 0; }
+
+/* ===== 红包气泡（严格参考微信红包配色）===== */
+.bubble.redpacket { background:linear-gradient(135deg,#fa9e3b,#f56c1a); color:#fff; display:flex; align-items:center; gap:10px; padding:12px 16px; min-width:180px; border-radius:8px; cursor:pointer; }
+.bubble.redpacket.claimed { opacity:.75; }
+.bubble.redpacket::before { border-right-color:#fa9e3b !important; border-left-color:#fa9e3b !important; }
+.rp-icon { width:30px; height:30px; flex-shrink:0; }
+.rp-text { display:flex; flex-direction:column; gap:2px; }
+.rp-note { font-size:15px; font-weight:500; }
+.rp-sub { font-size:11px; opacity:.85; }
+
+/* ===== 发红包弹层 ===== */
+.redpacket-sheet input { text-align:center; font-size:16px; }
+.rp-confirm { background:#f56c1a !important; }
+
+/* ===== 红包详情大弹层（模拟微信打开动画位置） ===== */
+.rp-detail { width:82%; background:linear-gradient(180deg,#f2711f,#f9924a); border-radius:12px; padding:26px 20px; text-align:center; color:#fff; }
+.rp-detail-top { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:20px; }
+.rp-detail-avatar { width:50px; height:50px; border-radius:50%; background:#fff3; background-size:cover; background-position:center; }
+.rp-detail-note { font-size:16px; }
+.rp-detail-mid { display:flex; flex-direction:column; align-items:center; gap:14px; cursor:pointer; }
+.rp-icon-big svg { width:56px; height:56px; }
+.rp-action-text { width:56px; height:56px; border-radius:50%; background:#fff; color:#f2711f; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; margin-top:-70px; margin-bottom:16px; }
+.rp-detail-result { margin-top:10px; }
+.rp-amount { font-size:32px; font-weight:700; }
+.rp-sub-text { font-size:13px; opacity:.85; margin-top:6px; }
+.rp-detail .sheet-close { color:#fff; opacity:.85; }
