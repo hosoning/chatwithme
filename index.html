@@ -5,75 +5,144 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>塔罗对话</title>
+<title>WECHAT</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div id="app">
 
-  <!-- ========== 页面1：聊天列表 ========== -->
-  <div class="page" id="page-chatlist">
+  <!-- Tab1: 聊天列表 -->
+  <div class="page" id="page-chatlist" data-tab="chat">
     <div class="nav-bar">
+      <span></span>
       <span class="nav-title">微信</span>
-      <div class="nav-right">
-        <svg class="icon-add" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
-      </div>
+      <svg class="icon-btn" id="btnAddMenu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
     </div>
-    <div class="chat-list" id="chatListItems">
-      <!-- JS渲染会话列表 -->
+    <div class="chat-list" id="chatListItems"></div>
+    <div class="tab-bar" data-tabbar></div>
+  </div>
+
+  <!-- Tab2: 通讯录 -->
+  <div class="page hidden" id="page-contacts" data-tab="contacts">
+    <div class="nav-bar">
+      <span></span>
+      <span class="nav-title">通讯录</span>
+      <svg class="icon-btn" id="btnAddMenu2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
     </div>
-    <div class="tab-bar">
-      <div class="tab-item active" data-tab="chat">
-        <svg viewBox="0 0 24 24" class="tab-icon"><path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-        <span>微信</span>
-      </div>
-      <div class="tab-item" data-tab="contacts">
-        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-        <span>通讯录</span>
-      </div>
-      <div class="tab-item" data-tab="discover">
-        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 9l-2 6-6 2 2-6z" fill="currentColor"/></svg>
-        <span>发现</span>
-      </div>
-      <div class="tab-item" data-tab="me">
-        <svg viewBox="0 0 24 24" class="tab-icon"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21c1.5-5 5-7 8-7s6.5 2 8 7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-        <span>我</span>
-      </div>
+    <div class="chat-list" id="contactListItems"></div>
+    <div class="tab-bar" data-tabbar></div>
+  </div>
+
+  <!-- Tab3: 发现 -->
+  <div class="page hidden" id="page-discover" data-tab="discover">
+    <div class="nav-bar"><span></span><span class="nav-title">发现</span><span></span></div>
+    <div class="list-block">
+      <div class="list-row" id="rowMoments"><span>朋友圈</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
+    <div class="tab-bar" data-tabbar></div>
+  </div>
+
+  <!-- Tab4: 我 -->
+  <div class="page hidden" id="page-me" data-tab="me">
+    <div class="nav-bar"><span></span><span class="nav-title">我</span><span></span></div>
+    <div class="profile-header">
+      <div id="meAvatar" class="avatar" style="width:64px;height:64px;border-radius:8px;"></div>
+      <div class="pname">塔罗世界的我</div>
+    </div>
+    <input type="file" id="myAvatarFileInput" accept="image/*" class="hidden">
+    <div class="list-block">
+      <div class="list-row" id="rowSettings"><span>AI / 语音 设置</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="list-row" id="rowWordCards"><span>字卡管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="list-row" id="rowAvatarLib"><span>头像库管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
+    <div class="list-block">
+      <div class="list-row" id="rowExport"><span>导出数据</span></div>
+      <div class="list-row" id="rowImport"><span>导入数据</span></div>
+      <input type="file" id="importFileInput" accept="application/json" class="hidden">
     </div>
   </div>
 
-  <!-- ========== 页面2：聊天详情 ========== -->
+  <!-- 聊天详情（单聊 & 群聊共用）-->
   <div class="page hidden" id="page-chat">
     <div class="nav-bar">
-      <svg class="nav-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="icon-btn nav-back" id="backFromChat" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="nav-title" id="chatPeerName">角色</span>
-      <svg class="nav-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      <svg class="icon-btn" id="btnChatSettings" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
     </div>
     <div class="msg-list" id="msgList"></div>
     <div class="input-bar">
-      <svg class="icon-voice" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#666" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#666" stroke-width="1.6"/></svg>
-      <input type="text" id="msgInput" placeholder="">
-      <svg class="icon-face" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#666" stroke-width="1.6"/></svg>
-      <button class="btn-add" id="btnMore">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </button>
+      <svg class="icon-btn" id="micBtn" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#666" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#666" stroke-width="1.6"/></svg>
+      <input type="text" id="msgInput" placeholder="发消息...">
+      <div class="hold-talk-btn hidden" id="holdTalkBtn">按住 说话</div>
+      <svg class="icon-btn" id="btnMore" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
     </div>
   </div>
 
-  <!-- ========== 页面3：朋友圈 ========== -->
+  <!-- 朋友圈 -->
   <div class="page hidden" id="page-moments">
     <div class="nav-bar transparent">
-      <svg class="nav-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span></span>
-      <svg class="icon-camera" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="13.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
+      <svg class="icon-btn nav-back" id="backFromMoments" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span></span><span></span>
     </div>
     <div class="moments-cover"></div>
     <div class="moments-list" id="momentsList"></div>
   </div>
 
-  <!-- ========== 长按弹层：查看抽出的牌面 + 保护罩 ========== -->
+  <!-- 设置 -->
+  <div class="page hidden" id="page-settings">
+    <div class="nav-bar">
+      <svg class="icon-btn nav-back" id="backFromSettings" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title">AI / 语音 设置</span><span></span>
+    </div>
+    <div class="settings-scroll">
+      <div class="settings-group-title">文本回复模型</div>
+      <div class="form-row"><label>启用AI回复</label><label class="switch"><input type="checkbox" id="cfgTextEnabled"><span class="slider"></span></label></div>
+      <div class="form-row col"><label>API Endpoint</label><input id="cfgEndpoint" placeholder="https://api.openai.com/v1/chat/completions"></div>
+      <div class="form-row col"><label>API Key</label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
+      <div class="form-row col"><label>模型名称</label>
+        <input id="cfgModel" list="modelPresets" placeholder="gpt-4o-mini">
+        <datalist id="modelPresets">
+          <option value="gpt-4o-mini"></option><option value="gpt-4o"></option><option value="gpt-4-turbo"></option>
+          <option value="claude-3-5-sonnet-20241022"></option><option value="claude-3-opus-20240229"></option>
+          <option value="deepseek-chat"></option>
+        </datalist>
+      </div>
+      <div class="settings-group-title">语音回复模型 (TTS)</div>
+      <div class="form-row"><label>启用语音回复</label><label class="switch"><input type="checkbox" id="cfgVoiceEnabled"><span class="slider"></span></label></div>
+      <div class="form-row col"><label>TTS Endpoint</label><input id="cfgVoiceEndpoint" placeholder="https://api.openai.com/v1/audio/speech"></div>
+      <div class="form-row col"><label>TTS API Key</label><input id="cfgVoiceApiKey" type="password" placeholder="留空则使用上方Key"></div>
+      <div class="form-row col"><label>TTS 模型</label>
+        <input id="cfgVoiceModel" list="ttsPresets" placeholder="tts-1">
+        <datalist id="ttsPresets"><option value="tts-1"></option><option value="tts-1-hd"></option></datalist>
+      </div>
+      <div class="form-row col"><label>音色</label>
+        <select id="cfgVoiceName">
+          <option value="alloy">alloy</option><option value="echo">echo</option><option value="fable">fable</option>
+          <option value="onyx">onyx</option><option value="nova">nova</option><option value="shimmer">shimmer</option>
+        </select>
+      </div>
+      <div class="settings-group-title">行为开关</div>
+      <div class="form-row"><label>允许AI主动发消息</label><label class="switch"><input type="checkbox" id="cfgAutoMsg"><span class="slider"></span></label></div>
+      <div class="form-row"><label>允许AI主动发朋友圈</label><label class="switch"><input type="checkbox" id="cfgAutoMoment"><span class="slider"></span></label></div>
+      <div class="form-row"><label>允许AI主动换头像</label><label class="switch"><input type="checkbox" id="cfgAutoAvatar"><span class="slider"></span></label></div>
+      <div class="form-row"><label>允许AI抽到幸运牌时发红包</label><label class="switch"><input type="checkbox" id="cfgAutoRedpacket"><span class="slider"></span></label></div>
+      <button class="save-btn" id="saveSettingsBtn">保存设置</button>
+    </div>
+  </div>
+
+  <!-- 头像库管理 -->
+  <div class="page hidden" id="page-avatarlib">
+    <div class="nav-bar">
+      <svg class="icon-btn nav-back" id="backFromAvatarLib" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title">头像库管理</span>
+      <svg class="icon-btn" id="btnAddAvatarImg" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <input type="file" id="avatarLibFileInput" accept="image/*" multiple class="hidden">
+    <div class="avatar-grid" id="avatarLibGrid"></div>
+  </div>
+
+  <!-- 长按：塔罗牌 + 保护罩 -->
   <div class="mask hidden" id="tarotSheet">
     <div class="sheet">
       <div class="sheet-title">本条消息抽到的塔罗牌</div>
@@ -88,10 +157,10 @@
     </div>
   </div>
 
-  <!-- ========== 字卡管理弹层 ========== -->
+  <!-- 字卡管理 -->
   <div class="mask hidden" id="wordCardSheet">
     <div class="sheet">
-      <div class="sheet-title">字卡管理</div>
+      <div class="sheet-title" id="wordCardSheetTitle">字卡管理（全局）</div>
       <div class="wordcard-list" id="wordCardList"></div>
       <div class="wordcard-add">
         <input id="newWordCard" placeholder="输入新字卡内容">
@@ -101,8 +170,86 @@
     </div>
   </div>
 
-</div>
+  <!-- 添加菜单：新建角色 / 发起群聊 -->
+  <div class="mask hidden" id="addMenuSheet">
+    <div class="sheet">
+      <div class="sheet-title">添加</div>
+      <div class="menu-row" id="menuAddContact">添加角色</div>
+      <div class="menu-row" id="menuAddGroup">发起群聊</div>
+      <div class="sheet-close" id="addMenuClose">取消</div>
+    </div>
+  </div>
 
+  <!-- 添加角色 -->
+  <div class="mask hidden" id="addContactSheet">
+    <div class="sheet">
+      <div class="sheet-title">添加角色</div>
+      <div class="form-row col"><label>角色昵称</label><input id="newContactName" placeholder="例如：塔罗少女"></div>
+      <div class="form-row col"><label>角色设定（可选）</label><textarea id="newContactPersona" rows="3" placeholder="描述性格/语气，帮助AI理解角色"></textarea></div>
+      <div class="sheet-actions">
+        <div class="sheet-btn cancel" id="addContactCancel">取消</div>
+        <div class="sheet-btn confirm" id="addContactConfirm">创建</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建群聊 -->
+  <div class="mask hidden" id="addGroupSheet">
+    <div class="sheet">
+      <div class="sheet-title">发起群聊</div>
+      <div class="form-row col"><label>群聊名称</label><input id="newGroupName" placeholder="例如：塔罗小屋"></div>
+      <div class="wordcard-list" id="groupMemberChecklist"></div>
+      <div class="sheet-actions">
+        <div class="sheet-btn cancel" id="addGroupCancel">取消</div>
+        <div class="sheet-btn confirm" id="addGroupConfirm">创建</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 聊天设置（单聊：头像/人设/字卡模式；群聊：成员列表） -->
+  <div class="mask hidden" id="chatSettingsSheet">
+    <div class="sheet">
+      <div class="sheet-title" id="chatSettingsTitle">聊天设置</div>
+      <div id="chatSettingsBody"></div>
+      <div class="sheet-close" id="chatSettingsClose">关闭</div>
+    </div>
+  </div>
+
+  <!-- 发红包 -->
+  <div class="mask hidden" id="sendRedPacketSheet">
+    <div class="sheet redpacket-sheet">
+      <div class="sheet-title">发红包</div>
+      <div class="form-row col"><label>金额（元）</label><input id="rpAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
+      <div class="form-row col"><label>祝福语</label><input id="rpNote" placeholder="恭喜发财，大吉大利" maxlength="30"></div>
+      <div class="sheet-actions">
+        <div class="sheet-btn cancel" id="rpCancel">取消</div>
+        <div class="sheet-btn confirm rp-confirm" id="rpConfirm">塞钱进红包</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 红包详情/领取 -->
+  <div class="mask hidden" id="redPacketOpenSheet">
+    <div class="rp-detail">
+      <div class="rp-detail-top">
+        <div class="rp-detail-avatar" id="rpDetailAvatar"></div>
+        <div class="rp-detail-note" id="rpDetailNote"></div>
+      </div>
+      <div class="rp-detail-mid" id="rpDetailMid">
+        <div class="rp-icon-big">
+          <svg viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.6" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
+        </div>
+        <div class="rp-action-text" id="rpActionText">开</div>
+      </div>
+      <div class="rp-detail-result hidden" id="rpDetailResult">
+        <div class="rp-amount" id="rpAmountShow">0.00</div>
+        <div class="rp-sub-text">已存入零钱</div>
+      </div>
+      <div class="sheet-close" id="rpDetailClose">关闭</div>
+    </div>
+  </div>
+
+</div>
 <script src="js/tarot.js"></script>
 <script src="js/wordcards.js"></script>
 <script src="js/ai.js"></script>
