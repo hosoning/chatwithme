@@ -77,3 +77,13 @@ function drawCards(n = 3) {
   }
   return drawn;
 }
+
+// ===== 幸运牌名单：用于红包触发判断 =====
+const LUCKY_CARD_NAMES = ["太阳","星星","命运之轮","世界","女皇","星币国王","星币十","权杖国王"];
+
+function isLuckyDraw(cards) {
+  const hasLucky = cards.some(c => !c.reversed && LUCKY_CARD_NAMES.includes(c.name));
+  const allPositive = cards.every(c => !c.reversed);
+  return hasLucky || allPositive;
+}
+
