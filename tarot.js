@@ -1,5 +1,3 @@
-// ===== 塔罗牌固定数据库（大阿卡纳22张 + 小阿卡纳56张）=====
-
 const MAJOR_ARCANA = [
   {name:"愚者", up:"新的开始、冒险、无畏、自由", rev:"鲁莽、犹豫不决、错失机会"},
   {name:"魔术师", up:"创造力、行动力、资源整合、意志", rev:"欺骗、能力未发挥、操控"},
@@ -7,7 +5,7 @@ const MAJOR_ARCANA = [
   {name:"女皇", up:"丰盛、滋养、感性、创造", rev:"依赖、过度、停滞"},
   {name:"皇帝", up:"权威、结构、掌控、稳定", rev:"专制、僵化、失控"},
   {name:"教皇", up:"传统、指导、信仰、规则", rev:"教条、反叛、打破常规"},
-  {name:"恋人", up:"connection、选择、和谐、爱", rev:"失衡、犹豫、错误选择"},
+  {name:"恋人", up:"连接、选择、和谐、爱", rev:"失衡、犹豫、错误选择"},
   {name:"战车", up:"胜利、意志力、前进、掌控局面", rev:"失控、方向不明、受阻"},
   {name:"力量", up:"内在力量、勇气、柔韧、耐心", rev:"自我怀疑、软弱、失控情绪"},
   {name:"隐士", up:"独处、内省、寻求真理、指引", rev:"孤立、逃避、迷失"},
@@ -36,11 +34,10 @@ const RANK_MEAN = {
   1:"起点、契机、新可能", 2:"选择、平衡、二元关系", 3:"合作、成长、初步成果",
   4:"稳定、休整、基础", 5:"冲突、挑战、变动", 6:"和谐、给予、恢复",
   7:"评估、坚持、耐心", 8:"加速、专注、行动或受限", 9:"接近完成、独立、警惕",
-  10:"圆满、结果、循环终点", 11:"探索、学习、消息(侍从)",
-  12:"行动派、冲劲、不稳定(骑士)", 13:"情感成熟、包容、直觉(王后)",
-  14:"掌控、权威、成熟稳重(国王)"
+  10:"圆满、结果、循环终点", 11:"探索、学习、消息", 12:"行动派、冲劲、不稳定",
+  13:"情感成熟、包容、直觉", 14:"掌控、权威、成熟稳重"
 };
-const RANK_NAME = {1:"Ace",2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",8:"8",9:"9",10:"10",11:"侍从",12:"骑士",13:"王后",14:"国王"};
+const RANK_NAME = {1:"Ace",2:"二",3:"三",4:"四",5:"五",6:"六",7:"七",8:"八",9:"九",10:"十",11:"侍从",12:"骑士",13:"王后",14:"国王"};
 
 const MINOR_ARCANA = [];
 SUITS.forEach(suit => {
@@ -53,9 +50,8 @@ SUITS.forEach(suit => {
   }
 });
 
-const FULL_DECK = [...MAJOR_ARCANA, ...MINOR_ARCANA]; // 78张
+const FULL_DECK = [...MAJOR_ARCANA, ...MINOR_ARCANA];
 
-// ===== 真随机（基于 crypto，比 Math.random 更接近真随机源）=====
 function secureRandomInt(max) {
   const arr = new Uint32Array(1);
   crypto.getRandomValues(arr);
@@ -68,17 +64,23 @@ function drawCards(n = 3) {
   for (let i = 0; i < n; i++) {
     const idx = secureRandomInt(deck.length);
     const card = deck.splice(idx, 1)[0];
-    const reversed = secureRandomInt(2) === 1; // 是否逆位，真随机
-    drawn.push({
-      name: card.name,
-      reversed,
-      meaning: reversed ? card.rev : card.up
-    });
+    const reversed = secureRandomInt(2) === 1;
+    drawn.push({ name: card.name, reversed, meaning: reversed ? card.rev : card.up });
   }
   return drawn;
 }
 
-// ===== 幸运牌名单：用于红包触发判断 =====
+function isMajor(name) { return MAJOR_ARCANA.some(m => m.name === name); }
+
+function calcShield(cards) {
+  let score = 50;
+  cards.forEach(c => {
+    const weight = isMajor(c.name) ? 12 : 7;
+    score += c.reversed ? -weight : weight;
+  });
+  return Math.max(0, Math.min(100, score));
+}
+
 const LUCKY_CARD_NAMES = ["太阳","星星","命运之轮","世界","女皇","星币国王","星币十","权杖国王"];
 
 function isLuckyDraw(cards) {
@@ -86,4 +88,3 @@ function isLuckyDraw(cards) {
   const allPositive = cards.every(c => !c.reversed);
   return hasLucky || allPositive;
 }
-
