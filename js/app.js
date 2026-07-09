@@ -1,7 +1,4 @@
-/* ============================================================
-   调试用：全局报错捕获 + 页面可见的错误横幅
-   一旦任何地方报错，页面顶部会出现红色提示，方便直接截图反馈
-   ============================================================ */
+/* ============ 全局报错捕获 ============ */
 (function setupErrorBanner() {
   function createBanner() {
     if (document.getElementById('debugErrorBanner')) return;
@@ -15,52 +12,31 @@
     const banner = createBanner();
     if (!banner) return;
     banner.style.display = 'block';
-    banner.textContent = '⚠️ 页面出错了，请把下面这段文字截图发给开发者：\n' + msg;
+    banner.textContent = '⚠️ 页面出错了：\n' + msg;
   }
   window.addEventListener('DOMContentLoaded', createBanner);
-  window.addEventListener('error', e => {
-    showError((e.message || '未知错误') + '\n位置: ' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
-  });
-  window.addEventListener('unhandledrejection', e => {
-    const reason = e.reason;
-    showError('Promise错误: ' + (reason && reason.message ? reason.message : JSON.stringify(reason)));
-  });
+  window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
+  window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
 })();
 
-/* ============================================================
-   安全的 localStorage 读写：任何一步崩溃都不会拖垮整个脚本
-   ============================================================ */
+/* ============ 安全存储 ============ */
 function safeLoadJSON(key, def) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return def;
     const parsed = JSON.parse(raw);
     return (parsed === null || parsed === undefined) ? def : parsed;
-  } catch (e) {
-    console.error(`读取 localStorage[${key}] 失败，已使用默认值`, e);
-    try { localStorage.removeItem(key); } catch(_) {}
-    return def;
-  }
+  } catch (e) { console.error(`读取[${key}]失败`, e); try { localStorage.removeItem(key); } catch(_) {} return def; }
 }
-function safeSaveJSON(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); }
-  catch (e) { console.error(`写入 localStorage[${key}] 失败`, e); }
-}
-function safeGetItem(key, def = null) {
-  try { const v = localStorage.getItem(key); return v === null ? def : v; }
-  catch (e) { console.error(`读取 localStorage[${key}] 失败`, e); return def; }
-}
-function safeSetItem(key, val) {
-  try { localStorage.setItem(key, val); }
-  catch (e) { console.error(`写入 localStorage[${key}] 失败`, e); }
-}
+function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } }
+function safeGetItem(key, def = null) { try { const v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
+function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) { console.error(e); } }
 
-/* ============================================================
-   状态管理
-   ============================================================ */
+/* ============ 状态 ============ */
 const STORE = {
   contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
-  moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1'
+  moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1',
+  myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1'
 };
 
 const state = {
@@ -69,7 +45,9 @@ const state = {
   chats: safeLoadJSON(STORE.chats, {}),
   moments: safeLoadJSON(STORE.moments, []),
   avatarLibrary: safeLoadJSON(STORE.avatarLib, []),
-  myAvatar: safeGetItem(STORE.myAvatar, null),
+  myAvatar: safeGetItem(STORE.myAvatar, null) || null,
+  myName: safeGetItem(STORE.myName, '塔罗世界的我') || '塔罗世界的我',
+  chatBg: safeGetItem(STORE.chatBg, null) || null,
   activeChatId: null,
   pendingBatch: {},
   batchTimer: {}
@@ -82,17 +60,16 @@ function persist() {
   safeSaveJSON(STORE.moments, state.moments);
   safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
+  safeSetItem(STORE.myName, state.myName || '塔罗世界的我');
+  safeSetItem(STORE.chatBg, state.chatBg || '');
 }
 
 function hashColor(str) {
-  let h = 0;
-  const s = String(str || '');
+  let h = 0; const s = String(str || '');
   for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
   return `hsl(${Math.abs(h) % 360},55%,55%)`;
 }
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function getContactById(id) { return state.contacts.find(c => String(c.id) === String(id)); }
 function getGroupById(id) { return state.groups.find(g => String(g.id) === String(id)); }
 function isGroupChat(chatId) { return typeof chatId === 'string' && chatId.startsWith('g_'); }
@@ -101,16 +78,85 @@ function avatarHtml(dataUrl, name, size = 40) {
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
 }
 
-/* ============================================================
-   页面切换
-   ============================================================ */
+/* ============ 导航：Tab切换 + 子页面push/pop动画 + 左滑返回 ============ */
+let navStack = ['page-chatlist'];
+
 function showPage(id) {
-  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-  const target = document.getElementById(id);
-  if (target) target.classList.remove('hidden');
+  document.querySelectorAll('.page').forEach(p => { p.classList.add('hidden'); p.style.transform=''; p.style.transition=''; p.style.zIndex=''; });
+  document.getElementById(id)?.classList.remove('hidden');
 }
-function setActiveTab(tabName) {
-  document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+function setActiveTab(tabName) { document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName)); }
+
+function switchTab(tabName, pageId) {
+  navStack = [pageId];
+  showPage(pageId);
+  setActiveTab(tabName);
+}
+
+function pushPage(id) {
+  const next = document.getElementById(id);
+  if (!next) return;
+  next.classList.remove('hidden');
+  next.style.zIndex = 50;
+  next.style.transition = 'none';
+  next.style.transform = 'translateX(100%)';
+  void next.offsetWidth;
+  requestAnimationFrame(() => {
+    next.style.transition = 'transform 0.3s cubic-bezier(.25,.46,.45,.94)';
+    next.style.transform = 'translateX(0)';
+  });
+  navStack.push(id);
+}
+
+function popPage() {
+  if (navStack.length <= 1) return;
+  const topId = navStack.pop();
+  const top = document.getElementById(topId);
+  if (!top) return;
+  top.style.transition = 'transform 0.28s cubic-bezier(.25,.46,.45,.94)';
+  top.style.transform = 'translateX(100%)';
+  setTimeout(() => {
+    top.classList.add('hidden');
+    top.style.transform = ''; top.style.transition = ''; top.style.zIndex = '';
+  }, 280);
+}
+
+function bindSwipeBack() {
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
+  let startX = 0, startY = 0, dragging = false, topEl = null;
+  appEl.addEventListener('touchstart', e => {
+    if (navStack.length <= 1) return;
+    const t = e.touches[0];
+    if (t.clientX > 40) return;
+    startX = t.clientX; startY = t.clientY; dragging = true;
+    topEl = document.getElementById(navStack[navStack.length - 1]);
+    if (topEl) topEl.style.transition = 'none';
+  }, { passive: true });
+  appEl.addEventListener('touchmove', e => {
+    if (!dragging || !topEl) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX, dy = t.clientY - startY;
+    if (Math.abs(dy) > Math.abs(dx) + 10) { dragging = false; topEl.style.transform = ''; return; }
+    if (dx > 0) topEl.style.transform = `translateX(${dx}px)`;
+  }, { passive: true });
+  appEl.addEventListener('touchend', () => {
+    if (!dragging || !topEl) { dragging = false; return; }
+    dragging = false;
+    const m = /translateX\(([\d.]+)px\)/.exec(topEl.style.transform || '');
+    const dx = m ? parseFloat(m[1]) : 0;
+    topEl.style.transition = 'transform 0.25s ease';
+    if (dx > 80) {
+      const w = appEl.clientWidth;
+      topEl.style.transform = `translateX(${w}px)`;
+      navStack.pop();
+      const el = topEl;
+      setTimeout(() => { el.classList.add('hidden'); el.style.transform=''; el.style.transition=''; el.style.zIndex=''; }, 250);
+    } else {
+      topEl.style.transform = 'translateX(0)';
+    }
+    topEl = null;
+  });
 }
 
 const TAB_ITEMS = [
@@ -123,26 +169,55 @@ function renderTabBars() {
   document.querySelectorAll('[data-tabbar]').forEach(bar => {
     bar.innerHTML = TAB_ITEMS.map(t => `<div class="tab-item" data-tab="${t.tab}" data-page="${t.page}"><svg class="tab-icon" viewBox="0 0 24 24">${t.icon}</svg><span>${t.label}</span></div>`).join('');
   });
-  document.querySelectorAll('.tab-item').forEach(el => {
-    el.addEventListener('click', () => { setActiveTab(el.dataset.tab); showPage(el.dataset.page); });
-  });
+  document.querySelectorAll('.tab-item').forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab, el.dataset.page)));
   setActiveTab('chat');
 }
 
-/* ============================================================
-   我 页面头像
-   ============================================================ */
+/* ============ 我 页面 ============ */
 function renderMePage() {
+  const nameEl = document.getElementById('pnameText');
+  if (nameEl) nameEl.textContent = state.myName || '塔罗世界的我';
   const el = document.getElementById('meAvatar');
   if (!el) return;
-  el.outerHTML = avatarHtml(state.myAvatar, '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
+  el.outerHTML = avatarHtml(state.myAvatar, state.myName || '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
   const newEl = document.getElementById('meAvatar');
   if (newEl) newEl.addEventListener('click', () => document.getElementById('myAvatarFileInput')?.click());
 }
 
-/* ============================================================
-   聊天列表 / 通讯录
-   ============================================================ */
+function bindEditName() {
+  document.getElementById('editNameBtn')?.addEventListener('click', () => {
+    document.getElementById('editNameInput').value = state.myName;
+    document.getElementById('editNameSheet').classList.remove('hidden');
+  });
+  document.getElementById('editNameCancel')?.addEventListener('click', () => document.getElementById('editNameSheet').classList.add('hidden'));
+  document.getElementById('editNameConfirm')?.addEventListener('click', () => {
+    const v = document.getElementById('editNameInput').value.trim();
+    if (v) { state.myName = v; persist(); renderMePage(); }
+    document.getElementById('editNameSheet').classList.add('hidden');
+  });
+}
+
+/* ============ 聊天背景 ============ */
+function applyChatBackground() {
+  const box = document.getElementById('msgList');
+  if (!box) return;
+  box.style.backgroundImage = state.chatBg ? `url('${state.chatBg}')` : '';
+}
+function bindChatBackground() {
+  document.getElementById('rowChatBg')?.addEventListener('click', () => document.getElementById('chatBgFileInput')?.click());
+  document.getElementById('chatBgFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { state.chatBg = ev.target.result; persist(); applyChatBackground(); alert('背景已更新'); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+  document.getElementById('rowChatBgClear')?.addEventListener('click', () => {
+    state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景');
+  });
+}
+
+/* ============ 聊天列表 / 通讯录 ============ */
 function renderChatList() {
   const box = document.getElementById('chatListItems');
   if (!box) return;
@@ -150,15 +225,12 @@ function renderChatList() {
     ...state.contacts.map(c => ({ id: String(c.id), name: c.name, avatar: c.avatar })),
     ...state.groups.map(g => ({ id: 'g_' + g.id, name: g.name, avatar: null }))
   ];
-  if (!items.length) {
-    box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`;
-    return;
-  }
+  if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; return; }
   box.innerHTML = items.map(it => {
     const msgs = state.chats[it.id] || [];
     const last = msgs[msgs.length - 1];
     return `<div class="chat-item" data-id="${it.id}">
-      ${avatarHtml(it.avatar, it.name, 48)}
+      ${avatarHtml(it.avatar, it.name, 50)}
       <div class="info">
         <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : ''}</span></div>
         <div class="last-msg">${last ? (last.type==='redpacket' ? '[红包]' : escapeHtml(last.text)) : '开始一段对话...'}</div>
@@ -170,7 +242,7 @@ function renderContactList() {
   const box = document.getElementById('contactListItems');
   if (!box) return;
   if (!state.contacts.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色</div>`; return; }
-  box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 48)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
+  box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 50)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
 
 function bindListDelegation(containerId) {
@@ -193,9 +265,7 @@ function bindListDelegation(containerId) {
   ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
 }
 
-/* ============================================================
-   聊天详情
-   ============================================================ */
+/* ============ 聊天详情 ============ */
 function openChat(chatId) {
   state.activeChatId = chatId;
   const name = isGroupChat(chatId) ? (getGroupById(chatId.slice(2))?.name || '群聊') : (getContactById(chatId)?.name || '角色');
@@ -203,7 +273,8 @@ function openChat(chatId) {
   if (nameEl) nameEl.textContent = name;
   if (!state.chats[chatId]) state.chats[chatId] = [];
   renderMessages();
-  showPage('page-chat');
+  applyChatBackground();
+  pushPage('page-chat');
 }
 
 function renderMessages() {
@@ -217,7 +288,7 @@ function renderMessages() {
     if (m.systemNote) return `<div class="msg-system">${escapeHtml(m.text)}</div>`;
     const isMe = m.from === 'me';
     const senderContact = !isMe ? getContactById(m.from) : null;
-    const name = isMe ? '我' : (senderContact?.name || '角色');
+    const name = isMe ? (state.myName || '我') : (senderContact?.name || '角色');
     const avatarDataUrl = isMe ? state.myAvatar : (senderContact?.avatar || null);
 
     let bubbleHtml;
@@ -235,7 +306,7 @@ function renderMessages() {
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
-      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 38)}${bubbleHtml}</div>
+      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
     </div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
@@ -265,8 +336,8 @@ function openTarotSheet(msgId) {
   if (!msg) return;
   const cardsView = document.getElementById('tarotCardsView');
   const shieldView = document.getElementById('shieldCardsView');
-  if (cardsView) cardsView.innerHTML = (msg.cards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('') || '<div style="font-size:13px;color:#999;">这条消息没有抽牌记录</div>';
-  if (shieldView) shieldView.innerHTML = (msg.shieldCards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('');
+  if (cardsView) cardsView.innerHTML = (msg.cards || []).map(c => `<div class="tarot-card-mini"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('') || '<div style="font-size:13px;color:#999;">这条消息没有抽牌记录</div>';
+  if (shieldView) shieldView.innerHTML = (msg.shieldCards || []).map(c => `<div class="tarot-card-mini"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('');
   const shield = msg.shield ?? 0;
   const fillEl = document.getElementById('shieldFill');
   const numEl = document.getElementById('shieldNum');
@@ -275,9 +346,7 @@ function openTarotSheet(msgId) {
   document.getElementById('tarotSheet')?.classList.remove('hidden');
 }
 
-/* ============================================================
-   发消息 & 塔罗回复流程
-   ============================================================ */
+/* ============ 发消息 & 塔罗回复 ============ */
 function addMessage(chatId, from, text, extra = {}) {
   const msg = { id: Date.now() + Math.random(), from, text, ts: Date.now(), ...extra };
   if (!state.chats[chatId]) state.chats[chatId] = [];
@@ -299,9 +368,7 @@ function handleSend(text) {
     if (isGroupChat(chatId)) {
       const g = getGroupById(chatId.slice(2));
       if (g?.memberIds?.length) requestAvatarChange(g.memberIds[secureRandomInt(g.memberIds.length)], chatId);
-    } else {
-      requestAvatarChange(chatId, chatId);
-    }
+    } else requestAvatarChange(chatId, chatId);
   }
 
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
@@ -357,9 +424,6 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============================================================
-   头像更换（塔罗抽牌驱动）
-   ============================================================ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact || !state.avatarLibrary.length) return;
@@ -372,9 +436,7 @@ async function requestAvatarChange(contactId, chatId) {
   renderChatList(); renderContactList();
 }
 
-/* ============================================================
-   AI 自主行为
-   ============================================================ */
+/* ============ AI 自主行为 ============ */
 async function aiAutoSendMessage() {
   const cfg = getAIConfig();
   if (!cfg.autoMsg || !state.contacts.length) return;
@@ -413,20 +475,18 @@ setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } c
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
-/* ============================================================
-   朋友圈
-   ============================================================ */
+/* ============ 朋友圈 ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
   box.innerHTML = state.moments.map(m => `
     <div class="moment-item" data-id="${m.id}">
-      ${avatarHtml(m.avatar, m.name, 42)}
+      ${avatarHtml(m.avatar, m.name, 44)}
       <div class="moment-body">
         <div class="mname">${escapeHtml(m.name)}</div>
         <div class="content">${escapeHtml(m.content)}</div>
         <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span><span class="comment-btn" data-toggle-comment="${m.id}">评论</span></div>
-        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? '我' : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
+        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
         <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
       </div></div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
 }
@@ -445,9 +505,7 @@ function bindMomentsDelegation() {
   });
 }
 
-/* ============================================================
-   红包
-   ============================================================ */
+/* ============ 红包 ============ */
 function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
 function bindRedPacket() {
   document.getElementById('rpCancel')?.addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
@@ -509,9 +567,7 @@ function openRedPacketDetail(msgId) {
   document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');
 }
 
-/* ============================================================
-   长按塔罗弹层关闭 & 字卡管理
-   ============================================================ */
+/* ============ 塔罗弹层 & 字卡管理 ============ */
 function bindSheetClose() { document.getElementById('sheetClose')?.addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
 
 function renderWordCardList(contactId) {
@@ -552,9 +608,7 @@ function openChatMoreMenu() {
   else openWordCardSheet(isGroupChat(state.activeChatId) ? null : state.activeChatId);
 }
 
-/* ============================================================
-   添加菜单：角色 / 群聊
-   ============================================================ */
+/* ============ 添加角色 / 群聊 ============ */
 function bindAddMenu() {
   const open = () => document.getElementById('addMenuSheet').classList.remove('hidden');
   document.getElementById('btnAddMenu')?.addEventListener('click', open);
@@ -600,60 +654,84 @@ function bindAddGroup() {
   });
 }
 
-/* ============================================================
-   聊天设置弹层
-   ============================================================ */
+/* ============ 聊天设置（用事件委托一次绑定，避免重复监听导致卡顿） ============ */
+let chatSettingsTarget = null;
+
 function openChatSettings() {
   const chatId = state.activeChatId;
   if (!chatId) return;
   const body = document.getElementById('chatSettingsBody');
   if (isGroupChat(chatId)) {
-    const g = getGroupById(chatId.slice(2));
+    chatSettingsTarget = { type: 'group', id: chatId.slice(2) };
+    const g = getGroupById(chatSettingsTarget.id);
     document.getElementById('chatSettingsTitle').textContent = '群聊设置';
     body.innerHTML = `<div class="settings-group-title">群成员</div>` + g.memberIds.map(id => {
       const c = getContactById(id); if (!c) return '';
       return `<div class="chat-item" style="border-radius:6px;">${avatarHtml(c.avatar, c.name, 40)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`;
     }).join('') + `<div class="sheet-btn cancel" id="deleteGroupBtn" style="margin-top:14px;">解散群聊</div>`;
-    document.getElementById('deleteGroupBtn').addEventListener('click', () => {
-      if (confirm('确定解散该群聊？')) {
-        state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[chatId]; persist();
-        document.getElementById('chatSettingsSheet').classList.add('hidden');
-        showPage('page-chatlist'); renderChatList();
-      }
-    });
   } else {
+    chatSettingsTarget = { type: 'contact', id: chatId };
     const c = getContactById(chatId);
     if (!c) return;
     document.getElementById('chatSettingsTitle').textContent = '角色设置';
     body.innerHTML = `
       <div class="settings-group-title">头像（点击从头像库指定）</div>
-      <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;"></div>
+      <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;">
+        ${state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>'}
+      </div>
       <div class="settings-group-title">角色设定</div>
       <textarea id="editPersona" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;">${escapeHtml(c.persona || '')}</textarea>
       <div class="settings-group-title">字卡来源</div>
       <div class="form-row"><label>使用专属字卡（而非全局）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
       <div class="menu-row" id="editContactCustomCards">编辑专属字卡</div>
       <button class="save-btn" id="savePersonaBtn">保存</button>`;
-    const grid = document.getElementById('assignAvatarGrid');
-    grid.innerHTML = state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>';
-    grid.addEventListener('click', e => {
-      const item = e.target.closest('[data-avatar-id]'); if (!item) return;
-      const a = state.avatarLibrary.find(x => String(x.id) === item.dataset.avatarId);
-      if (a) { c.avatar = a.dataUrl; persist(); renderMessages(); renderChatList(); renderContactList(); alert('头像已更新'); }
-    });
-    document.getElementById('editContactCustomCards').addEventListener('click', () => openWordCardSheet(String(c.id)));
-    document.getElementById('savePersonaBtn').addEventListener('click', () => {
-      c.persona = document.getElementById('editPersona').value.trim();
-      c.wordCardMode = document.getElementById('editWordCardMode').checked ? 'custom' : 'global';
-      persist(); alert('已保存'); document.getElementById('chatSettingsSheet').classList.add('hidden');
-    });
   }
   document.getElementById('chatSettingsSheet').classList.remove('hidden');
 }
 
-/* ============================================================
-   头像库管理页
-   ============================================================ */
+function bindChatSettingsDelegation() {
+  const body = document.getElementById('chatSettingsBody');
+  if (!body) return;
+  body.addEventListener('click', e => {
+    if (!chatSettingsTarget) return;
+    const avatarItem = e.target.closest('[data-avatar-id]');
+    if (avatarItem && chatSettingsTarget.type === 'contact') {
+      const c = getContactById(chatSettingsTarget.id);
+      const a = state.avatarLibrary.find(x => String(x.id) === avatarItem.dataset.avatarId);
+      if (c && a) { c.avatar = a.dataUrl; persist(); renderMessages(); renderChatList(); renderContactList(); alert('头像已更新'); }
+      return;
+    }
+    if (e.target.closest('#editContactCustomCards') && chatSettingsTarget.type === 'contact') {
+      openWordCardSheet(String(chatSettingsTarget.id));
+      return;
+    }
+    if (e.target.closest('#savePersonaBtn') && chatSettingsTarget.type === 'contact') {
+      const c = getContactById(chatSettingsTarget.id);
+      if (c) {
+        c.persona = document.getElementById('editPersona').value.trim();
+        c.wordCardMode = document.getElementById('editWordCardMode').checked ? 'custom' : 'global';
+        persist();
+      }
+      alert('已保存');
+      document.getElementById('chatSettingsSheet').classList.add('hidden');
+      return;
+    }
+    if (e.target.closest('#deleteGroupBtn') && chatSettingsTarget.type === 'group') {
+      const g = getGroupById(chatSettingsTarget.id);
+      if (g && confirm(`确定解散群聊「${g.name}」？`)) {
+        state.groups = state.groups.filter(x => x.id !== g.id);
+        delete state.chats['g_' + g.id];
+        persist();
+        document.getElementById('chatSettingsSheet').classList.add('hidden');
+        popPage();
+        renderChatList();
+      }
+      return;
+    }
+  });
+}
+
+/* ============ 头像库管理页 ============ */
 function renderAvatarLibGrid() {
   const grid = document.getElementById('avatarLibGrid');
   if (!grid) return;
@@ -665,8 +743,8 @@ function renderAvatarLibGrid() {
     </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:30px;">还没有头像，点右上角 + 添加</div>';
 }
 function bindAvatarLib() {
-  document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); showPage('page-avatarlib'); });
-  document.getElementById('backFromAvatarLib')?.addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
+  document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); pushPage('page-avatarlib'); });
+  document.getElementById('backFromAvatarLib')?.addEventListener('click', () => popPage());
   document.getElementById('btnAddAvatarImg')?.addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
   document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
     [...e.target.files].forEach(file => {
@@ -687,9 +765,7 @@ function bindAvatarLib() {
   });
 }
 
-/* ============================================================
-   自己头像上传
-   ============================================================ */
+/* ============ 自己头像上传 ============ */
 function bindMyAvatarUpload() {
   document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
@@ -699,13 +775,11 @@ function bindMyAvatarUpload() {
   });
 }
 
-/* ============================================================
-   导出 / 导入数据
-   ============================================================ */
+/* ============ 导出 / 导入 ============ */
 function exportData() {
   const data = {
     contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
-    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar,
+    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
     wordCards: WordCards.getAll(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -725,6 +799,8 @@ function importData(file) {
       if (data.moments) state.moments = data.moments;
       if (data.avatarLibrary) state.avatarLibrary = data.avatarLibrary;
       if (data.myAvatar) state.myAvatar = data.myAvatar;
+      if (data.myName) state.myName = data.myName;
+      if (data.chatBg) state.chatBg = data.chatBg;
       if (data.wordCards) WordCards.save(data.wordCards);
       if (data.aiConfig) saveAIConfig(data.aiConfig);
       persist();
@@ -739,23 +815,19 @@ function bindExportImport() {
   document.getElementById('importFileInput')?.addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
 }
 
-/* ============================================================
-   导航按钮
-   ============================================================ */
+/* ============ 导航按钮 ============ */
 function bindNavButtons() {
-  document.getElementById('backFromChat')?.addEventListener('click', () => { setActiveTab('chat'); showPage('page-chatlist'); });
-  document.getElementById('backFromMoments')?.addEventListener('click', () => { setActiveTab('discover'); showPage('page-discover'); });
-  document.getElementById('backFromSettings')?.addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
-  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); showPage('page-moments'); });
-  document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); showPage('page-settings'); });
+  document.getElementById('backFromChat')?.addEventListener('click', () => popPage());
+  document.getElementById('backFromMoments')?.addEventListener('click', () => popPage());
+  document.getElementById('backFromSettings')?.addEventListener('click', () => popPage());
+  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); pushPage('page-moments'); });
+  document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); pushPage('page-settings'); });
   document.getElementById('btnChatSettings')?.addEventListener('click', openChatSettings);
   document.getElementById('chatSettingsClose')?.addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
   document.getElementById('rpDetailClose')?.addEventListener('click', () => document.getElementById('redPacketOpenSheet').classList.add('hidden'));
 }
 
-/* ============================================================
-   设置表单
-   ============================================================ */
+/* ============ 设置表单 ============ */
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -793,21 +865,39 @@ function bindSettingsSave() {
   });
 }
 
-/* ============================================================
-   输入框 & 语音输入
-   ============================================================ */
+/* ============ 输入框（含发送按钮）& 语音输入 ============ */
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
   const micBtn = document.getElementById('micBtn');
-  if (!msgInput || !holdBtn || !micBtn) return;
+  const moreBtn = document.getElementById('btnMore');
+  const sendBtn = document.getElementById('btnSend');
+  if (!msgInput || !holdBtn || !micBtn || !moreBtn || !sendBtn) return;
 
-  msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && msgInput.value.trim()) { handleSend(msgInput.value); msgInput.value = ''; } });
+  function toggleSendBtn() {
+    const hasText = msgInput.value.trim().length > 0;
+    sendBtn.classList.toggle('hidden', !hasText);
+    moreBtn.classList.toggle('hidden', hasText);
+  }
+  function doSend() {
+    if (!msgInput.value.trim()) return;
+    handleSend(msgInput.value);
+    msgInput.value = '';
+    toggleSendBtn();
+  }
+
+  msgInput.addEventListener('input', toggleSendBtn);
+  msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
+  sendBtn.addEventListener('click', doSend);
+
   micBtn.addEventListener('click', () => {
-    const voiceMode = !msgInput.classList.contains('hidden');
-    msgInput.classList.toggle('hidden', voiceMode);
-    holdBtn.classList.toggle('hidden', !voiceMode);
+    const enteringVoiceMode = !msgInput.classList.contains('hidden');
+    msgInput.classList.toggle('hidden', enteringVoiceMode);
+    holdBtn.classList.toggle('hidden', !enteringVoiceMode);
+    if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
+    else toggleSendBtn();
   });
+
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognizer = null;
   if (SR) {
@@ -822,12 +912,8 @@ function bindInputBar() {
   holdBtn.addEventListener('pointerleave', stopTalk);
 }
 
-/* ============================================================
-   初始化：分步执行，任何一步失败不影响其他步骤
-   ============================================================ */
-function safeStep(name, fn) {
-  try { fn(); } catch (e) { console.error(`[初始化步骤失败: ${name}]`, e); }
-}
+/* ============ 初始化 ============ */
+function safeStep(name, fn) { try { fn(); } catch (e) { console.error(`[初始化失败: ${name}]`, e); } }
 
 function init() {
   safeStep('renderTabBars', renderTabBars);
@@ -851,6 +937,10 @@ function init() {
   safeStep('bindAvatarLib', bindAvatarLib);
   safeStep('bindMyAvatarUpload', bindMyAvatarUpload);
   safeStep('bindExportImport', bindExportImport);
+  safeStep('bindEditName', bindEditName);
+  safeStep('bindChatBackground', bindChatBackground);
+  safeStep('bindChatSettingsDelegation', bindChatSettingsDelegation);
+  safeStep('bindSwipeBack', bindSwipeBack);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
