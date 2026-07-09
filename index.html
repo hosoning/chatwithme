@@ -52,8 +52,38 @@
   <!-- Tab3: 发现 -->
   <div class="page hidden" id="page-discover" data-tab="discover">
     <div class="nav-bar"><span></span><span class="nav-title">发现</span><span></span></div>
-    <div class="list-block">
-      <div class="list-row" id="rowMoments"><span>朋友圈</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="discover-scroll">
+      <div class="list-block">
+        <div class="list-row" id="rowMoments">
+          <div class="row-left">
+            <div class="row-icon" style="background:#07c160;">
+              <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="13.5" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+            </div>
+            <span>朋友圈</span>
+          </div>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+      <div class="list-block">
+        <div class="list-row" id="rowScan">
+          <div class="row-left">
+            <div class="row-icon" style="background:#5a5a6a;">
+              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" fill="none" stroke="#fff" stroke-width="1.6"/><rect x="14" y="4" width="6" height="6" fill="none" stroke="#fff" stroke-width="1.6"/><rect x="4" y="14" width="6" height="6" fill="none" stroke="#fff" stroke-width="1.6"/><line x1="14" y1="14" x2="20" y2="14" stroke="#fff" stroke-width="1.6"/><line x1="14" y1="20" x2="20" y2="20" stroke="#fff" stroke-width="1.6"/><line x1="17" y1="14" x2="17" y2="20" stroke="#fff" stroke-width="1.6"/></svg>
+            </div>
+            <span>扫一扫</span>
+          </div>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="list-row" id="rowChannels">
+          <div class="row-left">
+            <div class="row-icon" style="background:linear-gradient(135deg,#ff6a3d,#ffb03d);">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M9 9l6 3-6 3z" fill="#fff"/></svg>
+            </div>
+            <span>视频号</span>
+          </div>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
     </div>
     <div class="tab-bar" data-tabbar></div>
   </div>
@@ -113,8 +143,17 @@
       <span></span>
       <svg class="icon-btn" id="btnPostMoment" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="13.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
     </div>
-    <div class="moments-cover"></div>
-    <div class="moments-list" id="momentsList"></div>
+    <div class="moments-scroll" id="momentsScroll">
+      <div class="moments-cover-wrap" id="momentsCoverWrap">
+        <div class="moments-cover" id="momentsCoverImg"></div>
+        <div class="moments-profile">
+          <span class="moments-my-name" id="momentsMyName"></span>
+          <div class="moments-my-avatar" id="momentsMyAvatar"></div>
+        </div>
+      </div>
+      <input type="file" id="momentsCoverFileInput" accept="image/*" class="hidden">
+      <div class="moments-list" id="momentsList"></div>
+    </div>
   </div>
 
   <!-- 设置 -->
@@ -315,10 +354,10 @@
   </div>
 
 </div>
-<script src="js/tarot.js" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=7" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=7" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=7" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=7" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=7" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
