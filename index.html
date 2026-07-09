@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>塔罗对话</title>
+<title>微信</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 <script>
@@ -21,6 +21,8 @@
   window.__scriptLoadError = showLoadError;
 })();
 </script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 <div id="app">
@@ -108,7 +110,8 @@
   <div class="page hidden" id="page-moments">
     <div class="nav-bar transparent">
       <svg class="icon-btn nav-back" id="backFromMoments" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span></span><span></span>
+      <span></span>
+      <svg class="icon-btn" id="btnPostMoment" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="13.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
     </div>
     <div class="moments-cover"></div>
     <div class="moments-list" id="momentsList"></div>
@@ -152,6 +155,13 @@
       <div class="form-row"><label>允许AI主动发朋友圈</label><label class="switch"><input type="checkbox" id="cfgAutoMoment"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI主动换头像</label><label class="switch"><input type="checkbox" id="cfgAutoAvatar"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI抽到幸运牌时发红包</label><label class="switch"><input type="checkbox" id="cfgAutoRedpacket"><span class="slider"></span></label></div>
+      <div class="settings-group-title">云端同步（防止刷新丢数据）</div>
+      <div class="form-row"><label>启用云端同步</label><label class="switch"><input type="checkbox" id="cfgCloudEnabled"><span class="slider"></span></label></div>
+      <div class="form-row col"><label>同步房间ID（自己设一个，换设备填同一个即可同步）</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div>
+      <div class="sheet-actions" style="margin-bottom:14px;">
+        <div class="sheet-btn cancel" id="cloudUploadBtn">立即上传到云端</div>
+        <div class="sheet-btn confirm" id="cloudDownloadBtn">从云端下载覆盖本地</div>
+      </div>
       <button class="save-btn" id="saveSettingsBtn">保存设置</button>
     </div>
   </div>
@@ -286,10 +296,29 @@
     </div>
   </div>
 
+  <!-- 发朋友圈 -->
+  <div class="mask hidden" id="postMomentSheet">
+    <div class="sheet">
+      <div class="sheet-title">发朋友圈</div>
+      <div class="form-row col"><textarea id="postMomentText" rows="4" placeholder="这一刻的想法..."></textarea></div>
+      <div class="form-row col">
+        <label>配图（可选）</label>
+        <div id="postMomentImgPreview" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+        <input type="file" id="postMomentImgInput" accept="image/*" class="hidden">
+        <div class="menu-row" id="postMomentAddImgBtn" style="border-bottom:none;padding:8px 0;">+ 添加图片</div>
+      </div>
+      <div class="sheet-actions">
+        <div class="sheet-btn cancel" id="postMomentCancel">取消</div>
+        <div class="sheet-btn confirm" id="postMomentConfirm">发布</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 <script src="js/tarot.js" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
 <script src="js/wordcards.js" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
 <script src="js/ai.js" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
 <script src="js/app.js" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
