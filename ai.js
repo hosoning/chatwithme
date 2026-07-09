@@ -1,15 +1,26 @@
 const AI_CFG_KEY = 'tarot_ai_config_v1';
 
 function getAIConfig() {
-  const raw = localStorage.getItem(AI_CFG_KEY);
   const def = {
     textEnabled: false, endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini',
     voiceEnabled: false, voiceEndpoint: 'https://api.openai.com/v1/audio/speech', voiceApiKey: '', voiceModel: 'tts-1', voiceName: 'alloy',
     autoMsg: false, autoMoment: false, autoAvatar: false, autoRedpacket: true
   };
-  return raw ? { ...def, ...JSON.parse(raw) } : def;
+  try {
+    const raw = localStorage.getItem(AI_CFG_KEY);
+    if (!raw) return def;
+    const parsed = JSON.parse(raw);
+    return { ...def, ...parsed };
+  } catch (e) {
+    console.error('AI配置读取失败，使用默认值', e);
+    try { localStorage.removeItem(AI_CFG_KEY); } catch(_) {}
+    return def;
+  }
 }
-function saveAIConfig(cfg) { localStorage.setItem(AI_CFG_KEY, JSON.stringify(cfg)); }
+function saveAIConfig(cfg) {
+  try { localStorage.setItem(AI_CFG_KEY, JSON.stringify(cfg)); }
+  catch (e) { console.error('AI配置保存失败', e); }
+}
 
 async function callLLM(systemPrompt, userPrompt) {
   const cfg = getAIConfig();
@@ -73,6 +84,7 @@ async function groupMessages(messages) {
 }
 
 async function interpretAndReply(userText, cards, wordCardPool, persona) {
+  if (!wordCardPool || !wordCardPool.length) wordCardPool = WordCards._defaults();
   const cardDesc = cards.map(c => `${c.name}(${c.reversed ? '逆位' : '正位'}): ${c.meaning}`).join('; ');
   const sys = `你正在扮演角色："${persona || '一个通过塔罗牌理解世界的人'}"。
 你只能使用给定字卡词库中的词句拼接回复，禁止编造新词。
@@ -96,21 +108,19 @@ async function interpretAndReply(userText, cards, wordCardPool, persona) {
   return picked;
 }
 
-// ===== 红包判定：结合抽到的牌决定是否要发红包 =====
 function shouldSendRedPacket(cards) {
   const cfg = getAIConfig();
   if (!cfg.autoRedpacket) return false;
   if (!isLuckyDraw(cards)) return false;
-  return secureRandomInt(100) < 40; // 命中幸运牌后仍有随机性，不是100%必发
+  return secureRandomInt(100) < 40;
 }
 function randomRedPacketAmount() {
-  const cents = secureRandomInt(19999) + 1; // 0.01 ~ 200.00
+  const cents = secureRandomInt(19999) + 1;
   return (cents / 100).toFixed(2);
 }
 
-// ===== AI 根据抽到的塔罗牌，从头像库里挑一张头像 =====
 async function pickAvatarFromCards(cards, library, persona) {
-  if (!library.length) return null;
+  if (!library || !library.length) return null;
   const cardDesc = cards.map(c => `${c.name}(${c.reversed ? '逆位' : '正位'}):${c.meaning}`).join('; ');
   const libDesc = library.map((a, i) => `${i}:${a.tag || '无标签'}`).join('; ');
   const sys = `你正在扮演角色:"${persona || '一个用塔罗牌做选择的人'}"。请根据抽到的塔罗牌牌意，从头像库列表中选出一个最契合当下能量的编号，只输出数字，不要输出其他任何文字。头像库(编号:标签): ${libDesc}`;
