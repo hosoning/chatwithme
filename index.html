@@ -8,6 +8,19 @@
 <title>塔罗对话</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
+<script>
+(function() {
+  function showLoadError(msg) {
+    document.addEventListener('DOMContentLoaded', function() {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#fa5151;color:#fff;font-size:13px;padding:12px;white-space:pre-wrap;';
+      banner.textContent = '⚠️ 脚本加载失败：' + msg;
+      document.body.prepend(banner);
+    });
+  }
+  window.__scriptLoadError = showLoadError;
+})();
+</script>
 </head>
 <body>
 <div id="app">
@@ -46,24 +59,35 @@
   <!-- Tab4: 我 -->
   <div class="page hidden" id="page-me" data-tab="me">
     <div class="nav-bar"><span></span><span class="nav-title">我</span><span></span></div>
-    <div class="profile-header">
-      <div id="meAvatar" class="avatar" style="width:64px;height:64px;border-radius:8px;"></div>
-      <div class="pname">塔罗世界的我</div>
+    <div class="me-scroll">
+      <div class="profile-header">
+        <div id="meAvatar" class="avatar" style="width:64px;height:64px;border-radius:8px;"></div>
+        <div class="pname-wrap">
+          <span class="pname" id="pnameText">塔罗世界的我</span>
+          <svg class="edit-name-icon" id="editNameBtn" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16z" fill="none" stroke="#999" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+      <input type="file" id="myAvatarFileInput" accept="image/*" class="hidden">
+      <div class="list-block">
+        <div class="list-row" id="rowSettings"><span>AI / 语音 设置</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="list-row" id="rowWordCards"><span>字卡管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="list-row" id="rowAvatarLib"><span>头像库管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+      <div class="list-block">
+        <div class="list-row" id="rowChatBg"><span>设置聊天背景</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="list-row" id="rowChatBgClear"><span>恢复默认背景</span></div>
+        <input type="file" id="chatBgFileInput" accept="image/*" class="hidden">
+      </div>
+      <div class="list-block">
+        <div class="list-row" id="rowExport"><span>导出数据</span></div>
+        <div class="list-row" id="rowImport"><span>导入数据</span></div>
+        <input type="file" id="importFileInput" accept="application/json" class="hidden">
+      </div>
     </div>
-    <input type="file" id="myAvatarFileInput" accept="image/*" class="hidden">
-    <div class="list-block">
-      <div class="list-row" id="rowSettings"><span>AI / 语音 设置</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      <div class="list-row" id="rowWordCards"><span>字卡管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      <div class="list-row" id="rowAvatarLib"><span>头像库管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-    </div>
-    <div class="list-block">
-      <div class="list-row" id="rowExport"><span>导出数据</span></div>
-      <div class="list-row" id="rowImport"><span>导入数据</span></div>
-      <input type="file" id="importFileInput" accept="application/json" class="hidden">
-    </div>
+    <div class="tab-bar" data-tabbar></div>
   </div>
 
-  <!-- 聊天详情（单聊 & 群聊共用）-->
+  <!-- 聊天详情 -->
   <div class="page hidden" id="page-chat">
     <div class="nav-bar">
       <svg class="icon-btn nav-back" id="backFromChat" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -76,6 +100,7 @@
       <input type="text" id="msgInput" placeholder="发消息...">
       <div class="hold-talk-btn hidden" id="holdTalkBtn">按住 说话</div>
       <svg class="icon-btn" id="btnMore" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <button class="send-btn hidden" id="btnSend">发送</button>
     </div>
   </div>
 
@@ -170,7 +195,7 @@
     </div>
   </div>
 
-  <!-- 添加菜单：新建角色 / 发起群聊 -->
+  <!-- 添加菜单 -->
   <div class="mask hidden" id="addMenuSheet">
     <div class="sheet">
       <div class="sheet-title">添加</div>
@@ -249,10 +274,22 @@
     </div>
   </div>
 
+  <!-- 修改昵称 -->
+  <div class="mask hidden" id="editNameSheet">
+    <div class="sheet">
+      <div class="sheet-title">修改昵称</div>
+      <div class="form-row col"><input id="editNameInput" placeholder="输入昵称"></div>
+      <div class="sheet-actions">
+        <div class="sheet-btn cancel" id="editNameCancel">取消</div>
+        <div class="sheet-btn confirm" id="editNameConfirm">保存</div>
+      </div>
+    </div>
+  </div>
+
 </div>
-<script src="js/tarot.js"></script>
-<script src="js/wordcards.js"></script>
-<script src="js/ai.js"></script>
-<script src="js/app.js"></script>
+<script src="js/tarot.js" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/app.js" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
