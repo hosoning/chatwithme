@@ -29,7 +29,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .msg-row { display:flex; align-items:flex-start; gap:8px; }
 .msg-row.me { flex-direction:row-reverse; }
 .msg-row .avatar { width:40px; height:40px; font-size:15px; }
-.bubble { max-width:66%; padding:10px 13px; border-radius:5px; font-size:17px; line-height:1.45; position:relative; word-break:break-word; }
+.bubble { max-width:78%; min-height:20px; padding:10px 14px; border-radius:8px; font-size:16.5px; line-height:1.5; position:relative; word-break:break-word; white-space:pre-wrap; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
 .msg-row:not(.me) .bubble { background:#fff; color:#000; }
 .msg-row.me .bubble { background:#95ec69; color:#000; }
 .bubble::before { content:''; position:absolute; top:13px; width:0; height:0; border:6px solid transparent; }
