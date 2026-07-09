@@ -38,6 +38,10 @@ const STORE = {
   moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1',
   myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1'
 };
+const STICKER_KEY = 'tarot_stickers_v1';
+
+function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
+function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
 
 const state = {
   contacts: safeLoadJSON(STORE.contacts, []),
@@ -46,7 +50,7 @@ const state = {
   moments: safeLoadJSON(STORE.moments, []),
   avatarLibrary: safeLoadJSON(STORE.avatarLib, []),
   myAvatar: safeGetItem(STORE.myAvatar, null) || null,
-  myName: safeGetItem(STORE.myName, '塔罗世界的我') || '塔罗世界的我',
+  myName: safeGetItem(STORE.myName, '我') || '我',
   chatBg: safeGetItem(STORE.chatBg, null) || null,
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   activeChatId: null,
@@ -62,7 +66,7 @@ function persist() {
   safeSaveJSON(STORE.moments, state.moments);
   safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
-  safeSetItem(STORE.myName, state.myName || '塔罗世界的我');
+  safeSetItem(STORE.myName, state.myName || '我');
   safeSetItem(STORE.chatBg, state.chatBg || '');
   safeSetItem(STORE.momentsCover, state.momentsCover || '');
 
@@ -74,7 +78,7 @@ function persist() {
         contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
         avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
         chatBg: state.chatBg, momentsCover: state.momentsCover,
-        wordCards: WordCards.getAll()
+        wordCards: WordCards.getAll(), stickers: getStickers()
       });
     }
   }, 2000);
@@ -95,6 +99,7 @@ async function tryCloudLoadOnStartup() {
   if (cloudData.chatBg) state.chatBg = cloudData.chatBg;
   if (cloudData.momentsCover) state.momentsCover = cloudData.momentsCover;
   if (cloudData.wordCards) WordCards.save(cloudData.wordCards);
+  if (cloudData.stickers) saveStickers(cloudData.stickers);
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
   safeSaveJSON(STORE.chats, state.chats);
@@ -218,7 +223,7 @@ function renderTabBars() {
 /* ============ 我 页面 ============ */
 function renderMePage() {
   const nameEl = document.getElementById('pnameText');
-  if (nameEl) nameEl.textContent = state.myName || '塔罗世界的我';
+  if (nameEl) nameEl.textContent = state.myName || '我';
   const el = document.getElementById('meAvatar');
   if (!el) return;
   el.outerHTML = avatarHtml(state.myAvatar, state.myName || '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
@@ -317,11 +322,17 @@ function renderChatList() {
   box.innerHTML = items.map(it => {
     const msgs = state.chats[it.id] || [];
     const last = msgs[msgs.length - 1];
+    let lastText = '开始一段对话...';
+    if (last) {
+      if (last.type === 'redpacket') lastText = '[红包]';
+      else if (last.type === 'image') lastText = '[图片]';
+      else lastText = escapeHtml(last.text);
+    }
     return `<div class="chat-item" data-id="${it.id}">
       ${avatarHtml(it.avatar, it.name, 50)}
       <div class="info">
         <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : ''}</span></div>
-        <div class="last-msg">${last ? (last.type==='redpacket' ? '[红包]' : escapeHtml(last.text)) : '开始一段对话...'}</div>
+        <div class="last-msg">${lastText}</div>
       </div></div>`;
   }).join('');
 }
@@ -360,6 +371,7 @@ function openChat(chatId) {
   const nameEl = document.getElementById('chatPeerName');
   if (nameEl) nameEl.textContent = name;
   if (!state.chats[chatId]) state.chats[chatId] = [];
+  document.getElementById('plusPanelInline')?.classList.add('hidden');
   renderMessages();
   applyChatBackground();
   pushPage('page-chat');
@@ -385,6 +397,8 @@ function renderMessages() {
         <svg class="rp-icon" viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.4" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
         <div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-sub">${m.redpacket.status === 'claimed' ? '已领取' : '微信红包'}</div></div>
       </div>`;
+    } else if (m.type === 'image') {
+      bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
     } else if (m.voiceUrl) {
       bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
     } else {
@@ -443,6 +457,12 @@ function addMessage(chatId, from, text, extra = {}) {
   if (chatId === state.activeChatId) renderMessages();
   renderChatList();
   return msg;
+}
+
+function sendImageMessage(dataUrl) {
+  const chatId = state.activeChatId;
+  if (!chatId) return;
+  addMessage(chatId, 'me', '[图片]', { type: 'image', image: dataUrl });
 }
 
 const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '改头像'];
@@ -514,7 +534,11 @@ async function processGroupBatch(groupId) {
 
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
-  if (!contact || !state.avatarLibrary.length) return;
+  if (!contact) return;
+  if (!state.avatarLibrary.length) {
+    addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦）', { systemNote: true });
+    return;
+  }
   const cards = drawCards(3);
   const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
   if (!chosen) return;
@@ -547,18 +571,51 @@ async function aiAutoChangeAvatar() {
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
+
+/* ============ 朋友圈评论逻辑（本次修复重点）============
+   之前的bug：aiReplyToMoment 只会用 moment.contactId 去找角色，
+   但如果朋友圈是"我"自己发的（contactId === 'me'），
+   就永远找不到角色，导致回复变成"随机抽字卡但署名成自己"的怪异结果。
+   现在改成：
+   1. 如果是角色发的朋友圈 → 还是那个角色回复（跟以前一样）
+   2. 如果是"我"自己发的朋友圈 → 优先找"之前已经评论过这条朋友圈的角色"来接话，
+      这样你可以针对某个角色的评论持续往下聊；如果还没人评论过，就随机挑一个角色。
+      如果压根没有任何角色（联系人列表是空的），就只记录你的评论，不强行造出AI回复。
+============================================================ */
+function pickReplyingContactForMoment(moment) {
+  const posterContact = getContactById(moment.contactId);
+  if (posterContact) return posterContact; // 情况1：角色自己发的朋友圈
+
+  // 情况2：我自己发的朋友圈 —— 找最近一个评论过的角色
+  const priorCommenter = (moment.comments || []).slice().reverse().find(c => c.contactId);
+  if (priorCommenter) {
+    const c = getContactById(priorCommenter.contactId);
+    if (c) return c;
+  }
+  // 还没人评论过，随机挑一个角色
+  if (state.contacts.length) return state.contacts[secureRandomInt(state.contacts.length)];
+  return null; // 一个角色都没有
+}
+
 async function aiReplyToMoment(momentId, userComment) {
   const moment = state.moments.find(m => m.id === momentId);
   if (!moment) return;
-  const contact = getContactById(moment.contactId);
-  const cards = drawCards(3);
-  const pool = WordCards.getForContact(contact);
-  const picks = await interpretAndReply(userComment, cards, pool, contact?.persona);
   moment.comments = moment.comments || [];
   moment.comments.push({ from: 'me', text: userComment });
-  moment.comments.push({ from: moment.name, text: picks.join(' '), cards });
+
+  const contact = pickReplyingContactForMoment(moment);
+  if (!contact) {
+    // 没有任何角色可以回复，只记录用户自己的评论
+    persist(); renderMoments();
+    return;
+  }
+  const cards = drawCards(3);
+  const pool = WordCards.getForContact(contact);
+  const picks = await interpretAndReply(userComment, cards, pool, contact.persona);
+  moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
   persist(); renderMoments();
 }
+
 setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
@@ -655,7 +712,7 @@ async function aiCommentOnUserMoment(momentId, contactId) {
   const pool = WordCards.getForContact(contact);
   const picks = await interpretAndReply(`(看到我发的朋友圈：${moment.content})`, cards, pool, contact.persona);
   moment.comments = moment.comments || [];
-  moment.comments.push({ from: contact.name, text: picks.join(' '), cards });
+  moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
   persist();
   renderMoments();
 }
@@ -739,7 +796,6 @@ function openWordCardSheet(contactId = null) {
   document.getElementById('wordCardSheet')?.classList.remove('hidden');
 }
 function bindWordCardSheet() {
-  document.getElementById('btnMore')?.addEventListener('click', () => openChatMoreMenu());
   document.getElementById('rowWordCards')?.addEventListener('click', () => openWordCardSheet(null));
   document.getElementById('wordCardClose')?.addEventListener('click', () => document.getElementById('wordCardSheet').classList.add('hidden'));
   document.getElementById('addWordCardBtn')?.addEventListener('click', () => {
@@ -757,10 +813,85 @@ function bindWordCardSheet() {
   });
 }
 
-function openChatMoreMenu() {
-  const choice = confirm('点击"确定"发红包，点击"取消"打开字卡管理');
-  if (choice) openSendRedPacket();
-  else openWordCardSheet(isGroupChat(state.activeChatId) ? null : state.activeChatId);
+/* ============ 底部"+"面板 & 发图片 & 表情包 ============ */
+function bindPlusPanel() {
+  const panel = document.getElementById('plusPanelInline');
+  document.getElementById('btnMore')?.addEventListener('click', () => {
+    panel?.classList.toggle('hidden');
+  });
+  document.getElementById('plusPanelGrid')?.addEventListener('click', e => {
+    const item = e.target.closest('[data-action]');
+    if (!item) return;
+    const action = item.dataset.action;
+    panel?.classList.add('hidden');
+    if (action === 'photo') document.getElementById('sendPhotoFileInput').click();
+    else if (action === 'camera') document.getElementById('sendCameraFileInput').click();
+    else if (action === 'redpacket') openSendRedPacket();
+    else if (action === 'sticker') { renderStickerGrid(); document.getElementById('stickerPickerSheet').classList.remove('hidden'); }
+    else alert('该功能暂未开放');
+  });
+  document.getElementById('sendPhotoFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => sendImageMessage(ev.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+  document.getElementById('sendCameraFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => sendImageMessage(ev.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+}
+
+function renderStickerGrid() {
+  const grid = document.getElementById('stickerGrid');
+  if (!grid) return;
+  const stickers = getStickers();
+  grid.innerHTML = stickers.map(s => `
+    <div class="avatar-lib-item" data-sticker-id="${s.id}">
+      <img src="${s.dataUrl}">
+      <div class="del-x" data-del-sticker="${s.id}">×</div>
+    </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:24px;font-size:13px;">还没有表情包，点下方按钮添加</div>';
+}
+function bindStickerPicker() {
+  document.getElementById('stickerAddBtn')?.addEventListener('click', () => document.getElementById('stickerFileInput').click());
+  document.getElementById('stickerFileInput')?.addEventListener('change', e => {
+    const files = [...e.target.files];
+    let remaining = files.length;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const stickers = getStickers();
+        stickers.push({ id: Date.now() + Math.random(), dataUrl: ev.target.result });
+        saveStickers(stickers);
+        remaining--;
+        if (remaining === 0) renderStickerGrid();
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  });
+  document.getElementById('stickerPickerClose')?.addEventListener('click', () => document.getElementById('stickerPickerSheet').classList.add('hidden'));
+  document.getElementById('stickerGrid')?.addEventListener('click', e => {
+    const del = e.target.closest('[data-del-sticker]');
+    if (del) {
+      const stickers = getStickers().filter(s => String(s.id) !== del.dataset.delSticker);
+      saveStickers(stickers);
+      renderStickerGrid();
+      return;
+    }
+    const item = e.target.closest('[data-sticker-id]');
+    if (item) {
+      const s = getStickers().find(x => String(x.id) === item.dataset.stickerId);
+      if (s) {
+        sendImageMessage(s.dataUrl);
+        document.getElementById('stickerPickerSheet').classList.add('hidden');
+      }
+    }
+  });
 }
 
 /* ============ 添加角色 / 群聊 ============ */
@@ -936,7 +1067,7 @@ function exportData() {
     contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
     chatBg: state.chatBg, momentsCover: state.momentsCover,
-    wordCards: WordCards.getAll(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
+    wordCards: WordCards.getAll(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -959,6 +1090,7 @@ function importData(file) {
       if (data.chatBg) state.chatBg = data.chatBg;
       if (data.momentsCover) state.momentsCover = data.momentsCover;
       if (data.wordCards) WordCards.save(data.wordCards);
+      if (data.stickers) saveStickers(data.stickers);
       if (data.aiConfig) saveAIConfig(data.aiConfig);
       persist();
       alert('导入成功，即将刷新页面'); location.reload();
@@ -1003,7 +1135,7 @@ function bindCloudSync() {
       contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
       avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
       chatBg: state.chatBg, momentsCover: state.momentsCover,
-      wordCards: WordCards.getAll()
+      wordCards: WordCards.getAll(), stickers: getStickers()
     });
     alert(ok ? '已上传到云端' : '上传失败，请检查房间ID是否已填写、开关是否已打开');
   });
@@ -1077,12 +1209,14 @@ function bindInputBar() {
 
   msgInput.addEventListener('input', toggleSendBtn);
   msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
+  msgInput.addEventListener('focus', () => document.getElementById('plusPanelInline')?.classList.add('hidden'));
   sendBtn.addEventListener('click', doSend);
 
   micBtn.addEventListener('click', () => {
     const enteringVoiceMode = !msgInput.classList.contains('hidden');
     msgInput.classList.toggle('hidden', enteringVoiceMode);
     holdBtn.classList.toggle('hidden', !enteringVoiceMode);
+    document.getElementById('plusPanelInline')?.classList.add('hidden');
     if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
     else toggleSendBtn();
   });
@@ -1121,6 +1255,8 @@ async function init() {
   safeStep('bindDiscoverPlaceholders', bindDiscoverPlaceholders);
   safeStep('bindSheetClose', bindSheetClose);
   safeStep('bindWordCardSheet', bindWordCardSheet);
+  safeStep('bindPlusPanel', bindPlusPanel);
+  safeStep('bindStickerPicker', bindStickerPicker);
   safeStep('bindAddMenu', bindAddMenu);
   safeStep('bindAddContact', bindAddContact);
   safeStep('bindAddGroup', bindAddGroup);
