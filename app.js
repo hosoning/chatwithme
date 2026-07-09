@@ -1,38 +1,98 @@
-/* ============ 持久化 ============ */
-function loadJSON(key, def) { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : def; }
-function saveJSON(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+/* ============================================================
+   调试用：全局报错捕获 + 页面可见的错误横幅
+   一旦任何地方报错，页面顶部会出现红色提示，方便直接截图反馈
+   ============================================================ */
+(function setupErrorBanner() {
+  function createBanner() {
+    if (document.getElementById('debugErrorBanner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'debugErrorBanner';
+    banner.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#fa5151;color:#fff;font-size:12px;padding:10px;max-height:40vh;overflow-y:auto;white-space:pre-wrap;word-break:break-word;';
+    document.body.appendChild(banner);
+    return banner;
+  }
+  function showError(msg) {
+    const banner = createBanner();
+    if (!banner) return;
+    banner.style.display = 'block';
+    banner.textContent = '⚠️ 页面出错了，请把下面这段文字截图发给开发者：\n' + msg;
+  }
+  window.addEventListener('DOMContentLoaded', createBanner);
+  window.addEventListener('error', e => {
+    showError((e.message || '未知错误') + '\n位置: ' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const reason = e.reason;
+    showError('Promise错误: ' + (reason && reason.message ? reason.message : JSON.stringify(reason)));
+  });
+})();
 
+/* ============================================================
+   安全的 localStorage 读写：任何一步崩溃都不会拖垮整个脚本
+   ============================================================ */
+function safeLoadJSON(key, def) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return def;
+    const parsed = JSON.parse(raw);
+    return (parsed === null || parsed === undefined) ? def : parsed;
+  } catch (e) {
+    console.error(`读取 localStorage[${key}] 失败，已使用默认值`, e);
+    try { localStorage.removeItem(key); } catch(_) {}
+    return def;
+  }
+}
+function safeSaveJSON(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); }
+  catch (e) { console.error(`写入 localStorage[${key}] 失败`, e); }
+}
+function safeGetItem(key, def = null) {
+  try { const v = localStorage.getItem(key); return v === null ? def : v; }
+  catch (e) { console.error(`读取 localStorage[${key}] 失败`, e); return def; }
+}
+function safeSetItem(key, val) {
+  try { localStorage.setItem(key, val); }
+  catch (e) { console.error(`写入 localStorage[${key}] 失败`, e); }
+}
+
+/* ============================================================
+   状态管理
+   ============================================================ */
 const STORE = {
   contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
   moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1'
 };
 
 const state = {
-  contacts: loadJSON(STORE.contacts, []),      // {id,name,persona,avatar,wordCardMode,customWordCards}
-  groups: loadJSON(STORE.groups, []),          // {id,name,memberIds:[]}
-  chats: loadJSON(STORE.chats, {}),            // key: contactId(string) 或 'g_'+groupId -> [messages]
-  moments: loadJSON(STORE.moments, []),
-  avatarLibrary: loadJSON(STORE.avatarLib, []),// {id,dataUrl,tag}
-  myAvatar: localStorage.getItem(STORE.myAvatar) || null,
+  contacts: safeLoadJSON(STORE.contacts, []),
+  groups: safeLoadJSON(STORE.groups, []),
+  chats: safeLoadJSON(STORE.chats, {}),
+  moments: safeLoadJSON(STORE.moments, []),
+  avatarLibrary: safeLoadJSON(STORE.avatarLib, []),
+  myAvatar: safeGetItem(STORE.myAvatar, null),
   activeChatId: null,
   pendingBatch: {},
   batchTimer: {}
 };
+
 function persist() {
-  saveJSON(STORE.contacts, state.contacts);
-  saveJSON(STORE.groups, state.groups);
-  saveJSON(STORE.chats, state.chats);
-  saveJSON(STORE.moments, state.moments);
-  saveJSON(STORE.avatarLib, state.avatarLibrary);
-  localStorage.setItem(STORE.myAvatar, state.myAvatar || '');
+  safeSaveJSON(STORE.contacts, state.contacts);
+  safeSaveJSON(STORE.groups, state.groups);
+  safeSaveJSON(STORE.chats, state.chats);
+  safeSaveJSON(STORE.moments, state.moments);
+  safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
+  safeSetItem(STORE.myAvatar, state.myAvatar || '');
 }
 
 function hashColor(str) {
   let h = 0;
-  for (let i = 0; i < String(str).length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  const s = String(str || '');
+  for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
   return `hsl(${Math.abs(h) % 360},55%,55%)`;
 }
-function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function getContactById(id) { return state.contacts.find(c => String(c.id) === String(id)); }
 function getGroupById(id) { return state.groups.find(g => String(g.id) === String(id)); }
 function isGroupChat(chatId) { return typeof chatId === 'string' && chatId.startsWith('g_'); }
@@ -41,9 +101,17 @@ function avatarHtml(dataUrl, name, size = 40) {
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
 }
 
-/* ============ 页面切换 ============ */
-function showPage(id) { document.querySelectorAll('.page').forEach(p => p.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
-function setActiveTab(tabName) { document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName)); }
+/* ============================================================
+   页面切换
+   ============================================================ */
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+  const target = document.getElementById(id);
+  if (target) target.classList.remove('hidden');
+}
+function setActiveTab(tabName) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+}
 
 const TAB_ITEMS = [
   {tab:'chat', label:'微信', page:'page-chatlist', icon:'<path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'},
@@ -55,24 +123,37 @@ function renderTabBars() {
   document.querySelectorAll('[data-tabbar]').forEach(bar => {
     bar.innerHTML = TAB_ITEMS.map(t => `<div class="tab-item" data-tab="${t.tab}" data-page="${t.page}"><svg class="tab-icon" viewBox="0 0 24 24">${t.icon}</svg><span>${t.label}</span></div>`).join('');
   });
-  document.querySelectorAll('.tab-item').forEach(el => el.addEventListener('click', () => { setActiveTab(el.dataset.tab); showPage(el.dataset.page); }));
+  document.querySelectorAll('.tab-item').forEach(el => {
+    el.addEventListener('click', () => { setActiveTab(el.dataset.tab); showPage(el.dataset.page); });
+  });
   setActiveTab('chat');
 }
 
-/* ============ 我 页面头像渲染 ============ */
+/* ============================================================
+   我 页面头像
+   ============================================================ */
 function renderMePage() {
-  document.getElementById('meAvatar').outerHTML = avatarHtml(state.myAvatar, '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
-  document.getElementById('meAvatar').addEventListener('click', () => document.getElementById('myAvatarFileInput').click());
+  const el = document.getElementById('meAvatar');
+  if (!el) return;
+  el.outerHTML = avatarHtml(state.myAvatar, '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
+  const newEl = document.getElementById('meAvatar');
+  if (newEl) newEl.addEventListener('click', () => document.getElementById('myAvatarFileInput')?.click());
 }
 
-/* ============ 聊天列表（角色+群聊合并） ============ */
+/* ============================================================
+   聊天列表 / 通讯录
+   ============================================================ */
 function renderChatList() {
   const box = document.getElementById('chatListItems');
+  if (!box) return;
   const items = [
     ...state.contacts.map(c => ({ id: String(c.id), name: c.name, avatar: c.avatar })),
     ...state.groups.map(g => ({ id: 'g_' + g.id, name: g.name, avatar: null }))
   ];
-  if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; return; }
+  if (!items.length) {
+    box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`;
+    return;
+  }
   box.innerHTML = items.map(it => {
     const msgs = state.chats[it.id] || [];
     const last = msgs[msgs.length - 1];
@@ -87,12 +168,14 @@ function renderChatList() {
 
 function renderContactList() {
   const box = document.getElementById('contactListItems');
+  if (!box) return;
   if (!state.contacts.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色</div>`; return; }
   box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 48)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
 
 function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
+  if (!box) return;
   let pressTimer = null;
   box.addEventListener('click', e => { const item = e.target.closest('[data-id]'); if (item) openChat(item.dataset.id); });
   box.addEventListener('pointerdown', e => {
@@ -110,19 +193,22 @@ function bindListDelegation(containerId) {
   ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
 }
 
-/* ============ 打开聊天 ============ */
+/* ============================================================
+   聊天详情
+   ============================================================ */
 function openChat(chatId) {
   state.activeChatId = chatId;
   const name = isGroupChat(chatId) ? (getGroupById(chatId.slice(2))?.name || '群聊') : (getContactById(chatId)?.name || '角色');
-  document.getElementById('chatPeerName').textContent = name;
+  const nameEl = document.getElementById('chatPeerName');
+  if (nameEl) nameEl.textContent = name;
   if (!state.chats[chatId]) state.chats[chatId] = [];
   renderMessages();
   showPage('page-chat');
 }
 
-/* ============ 渲染消息 ============ */
 function renderMessages() {
   const box = document.getElementById('msgList');
+  if (!box) return;
   const chatId = state.activeChatId;
   const msgs = state.chats[chatId] || [];
   const group = isGroupChat(chatId);
@@ -141,7 +227,7 @@ function renderMessages() {
         <div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-sub">${m.redpacket.status === 'claimed' ? '已领取' : '微信红包'}</div></div>
       </div>`;
     } else if (m.voiceUrl) {
-      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round(m.text.length / 4))}″</span></div>`;
+      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
@@ -157,6 +243,7 @@ function renderMessages() {
 
 function bindMsgListDelegation() {
   const box = document.getElementById('msgList');
+  if (!box) return;
   let pressTimer = null;
   box.addEventListener('pointerdown', e => { const row = e.target.closest('.msg-row'); if (row) pressTimer = setTimeout(() => openTarotSheet(row.dataset.id), 480); });
   ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
@@ -176,15 +263,21 @@ function bindMsgListDelegation() {
 function openTarotSheet(msgId) {
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
-  document.getElementById('tarotCardsView').innerHTML = (msg.cards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('') || '<div style="font-size:13px;color:#999;">这条消息没有抽牌记录</div>';
-  document.getElementById('shieldCardsView').innerHTML = (msg.shieldCards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('');
+  const cardsView = document.getElementById('tarotCardsView');
+  const shieldView = document.getElementById('shieldCardsView');
+  if (cardsView) cardsView.innerHTML = (msg.cards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('') || '<div style="font-size:13px;color:#999;">这条消息没有抽牌记录</div>';
+  if (shieldView) shieldView.innerHTML = (msg.shieldCards || []).map(c => `<div class="tarot-card-mini ${c.reversed?'reversed':''}"><div class="card-face">${c.name}</div><div>${c.reversed?'逆位':'正位'}</div></div>`).join('');
   const shield = msg.shield ?? 0;
-  document.getElementById('shieldFill').style.width = shield + '%';
-  document.getElementById('shieldNum').textContent = shield;
-  document.getElementById('tarotSheet').classList.remove('hidden');
+  const fillEl = document.getElementById('shieldFill');
+  const numEl = document.getElementById('shieldNum');
+  if (fillEl) fillEl.style.width = shield + '%';
+  if (numEl) numEl.textContent = shield;
+  document.getElementById('tarotSheet')?.classList.remove('hidden');
 }
 
-/* ============ 发消息 ============ */
+/* ============================================================
+   发消息 & 塔罗回复流程
+   ============================================================ */
 function addMessage(chatId, from, text, extra = {}) {
   const msg = { id: Date.now() + Math.random(), from, text, ts: Date.now(), ...extra };
   if (!state.chats[chatId]) state.chats[chatId] = [];
@@ -199,7 +292,7 @@ const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '�
 
 function handleSend(text) {
   const chatId = state.activeChatId;
-  if (!chatId || !text.trim()) return;
+  if (!chatId || !text || !text.trim()) return;
   addMessage(chatId, 'me', text.trim());
 
   if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
@@ -258,14 +351,15 @@ async function processGroupBatch(groupId) {
   if (!g) return;
   const groups = await groupMessages(batch);
   const combinedText = groups.map(g2 => g2.join('；')).join('；');
-  // 每个成员独立走一次完整的抽牌→解读→回复流程
   for (const memberId of g.memberIds) {
     const member = getContactById(memberId);
     await replyWithTarot(groupId, memberId, combinedText, member?.persona);
   }
 }
 
-/* ============ 头像更换（塔罗抽牌驱动）============ */
+/* ============================================================
+   头像更换（塔罗抽牌驱动）
+   ============================================================ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact || !state.avatarLibrary.length) return;
@@ -278,7 +372,9 @@ async function requestAvatarChange(contactId, chatId) {
   renderChatList(); renderContactList();
 }
 
-/* ============ AI 自主行为 ============ */
+/* ============================================================
+   AI 自主行为
+   ============================================================ */
 async function aiAutoSendMessage() {
   const cfg = getAIConfig();
   if (!cfg.autoMsg || !state.contacts.length) return;
@@ -313,13 +409,16 @@ async function aiReplyToMoment(momentId, userComment) {
   moment.comments.push({ from: moment.name, text: picks.join(' '), cards });
   persist(); renderMoments();
 }
-setInterval(() => { if (secureRandomInt(100) < 3) aiAutoSendMessage(); }, 60000);
-setInterval(() => { if (secureRandomInt(100) < 2) aiAutoPostMoment(); }, 120000);
-setInterval(() => { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); }, 150000);
+setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
+setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
+setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
-/* ============ 朋友圈渲染 ============ */
+/* ============================================================
+   朋友圈
+   ============================================================ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
+  if (!box) return;
   box.innerHTML = state.moments.map(m => `
     <div class="moment-item" data-id="${m.id}">
       ${avatarHtml(m.avatar, m.name, 42)}
@@ -333,6 +432,7 @@ function renderMoments() {
 }
 function bindMomentsDelegation() {
   const box = document.getElementById('momentsList');
+  if (!box) return;
   box.addEventListener('click', e => {
     const toggle = e.target.closest('[data-toggle-comment]');
     if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
@@ -345,20 +445,22 @@ function bindMomentsDelegation() {
   });
 }
 
-/* ============ 红包：发送 ============ */
-function openSendRedPacket() { document.getElementById('sendRedPacketSheet').classList.remove('hidden'); }
+/* ============================================================
+   红包
+   ============================================================ */
+function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
 function bindRedPacket() {
-  document.getElementById('rpCancel').addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
-  document.getElementById('rpConfirm').addEventListener('click', () => {
+  document.getElementById('rpCancel')?.addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
+  document.getElementById('rpConfirm')?.addEventListener('click', () => {
     const amount = parseFloat(document.getElementById('rpAmount').value);
     const note = document.getElementById('rpNote').value.trim() || '恭喜发财，大吉大利';
     if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
     const chatId = state.activeChatId;
+    if (!chatId) { alert('请先进入一个聊天'); return; }
     const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
     document.getElementById('sendRedPacketSheet').classList.add('hidden');
     document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
 
-    // 模拟对方（单聊）或群成员之一（群聊）在几秒后自动领取
     setTimeout(() => {
       const list = state.chats[chatId] || [];
       const target = list.find(m => m.id === msg.id);
@@ -368,12 +470,12 @@ function bindRedPacket() {
         const g = getGroupById(chatId.slice(2));
         claimer = g?.memberIds?.[secureRandomInt(g.memberIds.length)];
       } else claimer = chatId;
+      if (!claimer) return;
       const claimerName = getContactById(claimer)?.name || '对方';
       target.redpacket.status = 'claimed';
       target.redpacket.claimedBy = claimer;
       persist(); renderMessages();
       addMessage(chatId, claimer, `${claimerName} 领取了你的红包`, { systemNote: true });
-      // AI收到红包后，走一次塔罗流程说声感谢
       replyWithTarot(chatId, claimer, '(收到了你发的红包，表达感谢)', getContactById(claimer)?.persona);
     }, 1500 + secureRandomInt(3000));
   });
@@ -382,10 +484,11 @@ function bindRedPacket() {
 function openRedPacketDetail(msgId) {
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
-  const senderName = msg.from === 'me' ? '我' : (getContactById(msg.from)?.name || '对方');
   const senderAvatar = msg.from === 'me' ? state.myAvatar : getContactById(msg.from)?.avatar;
-  document.getElementById('rpDetailAvatar').style.backgroundImage = senderAvatar ? `url('${senderAvatar}')` : '';
-  document.getElementById('rpDetailNote').textContent = msg.redpacket.note;
+  const avatarEl = document.getElementById('rpDetailAvatar');
+  if (avatarEl) avatarEl.style.backgroundImage = senderAvatar ? `url('${senderAvatar}')` : '';
+  const noteEl = document.getElementById('rpDetailNote');
+  if (noteEl) noteEl.textContent = msg.redpacket.note;
   const resultBox = document.getElementById('rpDetailResult');
   const midBox = document.getElementById('rpDetailMid');
   const amountShow = document.getElementById('rpAmountShow');
@@ -403,35 +506,39 @@ function openRedPacketDetail(msgId) {
       amountShow.textContent = `¥${msg.redpacket.amount}`;
     };
   }
-  document.getElementById('redPacketOpenSheet').classList.remove('hidden');
+  document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');
 }
 
-/* ============ 长按塔罗弹层关闭 & 字卡管理 ============ */
-function bindSheetClose() { document.getElementById('sheetClose').addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
+/* ============================================================
+   长按塔罗弹层关闭 & 字卡管理
+   ============================================================ */
+function bindSheetClose() { document.getElementById('sheetClose')?.addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
 
 function renderWordCardList(contactId) {
   const list = contactId ? WordCards.getContactList(contactId) : WordCards.getAll();
-  document.getElementById('wordCardList').innerHTML = list.map(t => `<div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" class="wc-del" data-t="${escapeHtml(t)}">删除</a></div>`).join('');
+  const box = document.getElementById('wordCardList');
+  if (box) box.innerHTML = list.map(t => `<div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" class="wc-del" data-t="${escapeHtml(t)}">删除</a></div>`).join('');
 }
 let currentWordCardContactId = null;
 function openWordCardSheet(contactId = null) {
   currentWordCardContactId = contactId;
-  document.getElementById('wordCardSheetTitle').textContent = contactId ? `字卡管理（${getContactById(contactId)?.name || ''} 专属）` : '字卡管理（全局）';
+  const title = document.getElementById('wordCardSheetTitle');
+  if (title) title.textContent = contactId ? `字卡管理（${getContactById(contactId)?.name || ''} 专属）` : '字卡管理（全局）';
   renderWordCardList(contactId);
-  document.getElementById('wordCardSheet').classList.remove('hidden');
+  document.getElementById('wordCardSheet')?.classList.remove('hidden');
 }
 function bindWordCardSheet() {
-  document.getElementById('btnMore').addEventListener('click', () => openChatMoreMenu());
-  document.getElementById('rowWordCards').addEventListener('click', () => openWordCardSheet(null));
-  document.getElementById('wordCardClose').addEventListener('click', () => document.getElementById('wordCardSheet').classList.add('hidden'));
-  document.getElementById('addWordCardBtn').addEventListener('click', () => {
+  document.getElementById('btnMore')?.addEventListener('click', () => openChatMoreMenu());
+  document.getElementById('rowWordCards')?.addEventListener('click', () => openWordCardSheet(null));
+  document.getElementById('wordCardClose')?.addEventListener('click', () => document.getElementById('wordCardSheet').classList.add('hidden'));
+  document.getElementById('addWordCardBtn')?.addEventListener('click', () => {
     const input = document.getElementById('newWordCard');
     if (!input.value.trim()) return;
     if (currentWordCardContactId) WordCards.addContactCard(currentWordCardContactId, input.value.trim());
     else WordCards.add(input.value.trim());
     input.value = ''; renderWordCardList(currentWordCardContactId);
   });
-  document.getElementById('wordCardList').addEventListener('click', e => {
+  document.getElementById('wordCardList')?.addEventListener('click', e => {
     const del = e.target.closest('.wc-del'); if (!del) return; e.preventDefault();
     if (currentWordCardContactId) WordCards.removeContactCard(currentWordCardContactId, del.dataset.t);
     else WordCards.remove(del.dataset.t);
@@ -439,25 +546,26 @@ function bindWordCardSheet() {
   });
 }
 
-/* 聊天内"+"号：简单菜单选择 发红包 / 字卡 */
 function openChatMoreMenu() {
   const choice = confirm('点击"确定"发红包，点击"取消"打开字卡管理');
   if (choice) openSendRedPacket();
   else openWordCardSheet(isGroupChat(state.activeChatId) ? null : state.activeChatId);
 }
 
-/* ============ 添加菜单：角色 / 群聊 ============ */
+/* ============================================================
+   添加菜单：角色 / 群聊
+   ============================================================ */
 function bindAddMenu() {
   const open = () => document.getElementById('addMenuSheet').classList.remove('hidden');
-  document.getElementById('btnAddMenu').addEventListener('click', open);
-  document.getElementById('btnAddMenu2').addEventListener('click', open);
-  document.getElementById('addMenuClose').addEventListener('click', () => document.getElementById('addMenuSheet').classList.add('hidden'));
-  document.getElementById('menuAddContact').addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); document.getElementById('addContactSheet').classList.remove('hidden'); });
-  document.getElementById('menuAddGroup').addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); openAddGroupSheet(); });
+  document.getElementById('btnAddMenu')?.addEventListener('click', open);
+  document.getElementById('btnAddMenu2')?.addEventListener('click', open);
+  document.getElementById('addMenuClose')?.addEventListener('click', () => document.getElementById('addMenuSheet').classList.add('hidden'));
+  document.getElementById('menuAddContact')?.addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); document.getElementById('addContactSheet').classList.remove('hidden'); });
+  document.getElementById('menuAddGroup')?.addEventListener('click', () => { document.getElementById('addMenuSheet').classList.add('hidden'); openAddGroupSheet(); });
 }
 function bindAddContact() {
-  document.getElementById('addContactCancel').addEventListener('click', () => document.getElementById('addContactSheet').classList.add('hidden'));
-  document.getElementById('addContactConfirm').addEventListener('click', () => {
+  document.getElementById('addContactCancel')?.addEventListener('click', () => document.getElementById('addContactSheet').classList.add('hidden'));
+  document.getElementById('addContactConfirm')?.addEventListener('click', () => {
     const name = document.getElementById('newContactName').value.trim();
     const persona = document.getElementById('newContactPersona').value.trim();
     if (!name) { alert('请输入昵称'); return; }
@@ -470,13 +578,14 @@ function bindAddContact() {
   });
 }
 function openAddGroupSheet() {
-  document.getElementById('groupMemberChecklist').innerHTML = state.contacts.map(c => `
+  const box = document.getElementById('groupMemberChecklist');
+  box.innerHTML = state.contacts.map(c => `
     <div class="wc-item"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" value="${c.id}" class="group-member-check"> ${escapeHtml(c.name)}</label></div>`).join('') || '<div style="padding:10px;color:#999;">还没有角色，请先添加角色</div>';
   document.getElementById('addGroupSheet').classList.remove('hidden');
 }
 function bindAddGroup() {
-  document.getElementById('addGroupCancel').addEventListener('click', () => document.getElementById('addGroupSheet').classList.add('hidden'));
-  document.getElementById('addGroupConfirm').addEventListener('click', () => {
+  document.getElementById('addGroupCancel')?.addEventListener('click', () => document.getElementById('addGroupSheet').classList.add('hidden'));
+  document.getElementById('addGroupConfirm')?.addEventListener('click', () => {
     const name = document.getElementById('newGroupName').value.trim();
     const memberIds = [...document.querySelectorAll('.group-member-check:checked')].map(el => Number(el.value));
     if (!name || !memberIds.length) { alert('请输入群名并至少选一个成员'); return; }
@@ -491,9 +600,12 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置弹层（头像/人设/字卡模式 或 群成员）============ */
+/* ============================================================
+   聊天设置弹层
+   ============================================================ */
 function openChatSettings() {
   const chatId = state.activeChatId;
+  if (!chatId) return;
   const body = document.getElementById('chatSettingsBody');
   if (isGroupChat(chatId)) {
     const g = getGroupById(chatId.slice(2));
@@ -511,6 +623,7 @@ function openChatSettings() {
     });
   } else {
     const c = getContactById(chatId);
+    if (!c) return;
     document.getElementById('chatSettingsTitle').textContent = '角色设置';
     body.innerHTML = `
       <div class="settings-group-title">头像（点击从头像库指定）</div>
@@ -538,9 +651,12 @@ function openChatSettings() {
   document.getElementById('chatSettingsSheet').classList.remove('hidden');
 }
 
-/* ============ 头像库管理页 ============ */
+/* ============================================================
+   头像库管理页
+   ============================================================ */
 function renderAvatarLibGrid() {
   const grid = document.getElementById('avatarLibGrid');
+  if (!grid) return;
   grid.innerHTML = state.avatarLibrary.map(a => `
     <div class="avatar-lib-item" data-id="${a.id}">
       <img src="${a.dataUrl}">
@@ -549,10 +665,10 @@ function renderAvatarLibGrid() {
     </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:30px;">还没有头像，点右上角 + 添加</div>';
 }
 function bindAvatarLib() {
-  document.getElementById('rowAvatarLib').addEventListener('click', () => { renderAvatarLibGrid(); showPage('page-avatarlib'); });
-  document.getElementById('backFromAvatarLib').addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
-  document.getElementById('btnAddAvatarImg').addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
-  document.getElementById('avatarLibFileInput').addEventListener('change', e => {
+  document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); showPage('page-avatarlib'); });
+  document.getElementById('backFromAvatarLib')?.addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
+  document.getElementById('btnAddAvatarImg')?.addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
+  document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
     [...e.target.files].forEach(file => {
       const reader = new FileReader();
       reader.onload = ev => { state.avatarLibrary.push({ id: Date.now() + Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
@@ -560,20 +676,22 @@ function bindAvatarLib() {
     });
     e.target.value = '';
   });
-  document.getElementById('avatarLibGrid').addEventListener('click', e => {
+  document.getElementById('avatarLibGrid')?.addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
     if (del) { state.avatarLibrary = state.avatarLibrary.filter(a => String(a.id) !== del.dataset.del); persist(); renderAvatarLibGrid(); }
   });
-  document.getElementById('avatarLibGrid').addEventListener('change', e => {
+  document.getElementById('avatarLibGrid')?.addEventListener('change', e => {
     const tagInput = e.target.closest('[data-tag]'); if (!tagInput) return;
     const a = state.avatarLibrary.find(x => String(x.id) === tagInput.dataset.tag);
     if (a) { a.tag = tagInput.value.trim(); persist(); }
   });
 }
 
-/* ============ 自己头像上传 ============ */
+/* ============================================================
+   自己头像上传
+   ============================================================ */
 function bindMyAvatarUpload() {
-  document.getElementById('myAvatarFileInput').addEventListener('change', e => {
+  document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); };
@@ -581,7 +699,9 @@ function bindMyAvatarUpload() {
   });
 }
 
-/* ============ 导出 / 导入数据 ============ */
+/* ============================================================
+   导出 / 导入数据
+   ============================================================ */
 function exportData() {
   const data = {
     contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
@@ -614,24 +734,28 @@ function importData(file) {
   reader.readAsText(file);
 }
 function bindExportImport() {
-  document.getElementById('rowExport').addEventListener('click', exportData);
-  document.getElementById('rowImport').addEventListener('click', () => document.getElementById('importFileInput').click());
-  document.getElementById('importFileInput').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
+  document.getElementById('rowExport')?.addEventListener('click', exportData);
+  document.getElementById('rowImport')?.addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('importFileInput')?.addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
 }
 
-/* ============ 导航按钮 ============ */
+/* ============================================================
+   导航按钮
+   ============================================================ */
 function bindNavButtons() {
-  document.getElementById('backFromChat').addEventListener('click', () => { setActiveTab('chat'); showPage('page-chatlist'); });
-  document.getElementById('backFromMoments').addEventListener('click', () => { setActiveTab('discover'); showPage('page-discover'); });
-  document.getElementById('backFromSettings').addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
-  document.getElementById('rowMoments').addEventListener('click', () => { renderMoments(); showPage('page-moments'); });
-  document.getElementById('rowSettings').addEventListener('click', () => { loadSettingsForm(); showPage('page-settings'); });
-  document.getElementById('btnChatSettings').addEventListener('click', openChatSettings);
-  document.getElementById('chatSettingsClose').addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
-  document.getElementById('rpDetailClose').addEventListener('click', () => document.getElementById('redPacketOpenSheet').classList.add('hidden'));
+  document.getElementById('backFromChat')?.addEventListener('click', () => { setActiveTab('chat'); showPage('page-chatlist'); });
+  document.getElementById('backFromMoments')?.addEventListener('click', () => { setActiveTab('discover'); showPage('page-discover'); });
+  document.getElementById('backFromSettings')?.addEventListener('click', () => { setActiveTab('me'); showPage('page-me'); });
+  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); showPage('page-moments'); });
+  document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); showPage('page-settings'); });
+  document.getElementById('btnChatSettings')?.addEventListener('click', openChatSettings);
+  document.getElementById('chatSettingsClose')?.addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
+  document.getElementById('rpDetailClose')?.addEventListener('click', () => document.getElementById('redPacketOpenSheet').classList.add('hidden'));
 }
 
-/* ============ 设置表单 ============ */
+/* ============================================================
+   设置表单
+   ============================================================ */
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -649,7 +773,7 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
 }
 function bindSettingsSave() {
-  document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+  document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
     saveAIConfig({
       textEnabled: document.getElementById('cfgTextEnabled').checked,
       endpoint: document.getElementById('cfgEndpoint').value.trim(),
@@ -669,11 +793,15 @@ function bindSettingsSave() {
   });
 }
 
-/* ============ 输入框 & 语音输入 ============ */
+/* ============================================================
+   输入框 & 语音输入
+   ============================================================ */
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
   const micBtn = document.getElementById('micBtn');
+  if (!msgInput || !holdBtn || !micBtn) return;
+
   msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && msgInput.value.trim()) { handleSend(msgInput.value); msgInput.value = ''; } });
   micBtn.addEventListener('click', () => {
     const voiceMode = !msgInput.classList.contains('hidden');
@@ -688,22 +816,48 @@ function bindInputBar() {
     recognizer.onerror = () => holdBtn.classList.remove('active');
     recognizer.onend = () => holdBtn.classList.remove('active');
   }
-  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) try { recognizer.start(); } catch(e){} });
-  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) try { recognizer.stop(); } catch(e){} else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
+  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) { try { recognizer.start(); } catch(e){} } });
+  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) { try { recognizer.stop(); } catch(e){} } else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
   holdBtn.addEventListener('pointerup', stopTalk);
   holdBtn.addEventListener('pointerleave', stopTalk);
 }
 
-/* ============ 初始化 ============ */
-function init() {
-  try {
-    renderTabBars(); renderMePage(); renderChatList(); renderContactList(); renderMoments();
-    bindListDelegation('chatListItems'); bindListDelegation('contactListItems');
-    bindMsgListDelegation(); bindMomentsDelegation(); bindSheetClose(); bindWordCardSheet();
-    bindAddMenu(); bindAddContact(); bindAddGroup(); bindNavButtons(); bindSettingsSave();
-    bindInputBar(); bindRedPacket(); bindAvatarLib(); bindMyAvatarUpload(); bindExportImport();
-    showPage('page-chatlist');
-  } catch (e) { console.error('初始化失败', e); }
+/* ============================================================
+   初始化：分步执行，任何一步失败不影响其他步骤
+   ============================================================ */
+function safeStep(name, fn) {
+  try { fn(); } catch (e) { console.error(`[初始化步骤失败: ${name}]`, e); }
 }
+
+function init() {
+  safeStep('renderTabBars', renderTabBars);
+  safeStep('renderMePage', renderMePage);
+  safeStep('renderChatList', renderChatList);
+  safeStep('renderContactList', renderContactList);
+  safeStep('renderMoments', renderMoments);
+  safeStep('bindListDelegation-chat', () => bindListDelegation('chatListItems'));
+  safeStep('bindListDelegation-contacts', () => bindListDelegation('contactListItems'));
+  safeStep('bindMsgListDelegation', bindMsgListDelegation);
+  safeStep('bindMomentsDelegation', bindMomentsDelegation);
+  safeStep('bindSheetClose', bindSheetClose);
+  safeStep('bindWordCardSheet', bindWordCardSheet);
+  safeStep('bindAddMenu', bindAddMenu);
+  safeStep('bindAddContact', bindAddContact);
+  safeStep('bindAddGroup', bindAddGroup);
+  safeStep('bindNavButtons', bindNavButtons);
+  safeStep('bindSettingsSave', bindSettingsSave);
+  safeStep('bindInputBar', bindInputBar);
+  safeStep('bindRedPacket', bindRedPacket);
+  safeStep('bindAvatarLib', bindAvatarLib);
+  safeStep('bindMyAvatarUpload', bindMyAvatarUpload);
+  safeStep('bindExportImport', bindExportImport);
+  safeStep('showPage', () => showPage('page-chatlist'));
+}
+
 document.addEventListener('DOMContentLoaded', init);
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW注册失败', e)));
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW注册失败', e));
+  });
+}
