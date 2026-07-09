@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tarot-wechat-v3'; // 每次改动都提升版本号，强制客户端更新
+const CACHE_NAME = 'tarot-wechat-v4';
 const ASSETS = [
   './', './index.html', './style.css',
   './js/tarot.js', './js/wordcards.js', './js/ai.js', './js/app.js',
@@ -19,11 +19,10 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // network-first，保证你每次改代码后能第一时间看到最新版本，而不是吃旧缓存
   e.respondWith(
     fetch(e.request).then(res => {
       const resClone = res.clone();
-      caches.open(CACHE_NAME).then(c => c.put(e.request, resClone));
+      caches.open(CACHE_NAME).then(c => c.put(e.request, resClone)).catch(()=>{});
       return res;
     }).catch(() => caches.match(e.request))
   );
