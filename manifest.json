@@ -1,6 +1,6 @@
 {
-  "name": "塔罗对话",
-  "short_name": "塔罗对话",
+  "name": "微信",
+  "short_name": "微信",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ededed",
