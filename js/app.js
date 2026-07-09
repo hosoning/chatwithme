@@ -36,7 +36,7 @@ function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (
 const STORE = {
   contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
   moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1',
-  myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1'
+  myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1'
 };
 
 const state = {
@@ -48,6 +48,7 @@ const state = {
   myAvatar: safeGetItem(STORE.myAvatar, null) || null,
   myName: safeGetItem(STORE.myName, '塔罗世界的我') || '塔罗世界的我',
   chatBg: safeGetItem(STORE.chatBg, null) || null,
+  momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   activeChatId: null,
   pendingBatch: {},
   batchTimer: {}
@@ -63,6 +64,7 @@ function persist() {
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
   safeSetItem(STORE.myName, state.myName || '塔罗世界的我');
   safeSetItem(STORE.chatBg, state.chatBg || '');
+  safeSetItem(STORE.momentsCover, state.momentsCover || '');
 
   clearTimeout(_cloudSyncTimer);
   _cloudSyncTimer = setTimeout(() => {
@@ -70,7 +72,8 @@ function persist() {
     if (cfg.enabled) {
       cloudUpload({
         contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
-        avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
+        avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
+        chatBg: state.chatBg, momentsCover: state.momentsCover,
         wordCards: WordCards.getAll()
       });
     }
@@ -90,6 +93,7 @@ async function tryCloudLoadOnStartup() {
   if (cloudData.myAvatar) state.myAvatar = cloudData.myAvatar;
   if (cloudData.myName) state.myName = cloudData.myName;
   if (cloudData.chatBg) state.chatBg = cloudData.chatBg;
+  if (cloudData.momentsCover) state.momentsCover = cloudData.momentsCover;
   if (cloudData.wordCards) WordCards.save(cloudData.wordCards);
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
@@ -99,6 +103,7 @@ async function tryCloudLoadOnStartup() {
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
   safeSetItem(STORE.myName, state.myName || '');
   safeSetItem(STORE.chatBg, state.chatBg || '');
+  safeSetItem(STORE.momentsCover, state.momentsCover || '');
 }
 
 function hashColor(str) {
@@ -229,7 +234,7 @@ function bindEditName() {
   document.getElementById('editNameCancel')?.addEventListener('click', () => document.getElementById('editNameSheet').classList.add('hidden'));
   document.getElementById('editNameConfirm')?.addEventListener('click', () => {
     const v = document.getElementById('editNameInput').value.trim();
-    if (v) { state.myName = v; persist(); renderMePage(); }
+    if (v) { state.myName = v; persist(); renderMePage(); renderMomentsProfile(); }
     document.getElementById('editNameSheet').classList.add('hidden');
   });
 }
@@ -252,6 +257,52 @@ function bindChatBackground() {
   document.getElementById('rowChatBgClear')?.addEventListener('click', () => {
     state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景');
   });
+}
+
+/* ============ 朋友圈封面 + 头像 + 名字 ============ */
+function renderMomentsProfile() {
+  const coverEl = document.getElementById('momentsCoverImg');
+  if (coverEl) coverEl.style.backgroundImage = state.momentsCover ? `url('${state.momentsCover}')` : '';
+  const nameEl = document.getElementById('momentsMyName');
+  if (nameEl) nameEl.textContent = state.myName || '我';
+  const avatarEl = document.getElementById('momentsMyAvatar');
+  if (avatarEl) {
+    avatarEl.style.backgroundImage = state.myAvatar ? `url('${state.myAvatar}')` : '';
+    avatarEl.style.backgroundColor = state.myAvatar ? 'transparent' : hashColor(state.myName || '我');
+    avatarEl.style.backgroundSize = 'cover';
+    avatarEl.style.backgroundPosition = 'center';
+    if (!state.myAvatar) {
+      avatarEl.textContent = (state.myName || '我').slice(0, 1);
+      avatarEl.style.display = 'flex';
+      avatarEl.style.alignItems = 'center';
+      avatarEl.style.justifyContent = 'center';
+      avatarEl.style.color = '#fff';
+      avatarEl.style.fontSize = '22px';
+      avatarEl.style.fontWeight = '600';
+    } else {
+      avatarEl.textContent = '';
+    }
+  }
+}
+function bindMomentsProfile() {
+  document.getElementById('momentsCoverImg')?.addEventListener('click', () => document.getElementById('momentsCoverFileInput')?.click());
+  document.getElementById('momentsCoverFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { state.momentsCover = ev.target.result; persist(); renderMomentsProfile(); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => {
+    popPage();
+    setTimeout(() => switchTab('me', 'page-me'), 0);
+  });
+}
+
+/* ============ 发现页占位功能 ============ */
+function bindDiscoverPlaceholders() {
+  document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
+  document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
 }
 
 /* ============ 聊天列表 / 通讯录 ============ */
@@ -874,7 +925,7 @@ function bindMyAvatarUpload() {
   document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); };
+    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); };
     reader.readAsDataURL(file);
   });
 }
@@ -883,7 +934,8 @@ function bindMyAvatarUpload() {
 function exportData() {
   const data = {
     contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
-    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
+    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
+    chatBg: state.chatBg, momentsCover: state.momentsCover,
     wordCards: WordCards.getAll(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -905,6 +957,7 @@ function importData(file) {
       if (data.myAvatar) state.myAvatar = data.myAvatar;
       if (data.myName) state.myName = data.myName;
       if (data.chatBg) state.chatBg = data.chatBg;
+      if (data.momentsCover) state.momentsCover = data.momentsCover;
       if (data.wordCards) WordCards.save(data.wordCards);
       if (data.aiConfig) saveAIConfig(data.aiConfig);
       persist();
@@ -924,7 +977,7 @@ function bindNavButtons() {
   document.getElementById('backFromChat')?.addEventListener('click', () => popPage());
   document.getElementById('backFromMoments')?.addEventListener('click', () => popPage());
   document.getElementById('backFromSettings')?.addEventListener('click', () => popPage());
-  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); pushPage('page-moments'); });
+  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); renderMomentsProfile(); pushPage('page-moments'); });
   document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); pushPage('page-settings'); });
   document.getElementById('btnChatSettings')?.addEventListener('click', openChatSettings);
   document.getElementById('chatSettingsClose')?.addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
@@ -948,7 +1001,8 @@ function bindCloudSync() {
     saveCurrentCloudForm();
     const ok = await cloudUpload({
       contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
-      avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
+      avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
+      chatBg: state.chatBg, momentsCover: state.momentsCover,
       wordCards: WordCards.getAll()
     });
     alert(ok ? '已上传到云端' : '上传失败，请检查房间ID是否已填写、开关是否已打开');
@@ -1058,10 +1112,13 @@ async function init() {
   safeStep('renderChatList', renderChatList);
   safeStep('renderContactList', renderContactList);
   safeStep('renderMoments', renderMoments);
+  safeStep('renderMomentsProfile', renderMomentsProfile);
   safeStep('bindListDelegation-chat', () => bindListDelegation('chatListItems'));
   safeStep('bindListDelegation-contacts', () => bindListDelegation('contactListItems'));
   safeStep('bindMsgListDelegation', bindMsgListDelegation);
   safeStep('bindMomentsDelegation', bindMomentsDelegation);
+  safeStep('bindMomentsProfile', bindMomentsProfile);
+  safeStep('bindDiscoverPlaceholders', bindDiscoverPlaceholders);
   safeStep('bindSheetClose', bindSheetClose);
   safeStep('bindWordCardSheet', bindWordCardSheet);
   safeStep('bindAddMenu', bindAddMenu);
