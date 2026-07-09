@@ -53,6 +53,7 @@ const state = {
   batchTimer: {}
 };
 
+let _cloudSyncTimer = null;
 function persist() {
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
@@ -61,6 +62,42 @@ function persist() {
   safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
   safeSetItem(STORE.myName, state.myName || '塔罗世界的我');
+  safeSetItem(STORE.chatBg, state.chatBg || '');
+
+  clearTimeout(_cloudSyncTimer);
+  _cloudSyncTimer = setTimeout(() => {
+    const cfg = getCloudConfig();
+    if (cfg.enabled) {
+      cloudUpload({
+        contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
+        avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
+        wordCards: WordCards.getAll()
+      });
+    }
+  }, 2000);
+}
+
+async function tryCloudLoadOnStartup() {
+  const cfg = getCloudConfig();
+  if (!cfg.enabled) return;
+  const cloudData = await cloudDownload();
+  if (!cloudData) return;
+  if (cloudData.contacts) state.contacts = cloudData.contacts;
+  if (cloudData.groups) state.groups = cloudData.groups;
+  if (cloudData.chats) state.chats = cloudData.chats;
+  if (cloudData.moments) state.moments = cloudData.moments;
+  if (cloudData.avatarLibrary) state.avatarLibrary = cloudData.avatarLibrary;
+  if (cloudData.myAvatar) state.myAvatar = cloudData.myAvatar;
+  if (cloudData.myName) state.myName = cloudData.myName;
+  if (cloudData.chatBg) state.chatBg = cloudData.chatBg;
+  if (cloudData.wordCards) WordCards.save(cloudData.wordCards);
+  safeSaveJSON(STORE.contacts, state.contacts);
+  safeSaveJSON(STORE.groups, state.groups);
+  safeSaveJSON(STORE.chats, state.chats);
+  safeSaveJSON(STORE.moments, state.moments);
+  safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
+  safeSetItem(STORE.myAvatar, state.myAvatar || '');
+  safeSetItem(STORE.myName, state.myName || '');
   safeSetItem(STORE.chatBg, state.chatBg || '');
 }
 
@@ -78,7 +115,7 @@ function avatarHtml(dataUrl, name, size = 40) {
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
 }
 
-/* ============ 导航：Tab切换 + 子页面push/pop动画 + 左滑返回 ============ */
+/* ============ 导航 ============ */
 let navStack = ['page-chatlist'];
 
 function showPage(id) {
@@ -450,7 +487,7 @@ async function aiAutoPostMoment() {
   const cards = drawCards(3);
   const pool = WordCards.getForContact(contact);
   const picks = await interpretAndReply('(发一条朋友圈)', cards, pool, contact.persona);
-  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content: picks.join(' '), cards, ts: Date.now(), comments: [] });
+  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content: picks.join(' '), image: null, cards, ts: Date.now(), comments: [] });
   persist(); renderMoments();
 }
 async function aiAutoChangeAvatar() {
@@ -475,7 +512,7 @@ setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } c
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
-/* ============ 朋友圈 ============ */
+/* ============ 朋友圈：展示 + 用户发朋友圈 + AI评论 ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
@@ -484,7 +521,8 @@ function renderMoments() {
       ${avatarHtml(m.avatar, m.name, 44)}
       <div class="moment-body">
         <div class="mname">${escapeHtml(m.name)}</div>
-        <div class="content">${escapeHtml(m.content)}</div>
+        ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
+        ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
         <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span><span class="comment-btn" data-toggle-comment="${m.id}">评论</span></div>
         ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
         <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
@@ -503,6 +541,72 @@ function bindMomentsDelegation() {
       if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
     }
   });
+}
+
+let _postMomentImage = null;
+
+function bindPostMoment() {
+  document.getElementById('btnPostMoment')?.addEventListener('click', () => {
+    document.getElementById('postMomentText').value = '';
+    document.getElementById('postMomentImgPreview').innerHTML = '';
+    _postMomentImage = null;
+    document.getElementById('postMomentSheet').classList.remove('hidden');
+  });
+  document.getElementById('postMomentCancel')?.addEventListener('click', () => {
+    document.getElementById('postMomentSheet').classList.add('hidden');
+  });
+  document.getElementById('postMomentAddImgBtn')?.addEventListener('click', () => {
+    document.getElementById('postMomentImgInput').click();
+  });
+  document.getElementById('postMomentImgInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      _postMomentImage = ev.target.result;
+      document.getElementById('postMomentImgPreview').innerHTML = `<img src="${_postMomentImage}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;">`;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+  document.getElementById('postMomentConfirm')?.addEventListener('click', () => {
+    const text = document.getElementById('postMomentText').value.trim();
+    if (!text && !_postMomentImage) { alert('写点什么或加张图吧'); return; }
+    const moment = {
+      id: Date.now(),
+      contactId: 'me',
+      name: state.myName || '我',
+      avatar: state.myAvatar,
+      content: text,
+      image: _postMomentImage,
+      ts: Date.now(),
+      comments: []
+    };
+    state.moments.unshift(moment);
+    persist();
+    renderMoments();
+    document.getElementById('postMomentSheet').classList.add('hidden');
+
+    if (state.contacts.length) {
+      const commenterCount = Math.min(state.contacts.length, 1 + secureRandomInt(2));
+      const shuffled = [...state.contacts].sort(() => secureRandomInt(2) - 0.5);
+      shuffled.slice(0, commenterCount).forEach((contact, i) => {
+        setTimeout(() => aiCommentOnUserMoment(moment.id, contact.id), 2000 + i * 2500 + secureRandomInt(3000));
+      });
+    }
+  });
+}
+
+async function aiCommentOnUserMoment(momentId, contactId) {
+  const moment = state.moments.find(m => m.id === momentId);
+  const contact = getContactById(contactId);
+  if (!moment || !contact) return;
+  const cards = drawCards(3);
+  const pool = WordCards.getForContact(contact);
+  const picks = await interpretAndReply(`(看到我发的朋友圈：${moment.content})`, cards, pool, contact.persona);
+  moment.comments = moment.comments || [];
+  moment.comments.push({ from: contact.name, text: picks.join(' '), cards });
+  persist();
+  renderMoments();
 }
 
 /* ============ 红包 ============ */
@@ -654,7 +758,7 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置（用事件委托一次绑定，避免重复监听导致卡顿） ============ */
+/* ============ 聊天设置 ============ */
 let chatSettingsTarget = null;
 
 function openChatSettings() {
@@ -828,6 +932,35 @@ function bindNavButtons() {
 }
 
 /* ============ 设置表单 ============ */
+function loadCloudSettingsForm() {
+  const cfg = getCloudConfig();
+  document.getElementById('cfgCloudEnabled').checked = cfg.enabled;
+  document.getElementById('cfgRoomId').value = cfg.roomId;
+}
+function saveCurrentCloudForm() {
+  saveCloudConfig({
+    enabled: document.getElementById('cfgCloudEnabled').checked,
+    roomId: document.getElementById('cfgRoomId').value.trim()
+  });
+}
+function bindCloudSync() {
+  document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
+    saveCurrentCloudForm();
+    const ok = await cloudUpload({
+      contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
+      avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg,
+      wordCards: WordCards.getAll()
+    });
+    alert(ok ? '已上传到云端' : '上传失败，请检查房间ID是否已填写、开关是否已打开');
+  });
+  document.getElementById('cloudDownloadBtn')?.addEventListener('click', async () => {
+    saveCurrentCloudForm();
+    await tryCloudLoadOnStartup();
+    alert('已从云端下载并覆盖本地数据，即将刷新');
+    location.reload();
+  });
+}
+
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -843,6 +976,7 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
+  loadCloudSettingsForm();
 }
 function bindSettingsSave() {
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
@@ -861,11 +995,12 @@ function bindSettingsSave() {
       autoAvatar: document.getElementById('cfgAutoAvatar').checked,
       autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
     });
+    saveCurrentCloudForm();
     alert('已保存');
   });
 }
 
-/* ============ 输入框（含发送按钮）& 语音输入 ============ */
+/* ============ 输入框 & 语音输入 ============ */
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
@@ -914,8 +1049,10 @@ function bindInputBar() {
 
 /* ============ 初始化 ============ */
 function safeStep(name, fn) { try { fn(); } catch (e) { console.error(`[初始化失败: ${name}]`, e); } }
+async function safeStepAsync(name, fn) { try { await fn(); } catch (e) { console.error(`[初始化失败: ${name}]`, e); } }
 
-function init() {
+async function init() {
+  await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
   safeStep('renderTabBars', renderTabBars);
   safeStep('renderMePage', renderMePage);
   safeStep('renderChatList', renderChatList);
@@ -941,6 +1078,8 @@ function init() {
   safeStep('bindChatBackground', bindChatBackground);
   safeStep('bindChatSettingsDelegation', bindChatSettingsDelegation);
   safeStep('bindSwipeBack', bindSwipeBack);
+  safeStep('bindCloudSync', bindCloudSync);
+  safeStep('bindPostMoment', bindPostMoment);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
