@@ -50,7 +50,7 @@ const state = {
   moments: safeLoadJSON(STORE.moments, []),
   avatarLibrary: safeLoadJSON(STORE.avatarLib, []),
   myAvatar: safeGetItem(STORE.myAvatar, null) || null,
-  myName: safeGetItem(STORE.myName, '塔罗世界的我') || '塔罗世界的我',
+  myName: safeGetItem(STORE.myName, '我') || '我',
   chatBg: safeGetItem(STORE.chatBg, null) || null,
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   activeChatId: null,
@@ -66,7 +66,7 @@ function persist() {
   safeSaveJSON(STORE.moments, state.moments);
   safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
-  safeSetItem(STORE.myName, state.myName || '塔罗世界的我');
+  safeSetItem(STORE.myName, state.myName || '我');
   safeSetItem(STORE.chatBg, state.chatBg || '');
   safeSetItem(STORE.momentsCover, state.momentsCover || '');
 
@@ -223,7 +223,7 @@ function renderTabBars() {
 /* ============ 我 页面 ============ */
 function renderMePage() {
   const nameEl = document.getElementById('pnameText');
-  if (nameEl) nameEl.textContent = state.myName || '塔罗世界的我';
+  if (nameEl) nameEl.textContent = state.myName || '我';
   const el = document.getElementById('meAvatar');
   if (!el) return;
   el.outerHTML = avatarHtml(state.myAvatar, state.myName || '我', 64).replace('class="avatar', 'id="meAvatar" class="avatar');
