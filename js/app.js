@@ -18,7 +18,6 @@
   window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
 
-  // 中断检测：如果换头像/发送流程中途被系统重载打断，下次打开明确提示
   window.addEventListener('DOMContentLoaded', () => {
     try {
       const marker = sessionStorage.getItem('__pending_op__');
@@ -140,14 +139,12 @@ function avatarHtml(dataUrl, name, size = 40) {
 
 /* ============ 导航 ============ */
 let navStack = ['page-chatlist'];
-
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => { p.classList.add('hidden'); p.style.transform=''; p.style.transition=''; p.style.zIndex=''; });
   document.getElementById(id)?.classList.remove('hidden');
 }
 function setActiveTab(tabName) { document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName)); }
 function switchTab(tabName, pageId) { navStack = [pageId]; showPage(pageId); setActiveTab(tabName); }
-
 function pushPage(id) {
   const next = document.getElementById(id);
   if (!next) return;
@@ -156,10 +153,7 @@ function pushPage(id) {
   next.style.transition = 'none';
   next.style.transform = 'translateX(100%)';
   void next.offsetWidth;
-  requestAnimationFrame(() => {
-    next.style.transition = 'transform 0.3s cubic-bezier(.25,.46,.45,.94)';
-    next.style.transform = 'translateX(0)';
-  });
+  requestAnimationFrame(() => { next.style.transition = 'transform 0.3s cubic-bezier(.25,.46,.45,.94)'; next.style.transform = 'translateX(0)'; });
   navStack.push(id);
 }
 function popPage() {
@@ -259,9 +253,7 @@ function bindChatBackground() {
     reader.readAsDataURL(file);
     e.target.value = '';
   });
-  document.getElementById('rowChatBgClear')?.addEventListener('click', () => {
-    state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景');
-  });
+  document.getElementById('rowChatBgClear')?.addEventListener('click', () => { state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景'); });
 }
 
 /* ============ 朋友圈封面 + 头像 + 名字 ============ */
@@ -274,10 +266,9 @@ function renderMomentsProfile() {
   if (avatarEl) {
     avatarEl.style.backgroundImage = state.myAvatar ? `url('${state.myAvatar}')` : '';
     avatarEl.style.backgroundColor = state.myAvatar ? 'transparent' : hashColor(state.myName || '我');
-    avatarEl.style.backgroundSize = 'cover';
-    avatarEl.style.backgroundPosition = 'center';
+    avatarEl.style.backgroundSize = 'cover'; avatarEl.style.backgroundPosition = 'center';
     if (!state.myAvatar) {
-      avatarEl.textContent = (state.myName || '我').slice(0, 1);
+      avatarEl.textContent = (state.myName || '我').slice(0,1);
       avatarEl.style.display = 'flex'; avatarEl.style.alignItems = 'center'; avatarEl.style.justifyContent = 'center';
       avatarEl.style.color = '#fff'; avatarEl.style.fontSize = '22px'; avatarEl.style.fontWeight = '600';
     } else avatarEl.textContent = '';
@@ -294,7 +285,6 @@ function bindMomentsProfile() {
   });
   document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); });
 }
-
 function bindDiscoverPlaceholders() {
   document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
   document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
@@ -396,9 +386,10 @@ function renderMessages() {
       </div>`;
     } else if (m.type === 'call') {
       const isVideo = m.callType === 'video';
-      bubbleHtml = `<div class="bubble call">
+      const hasLog = m.callChatLog && m.callChatLog.length;
+      bubbleHtml = `<div class="bubble call" ${hasLog ? `data-calllog="${m.id}"` : ''}>
         <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
-        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
+        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div>${hasLog ? '<div class="call-bubble-loghint">点击查看对话内容</div>' : ''}</div>
       </div>`;
     } else if (m.voiceUrl) {
       bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
@@ -432,7 +423,9 @@ function bindMsgListDelegation() {
     const rpEl = e.target.closest('[data-redpacket]');
     if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
     const locEl = e.target.closest('[data-location]');
-    if (locEl) openViewLocation(locEl.dataset.location);
+    if (locEl) { openViewLocation(locEl.dataset.location); return; }
+    const callLogEl = e.target.closest('[data-calllog]');
+    if (callLogEl) openCallLogView(callLogEl.dataset.calllog);
   });
 }
 
@@ -534,7 +527,7 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============ 换头像（防御性加固 + 中断标记） ============ */
+/* ============ 换头像（防御性加固） ============ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -627,7 +620,19 @@ function bindViewLocation() {
   document.getElementById('viewLocationClose')?.addEventListener('click', () => document.getElementById('viewLocationSheet').classList.add('hidden'));
 }
 
-/* ============ 通话系统 ============ */
+/* ============ 查看通话中的文字记录 ============ */
+function openCallLogView(msgId) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
+  if (!msg || !msg.callChatLog) return;
+  const box = document.getElementById('callLogViewList');
+  box.innerHTML = msg.callChatLog.map(e => `<div class="call-log-view-line"><span class="who">${e.from === 'me' ? (state.myName||'我') : '对方'}：</span>${escapeHtml(e.text)}</div>`).join('') || '<div style="color:#999;text-align:center;padding:20px;">没有对话记录</div>';
+  document.getElementById('callLogViewSheet').classList.remove('hidden');
+}
+function bindCallLogView() {
+  document.getElementById('callLogViewClose')?.addEventListener('click', () => document.getElementById('callLogViewSheet').classList.add('hidden'));
+}
+
+/* ============ 通话系统（含通话内文字/语音对话） ============ */
 let _callLocalStream = null;
 let _callTimer = null;
 let _callSeconds = 0;
@@ -635,58 +640,109 @@ let _callMuted = false;
 let _callSpeakerOn = false;
 let _callActiveContact = null;
 let _callActiveType = 'voice';
-let _callMinimized = false;
+let _callChatLog = [];
+let _callRecognizer = null;
+
+function initCallRecognizer() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.lang = 'zh-CN';
+  r.continuous = false;
+  r.onresult = ev => {
+    const text = ev.results[0][0]?.transcript;
+    if (text) sendDuringCall(text);
+  };
+  r.onerror = () => document.getElementById('callVoiceHoldBtn')?.classList.remove('active');
+  r.onend = () => document.getElementById('callVoiceHoldBtn')?.classList.remove('active');
+  return r;
+}
+
+function addCallLogEntry(from, text) {
+  _callChatLog.push({ from, text, ts: Date.now() });
+  renderCallLogBox();
+}
+function renderCallLogBox() {
+  const box = document.getElementById('callChatLogBox');
+  if (!box) return;
+  box.innerHTML = _callChatLog.map(e => `<div class="call-log-line ${e.from === 'me' ? 'me' : ''}">${escapeHtml(e.text)}</div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendDuringCall(text) {
+  if (!text || !text.trim() || !_callActiveContact) return;
+  addCallLogEntry('me', text.trim());
+  const contact = _callActiveContact;
+  const cards = drawCards(3);
+  const pool = WordCards.getForContact(contact);
+  const picks = await interpretAndReply(text.trim(), cards, pool, contact.persona);
+  const replyText = picks.join(' ');
+  addCallLogEntry('contact', replyText);
+  const cfg = getAIConfig();
+  if (cfg.voiceEnabled) {
+    const voiceUrl = await synthesizeVoice(replyText);
+    if (voiceUrl) { const audio = new Audio(voiceUrl); audio.play().catch(()=>{}); }
+  }
+}
+
+function renderCallRemoteMedia(contact, type) {
+  const remoteArea = document.getElementById('callRemoteArea');
+  remoteArea.innerHTML = '';
+  if (type === 'video' && contact.callMedia) {
+    if (contact.callMediaType === 'video') remoteArea.innerHTML = `<video id="callRemoteVideo" autoplay loop muted playsinline src="${contact.callMedia}"></video>`;
+    else remoteArea.innerHTML = `<img src="${contact.callMedia}">`;
+  } else {
+    const circle = document.createElement('div');
+    circle.className = 'call-remote-circle';
+    if (contact.avatar) { circle.style.backgroundImage = `url('${contact.avatar}')`; circle.style.backgroundSize='cover'; circle.style.backgroundPosition='center'; circle.textContent=''; }
+    else { circle.style.background = hashColor(contact.name); circle.textContent = contact.name.slice(0,1); }
+    const ring1 = document.createElement('div'); ring1.className = 'call-pulse-ring';
+    const ring2 = document.createElement('div'); ring2.className = 'call-pulse-ring'; ring2.style.animationDelay = '1s';
+    remoteArea.appendChild(ring1); remoteArea.appendChild(ring2); remoteArea.appendChild(circle);
+  }
+  if (type === 'video') {
+    const uploadBtn = document.createElement('div');
+    uploadBtn.className = 'call-remote-upload-btn';
+    uploadBtn.id = 'callRemoteUploadBtnDynamic';
+    uploadBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+    remoteArea.appendChild(uploadBtn);
+    if (!contact.callMedia) {
+      const hint = document.createElement('div');
+      hint.className = 'call-remote-upload-hint';
+      hint.textContent = '上传对方的形象(图片/视频)';
+      remoteArea.appendChild(hint);
+    }
+  }
+}
 
 async function openCallOverlay(type, contact) {
   if (!contact) { alert('请先选择一个角色'); return; }
   _callActiveContact = contact; _callActiveType = type;
-  _callSeconds = 0; _callMuted = false; _callSpeakerOn = false; _callMinimized = false;
+  _callSeconds = 0; _callMuted = false; _callSpeakerOn = false; _callChatLog = [];
   document.getElementById('callMuteBtn').classList.remove('active');
   document.getElementById('callSpeakerBtn').classList.remove('active');
   document.getElementById('callTextChat').classList.add('hidden');
   document.getElementById('callMiniPill').classList.add('hidden');
+  renderCallLogBox();
 
   document.getElementById('callTypeLabel').textContent = type === 'video' ? '视频通话' : '语音通话';
   document.getElementById('callName').textContent = contact.name;
   document.getElementById('callStatus').textContent = '正在呼叫...';
 
-  const remoteArea = document.getElementById('callRemoteArea');
-  remoteArea.innerHTML = '';
-  if (type === 'video' && contact.callMedia) {
-    if (contact.callMediaType === 'video') {
-      remoteArea.innerHTML = `<video id="callRemoteVideo" autoplay loop muted playsinline src="${contact.callMedia}"></video>`;
-    } else {
-      remoteArea.innerHTML = `<img src="${contact.callMedia}">`;
-    }
-  } else {
-    const circle = document.createElement('div');
-    circle.className = 'call-remote-circle';
-    circle.style.background = contact.avatar ? 'transparent' : hashColor(contact.name);
-    if (contact.avatar) {
-      circle.style.backgroundImage = `url('${contact.avatar}')`;
-      circle.style.backgroundSize = 'cover'; circle.style.backgroundPosition = 'center';
-      circle.textContent = '';
-    } else circle.textContent = contact.name.slice(0,1);
-    const ring1 = document.createElement('div'); ring1.className = 'call-pulse-ring';
-    const ring2 = document.createElement('div'); ring2.className = 'call-pulse-ring'; ring2.style.animationDelay = '1s';
-    remoteArea.appendChild(ring1); remoteArea.appendChild(ring2); remoteArea.appendChild(circle);
-  }
+  renderCallRemoteMedia(contact, type);
 
   const localPreview = document.getElementById('callLocalPreview');
   if (type === 'video') {
     localPreview.classList.remove('hidden');
-    try {
-      _callLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      document.getElementById('callLocalVideo').srcObject = _callLocalStream;
-    } catch (e) {
-      console.warn('摄像头/麦克风获取失败', e);
-      localPreview.classList.add('hidden');
-    }
+    try { _callLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); document.getElementById('callLocalVideo').srcObject = _callLocalStream; }
+    catch (e) { console.warn('摄像头/麦克风获取失败', e); localPreview.classList.add('hidden'); }
   } else {
     localPreview.classList.add('hidden');
     try { _callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
   }
+
+  _callRecognizer = initCallRecognizer();
 
   document.getElementById('callOverlay').classList.remove('hidden');
   clearInterval(_callTimer);
@@ -707,19 +763,18 @@ async function openCallOverlay(type, contact) {
 function closeCallOverlay() {
   clearInterval(_callTimer);
   if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
+  if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e) {} _callRecognizer = null; }
   document.getElementById('callOverlay').classList.add('hidden');
   document.getElementById('callMiniPill').classList.add('hidden');
   const chatId = state.activeChatId;
   if (chatId && _callSeconds >= 1) {
     const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
     const durationText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    addMessage(chatId, 'me', '', { type:'call', callType: _callActiveType, callDurationText: durationText });
+    addMessage(chatId, 'me', '', { type:'call', callType: _callActiveType, callDurationText: durationText, callChatLog: _callChatLog.length ? [..._callChatLog] : null });
   }
-  _callSeconds = 0; _callActiveContact = null;
+  _callSeconds = 0; _callActiveContact = null; _callChatLog = [];
 }
-
 function minimizeCall() {
-  _callMinimized = true;
   document.getElementById('callOverlay').classList.add('hidden');
   const pill = document.getElementById('callMiniPill');
   const pillAvatar = document.getElementById('callMiniPillAvatar');
@@ -729,11 +784,7 @@ function minimizeCall() {
   }
   pill.classList.remove('hidden');
 }
-function restoreCall() {
-  _callMinimized = false;
-  document.getElementById('callMiniPill').classList.add('hidden');
-  document.getElementById('callOverlay').classList.remove('hidden');
-}
+function restoreCall() { document.getElementById('callMiniPill').classList.add('hidden'); document.getElementById('callOverlay').classList.remove('hidden'); }
 
 function bindCallOverlay() {
   document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
@@ -750,15 +801,39 @@ function bindCallOverlay() {
     const remoteVideo = document.getElementById('callRemoteVideo');
     if (remoteVideo) remoteVideo.muted = !_callSpeakerOn;
   });
-  document.getElementById('callKeyboardBtn')?.addEventListener('click', () => {
-    document.getElementById('callTextChat').classList.toggle('hidden');
-  });
+  document.getElementById('callKeyboardBtn')?.addEventListener('click', () => document.getElementById('callTextChat').classList.toggle('hidden'));
   document.getElementById('callTextSendBtn')?.addEventListener('click', () => {
     const input = document.getElementById('callTextInput');
-    if (input.value.trim()) { handleSend(input.value.trim()); input.value = ''; }
+    if (input.value.trim()) { sendDuringCall(input.value.trim()); input.value = ''; }
   });
   document.getElementById('callTextInput')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.value.trim()) { handleSend(e.target.value.trim()); e.target.value = ''; }
+    if (e.key === 'Enter' && e.target.value.trim()) { sendDuringCall(e.target.value.trim()); e.target.value = ''; }
+  });
+  const voiceHoldBtn = document.getElementById('callVoiceHoldBtn');
+  voiceHoldBtn?.addEventListener('pointerdown', () => {
+    voiceHoldBtn.classList.add('active');
+    if (_callRecognizer) { try { _callRecognizer.start(); } catch(e){} }
+    else alert('当前浏览器不支持语音识别，请使用键盘打字');
+  });
+  const stopVoiceHold = () => { voiceHoldBtn?.classList.remove('active'); if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e){} } };
+  voiceHoldBtn?.addEventListener('pointerup', stopVoiceHold);
+  voiceHoldBtn?.addEventListener('pointerleave', stopVoiceHold);
+
+  document.getElementById('callRemoteArea')?.addEventListener('click', e => {
+    if (e.target.closest('#callRemoteUploadBtnDynamic')) document.getElementById('callInCallMediaFileInput').click();
+  });
+  document.getElementById('callInCallMediaFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file || !_callActiveContact) return;
+    const isVideo = file.type.startsWith('video/');
+    const reader = new FileReader();
+    reader.onload = ev => {
+      _callActiveContact.callMedia = ev.target.result;
+      _callActiveContact.callMediaType = isVideo ? 'video' : 'image';
+      persist();
+      renderCallRemoteMedia(_callActiveContact, _callActiveType);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   });
 }
 
@@ -1386,6 +1461,7 @@ async function init() {
   safeStep('bindCallOverlay', bindCallOverlay);
   safeStep('bindLocationPicker', bindLocationPicker);
   safeStep('bindViewLocation', bindViewLocation);
+  safeStep('bindCallLogView', bindCallLogView);
   safeStep('bindAddMenu', bindAddMenu);
   safeStep('bindAddContact', bindAddContact);
   safeStep('bindAddGroup', bindAddGroup);
