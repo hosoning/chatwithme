@@ -17,7 +17,20 @@
   window.addEventListener('DOMContentLoaded', createBanner);
   window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
+
+  // 中断检测：如果换头像/发送流程中途被系统重载打断，下次打开明确提示
+  window.addEventListener('DOMContentLoaded', () => {
+    try {
+      const marker = sessionStorage.getItem('__pending_op__');
+      if (marker) {
+        setTimeout(() => showError(`上次操作（${marker}）进行到一半时页面被重新加载了，很可能是系统内存不足自动刷新造成的（尤其在低电量模式下更容易发生），不是逻辑错误。建议关闭低电量模式后重试。`), 800);
+        sessionStorage.removeItem('__pending_op__');
+      }
+    } catch(e) {}
+  });
 })();
+function markOpStart(name) { try { sessionStorage.setItem('__pending_op__', name); } catch(e) {} }
+function markOpDone() { try { sessionStorage.removeItem('__pending_op__'); } catch(e) {} }
 
 /* ============ 安全存储 ============ */
 function safeLoadJSON(key, def) {
@@ -133,12 +146,7 @@ function showPage(id) {
   document.getElementById(id)?.classList.remove('hidden');
 }
 function setActiveTab(tabName) { document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName)); }
-
-function switchTab(tabName, pageId) {
-  navStack = [pageId];
-  showPage(pageId);
-  setActiveTab(tabName);
-}
+function switchTab(tabName, pageId) { navStack = [pageId]; showPage(pageId); setActiveTab(tabName); }
 
 function pushPage(id) {
   const next = document.getElementById(id);
@@ -154,7 +162,6 @@ function pushPage(id) {
   });
   navStack.push(id);
 }
-
 function popPage() {
   if (navStack.length <= 1) return;
   const topId = navStack.pop();
@@ -162,12 +169,8 @@ function popPage() {
   if (!top) return;
   top.style.transition = 'transform 0.28s cubic-bezier(.25,.46,.45,.94)';
   top.style.transform = 'translateX(100%)';
-  setTimeout(() => {
-    top.classList.add('hidden');
-    top.style.transform = ''; top.style.transition = ''; top.style.zIndex = '';
-  }, 280);
+  setTimeout(() => { top.classList.add('hidden'); top.style.transform=''; top.style.transition=''; top.style.zIndex=''; }, 280);
 }
-
 function bindSwipeBack() {
   const appEl = document.getElementById('app');
   if (!appEl) return;
@@ -199,9 +202,7 @@ function bindSwipeBack() {
       navStack.pop();
       const el = topEl;
       setTimeout(() => { el.classList.add('hidden'); el.style.transform=''; el.style.transition=''; el.style.zIndex=''; }, 250);
-    } else {
-      topEl.style.transform = 'translateX(0)';
-    }
+    } else topEl.style.transform = 'translateX(0)';
     topEl = null;
   });
 }
@@ -230,7 +231,6 @@ function renderMePage() {
   const newEl = document.getElementById('meAvatar');
   if (newEl) newEl.addEventListener('click', () => document.getElementById('myAvatarFileInput')?.click());
 }
-
 function bindEditName() {
   document.getElementById('editNameBtn')?.addEventListener('click', () => {
     document.getElementById('editNameInput').value = state.myName;
@@ -278,15 +278,9 @@ function renderMomentsProfile() {
     avatarEl.style.backgroundPosition = 'center';
     if (!state.myAvatar) {
       avatarEl.textContent = (state.myName || '我').slice(0, 1);
-      avatarEl.style.display = 'flex';
-      avatarEl.style.alignItems = 'center';
-      avatarEl.style.justifyContent = 'center';
-      avatarEl.style.color = '#fff';
-      avatarEl.style.fontSize = '22px';
-      avatarEl.style.fontWeight = '600';
-    } else {
-      avatarEl.textContent = '';
-    }
+      avatarEl.style.display = 'flex'; avatarEl.style.alignItems = 'center'; avatarEl.style.justifyContent = 'center';
+      avatarEl.style.color = '#fff'; avatarEl.style.fontSize = '22px'; avatarEl.style.fontWeight = '600';
+    } else avatarEl.textContent = '';
   }
 }
 function bindMomentsProfile() {
@@ -298,13 +292,9 @@ function bindMomentsProfile() {
     reader.readAsDataURL(file);
     e.target.value = '';
   });
-  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => {
-    popPage();
-    setTimeout(() => switchTab('me', 'page-me'), 0);
-  });
+  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); });
 }
 
-/* ============ 发现页占位功能 ============ */
 function bindDiscoverPlaceholders() {
   document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
   document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
@@ -327,6 +317,7 @@ function renderChatList() {
       if (last.type === 'redpacket') lastText = '[红包]';
       else if (last.type === 'image') lastText = '[图片]';
       else if (last.type === 'location') lastText = '[位置]';
+      else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
       else lastText = escapeHtml(last.text);
     }
     return `<div class="chat-item" data-id="${it.id}">
@@ -337,14 +328,12 @@ function renderChatList() {
       </div></div>`;
   }).join('');
 }
-
 function renderContactList() {
   const box = document.getElementById('contactListItems');
   if (!box) return;
   if (!state.contacts.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色</div>`; return; }
   box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 50)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
-
 function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
   if (!box) return;
@@ -401,9 +390,15 @@ function renderMessages() {
     } else if (m.type === 'image') {
       bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
     } else if (m.type === 'location') {
-      bubbleHtml = `<div class="bubble location">
-        <div class="location-map"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></div>
-        <div class="location-text">${escapeHtml(m.text || '我的位置')}</div>
+      bubbleHtml = `<div class="bubble location" data-location="${m.id}">
+        <div class="mini-map"><div class="map-pin" style="left:${m.locX}%;top:${m.locY}%;"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></div></div>
+        <div class="location-text">${escapeHtml(m.text || '位置')}</div>
+      </div>`;
+    } else if (m.type === 'call') {
+      const isVideo = m.callType === 'video';
+      bubbleHtml = `<div class="bubble call">
+        <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
+        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
     } else if (m.voiceUrl) {
       bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
@@ -435,7 +430,9 @@ function bindMsgListDelegation() {
       return;
     }
     const rpEl = e.target.closest('[data-redpacket]');
-    if (rpEl) openRedPacketDetail(rpEl.dataset.redpacket);
+    if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
+    const locEl = e.target.closest('[data-location]');
+    if (locEl) openViewLocation(locEl.dataset.location);
   });
 }
 
@@ -464,20 +461,13 @@ function addMessage(chatId, from, text, extra = {}) {
   renderChatList();
   return msg;
 }
-
 function sendImageMessage(dataUrl) {
-  const chatId = state.activeChatId;
-  if (!chatId) return;
+  const chatId = state.activeChatId; if (!chatId) return;
   addMessage(chatId, 'me', '[图片]', { type: 'image', image: dataUrl });
 }
 
-function sendLocationMessage() {
-  const chatId = state.activeChatId;
-  if (!chatId) return;
-  addMessage(chatId, 'me', '我的位置', { type: 'location' });
-}
-
 const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '改头像'];
+const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你现在在哪', '定位'];
 
 function handleSend(text) {
   const chatId = state.activeChatId;
@@ -489,6 +479,9 @@ function handleSend(text) {
       const g = getGroupById(chatId.slice(2));
       if (g?.memberIds?.length) requestAvatarChange(g.memberIds[secureRandomInt(g.memberIds.length)], chatId);
     } else requestAvatarChange(chatId, chatId);
+  }
+  if (LOCATION_ASK_KEYWORDS.some(k => text.includes(k)) && !isGroupChat(chatId)) {
+    setTimeout(() => contactShareLocation(chatId, chatId), 1200);
   }
 
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
@@ -512,7 +505,6 @@ async function replyWithTarot(chatId, fromId, text, persona) {
     addMessage(chatId, fromId, note, { type:'redpacket', cards, shieldCards, shield, redpacket:{ amount, note, status:'unclaimed', claimedBy:null } });
     return;
   }
-
   const picks = await interpretAndReply(text, cards, pool, persona);
   for (let i = 0; i < picks.length; i++) {
     await new Promise(r => setTimeout(r, 450));
@@ -520,7 +512,6 @@ async function replyWithTarot(chatId, fromId, text, persona) {
     addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
   }
 }
-
 async function processSingleBatch(contactId) {
   const batch = state.pendingBatch[contactId] || [];
   state.pendingBatch[contactId] = [];
@@ -529,7 +520,6 @@ async function processSingleBatch(contactId) {
   const groups = await groupMessages(batch);
   for (const group of groups) await replyWithTarot(contactId, contactId, group.join('；'), contact?.persona);
 }
-
 async function processGroupBatch(groupId) {
   const batch = state.pendingBatch[groupId] || [];
   state.pendingBatch[groupId] = [];
@@ -544,14 +534,7 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============ 换头像（这次做了防御性加固） ============
-   之前逻辑理论上没问题，但实测头像确实没有真正切换。
-   这次改动：
-   1. 设置 contact.avatar 之后，立刻主动调用 renderMessages / renderChatList / renderContactList，
-      不再依赖 addMessage 内部的自动渲染顺序（避免任何潜在的时序问题）。
-   2. 如果 pickAvatarFromCards 返回的对象没有 dataUrl（数据异常），
-      会明确提示"换头像失败"，不会再出现"提示已换但其实没换"的假象。
-==================================================== */
+/* ============ 换头像（防御性加固 + 中断标记） ============ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -559,71 +542,224 @@ async function requestAvatarChange(contactId, chatId) {
     addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦）', { systemNote: true });
     return;
   }
+  markOpStart('换头像');
   const cards = drawCards(3);
   const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
   if (!chosen || !chosen.dataUrl) {
     addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，试试重新上传一张）', { systemNote: true });
+    markOpDone();
     return;
   }
   contact.avatar = chosen.dataUrl;
   persist();
-  renderChatList();
-  renderContactList();
+  renderChatList(); renderContactList();
   if (chatId === state.activeChatId) renderMessages();
   addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
+  markOpDone();
 }
 
-/* ============ 模拟通话 ============ */
-let _activeCallTimer = null;
-let _activeCallSeconds = 0;
+/* ============ 位置分享 ============ */
+const PRESET_LOCATIONS = [
+  {name:'市中心广场', x:50, y:45}, {name:'滨海大道', x:78, y:70}, {name:'老城区', x:22, y:30},
+  {name:'科技产业园', x:65, y:20}, {name:'大学城', x:30, y:75}, {name:'国际机场', x:88, y:15},
+  {name:'中央车站', x:45, y:85}, {name:'中央公园', x:55, y:55}
+];
+function sendLocationMessageManual(name, x, y) {
+  const chatId = state.activeChatId; if (!chatId) return;
+  addMessage(chatId, 'me', name || '我的位置', { type: 'location', locX: x, locY: y });
+}
+async function contactShareLocation(contactId, chatId) {
+  const contact = getContactById(contactId);
+  if (!contact) return;
+  const loc = PRESET_LOCATIONS[secureRandomInt(PRESET_LOCATIONS.length)];
+  addMessage(chatId, contactId, loc.name, { type: 'location', locX: loc.x, locY: loc.y });
+}
+function openLocationPicker() {
+  const pin = document.getElementById('mapPickerPin');
+  pin.classList.add('hidden');
+  document.getElementById('locationNameInput').value = '';
+  const chips = document.getElementById('presetChips');
+  chips.innerHTML = PRESET_LOCATIONS.map((l,i) => `<div class="preset-chip" data-idx="${i}">${escapeHtml(l.name)}</div>`).join('');
+  document.getElementById('locationPickerSheet').dataset.x = '';
+  document.getElementById('locationPickerSheet').dataset.y = '';
+  document.getElementById('locationPickerSheet').classList.remove('hidden');
+}
+function bindLocationPicker() {
+  const canvas = document.getElementById('mapPickerCanvas');
+  const pin = document.getElementById('mapPickerPin');
+  const sheet = document.getElementById('locationPickerSheet');
+  canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(4, Math.min(96, ((e.clientY - rect.top) / rect.height) * 100));
+    pin.style.left = x + '%'; pin.style.top = y + '%'; pin.classList.remove('hidden');
+    sheet.dataset.x = x.toFixed(1); sheet.dataset.y = y.toFixed(1);
+    document.getElementById('locationNameInput').value = '自定义位置';
+    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+  });
+  document.getElementById('presetChips').addEventListener('click', e => {
+    const chip = e.target.closest('[data-idx]'); if (!chip) return;
+    const loc = PRESET_LOCATIONS[Number(chip.dataset.idx)];
+    pin.style.left = loc.x + '%'; pin.style.top = loc.y + '%'; pin.classList.remove('hidden');
+    sheet.dataset.x = loc.x; sheet.dataset.y = loc.y;
+    document.getElementById('locationNameInput').value = loc.name;
+    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+  document.getElementById('locationPickerCancel')?.addEventListener('click', () => sheet.classList.add('hidden'));
+  document.getElementById('locationPickerConfirm')?.addEventListener('click', () => {
+    const x = sheet.dataset.x, y = sheet.dataset.y;
+    if (!x || !y) { alert('请先在地图上点选一个位置'); return; }
+    const name = document.getElementById('locationNameInput').value.trim() || '我的位置';
+    sendLocationMessageManual(name, parseFloat(x), parseFloat(y));
+    sheet.classList.add('hidden');
+  });
+}
+function openViewLocation(msgId) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
+  if (!msg) return;
+  document.getElementById('viewLocationTitle').textContent = msg.text || '位置';
+  const pin = document.getElementById('viewLocationPin');
+  pin.style.left = msg.locX + '%'; pin.style.top = msg.locY + '%';
+  document.getElementById('viewLocationSheet').classList.remove('hidden');
+}
+function bindViewLocation() {
+  document.getElementById('viewLocationClose')?.addEventListener('click', () => document.getElementById('viewLocationSheet').classList.add('hidden'));
+}
 
-function openCallOverlay(type, contact) {
+/* ============ 通话系统 ============ */
+let _callLocalStream = null;
+let _callTimer = null;
+let _callSeconds = 0;
+let _callMuted = false;
+let _callSpeakerOn = false;
+let _callActiveContact = null;
+let _callActiveType = 'voice';
+let _callMinimized = false;
+
+async function openCallOverlay(type, contact) {
   if (!contact) { alert('请先选择一个角色'); return; }
-  const avatarEl = document.getElementById('callAvatar');
-  avatarEl.style.backgroundImage = contact.avatar ? `url('${contact.avatar}')` : '';
-  avatarEl.style.backgroundColor = contact.avatar ? 'transparent' : hashColor(contact.name);
+  _callActiveContact = contact; _callActiveType = type;
+  _callSeconds = 0; _callMuted = false; _callSpeakerOn = false; _callMinimized = false;
+  document.getElementById('callMuteBtn').classList.remove('active');
+  document.getElementById('callSpeakerBtn').classList.remove('active');
+  document.getElementById('callTextChat').classList.add('hidden');
+  document.getElementById('callMiniPill').classList.add('hidden');
+
+  document.getElementById('callTypeLabel').textContent = type === 'video' ? '视频通话' : '语音通话';
   document.getElementById('callName').textContent = contact.name;
-  document.getElementById('callStatus').textContent = (type === 'video' ? '视频通话' : '语音通话') + ' 正在呼叫...';
-  const overlay = document.getElementById('callOverlay');
-  overlay.classList.remove('hidden');
-  overlay.dataset.type = type;
-  overlay.dataset.contactId = contact.id;
-  _activeCallSeconds = 0;
-  clearInterval(_activeCallTimer);
+  document.getElementById('callStatus').textContent = '正在呼叫...';
 
-  setTimeout(() => {
-    const statusEl = document.getElementById('callStatus');
-    if (statusEl && !overlay.classList.contains('hidden')) statusEl.textContent = '通话中 00:00';
-  }, 1600);
+  const remoteArea = document.getElementById('callRemoteArea');
+  remoteArea.innerHTML = '';
+  if (type === 'video' && contact.callMedia) {
+    if (contact.callMediaType === 'video') {
+      remoteArea.innerHTML = `<video id="callRemoteVideo" autoplay loop muted playsinline src="${contact.callMedia}"></video>`;
+    } else {
+      remoteArea.innerHTML = `<img src="${contact.callMedia}">`;
+    }
+  } else {
+    const circle = document.createElement('div');
+    circle.className = 'call-remote-circle';
+    circle.style.background = contact.avatar ? 'transparent' : hashColor(contact.name);
+    if (contact.avatar) {
+      circle.style.backgroundImage = `url('${contact.avatar}')`;
+      circle.style.backgroundSize = 'cover'; circle.style.backgroundPosition = 'center';
+      circle.textContent = '';
+    } else circle.textContent = contact.name.slice(0,1);
+    const ring1 = document.createElement('div'); ring1.className = 'call-pulse-ring';
+    const ring2 = document.createElement('div'); ring2.className = 'call-pulse-ring'; ring2.style.animationDelay = '1s';
+    remoteArea.appendChild(ring1); remoteArea.appendChild(ring2); remoteArea.appendChild(circle);
+  }
 
-  _activeCallTimer = setInterval(() => {
-    _activeCallSeconds++;
-    const statusEl = document.getElementById('callStatus');
-    if (statusEl && _activeCallSeconds >= 2) {
-      const m = Math.floor(_activeCallSeconds / 60);
-      const s = _activeCallSeconds % 60;
-      statusEl.textContent = `通话中 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  const localPreview = document.getElementById('callLocalPreview');
+  if (type === 'video') {
+    localPreview.classList.remove('hidden');
+    try {
+      _callLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById('callLocalVideo').srcObject = _callLocalStream;
+    } catch (e) {
+      console.warn('摄像头/麦克风获取失败', e);
+      localPreview.classList.add('hidden');
+    }
+  } else {
+    localPreview.classList.add('hidden');
+    try { _callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
+  }
+
+  document.getElementById('callOverlay').classList.remove('hidden');
+  clearInterval(_callTimer);
+  setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1500);
+  _callTimer = setInterval(() => {
+    _callSeconds++;
+    if (_callSeconds >= 2) {
+      const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
+      const label = `通话中 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      const statusEl = document.getElementById('callStatus');
+      if (statusEl) statusEl.textContent = label;
+      const pillText = document.getElementById('callMiniPillText');
+      if (pillText) pillText.textContent = label.replace('通话中 ', '通话 ');
     }
   }, 1000);
 }
 
 function closeCallOverlay() {
-  clearInterval(_activeCallTimer);
-  const overlay = document.getElementById('callOverlay');
-  const type = overlay.dataset.type;
-  overlay.classList.add('hidden');
+  clearInterval(_callTimer);
+  if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
+  document.getElementById('callOverlay').classList.add('hidden');
+  document.getElementById('callMiniPill').classList.add('hidden');
   const chatId = state.activeChatId;
-  if (chatId && _activeCallSeconds > 0) {
-    const m = Math.floor(_activeCallSeconds / 60);
-    const s = _activeCallSeconds % 60;
-    const label = type === 'video' ? '视频通话' : '语音通话';
-    addMessage(chatId, 'me', `${label}时长 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`, { systemNote: true });
+  if (chatId && _callSeconds >= 1) {
+    const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
+    const durationText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    addMessage(chatId, 'me', '', { type:'call', callType: _callActiveType, callDurationText: durationText });
   }
-  _activeCallSeconds = 0;
+  _callSeconds = 0; _callActiveContact = null;
+}
+
+function minimizeCall() {
+  _callMinimized = true;
+  document.getElementById('callOverlay').classList.add('hidden');
+  const pill = document.getElementById('callMiniPill');
+  const pillAvatar = document.getElementById('callMiniPillAvatar');
+  if (_callActiveContact) {
+    pillAvatar.style.backgroundImage = _callActiveContact.avatar ? `url('${_callActiveContact.avatar}')` : '';
+    pillAvatar.style.backgroundColor = _callActiveContact.avatar ? 'transparent' : hashColor(_callActiveContact.name);
+  }
+  pill.classList.remove('hidden');
+}
+function restoreCall() {
+  _callMinimized = false;
+  document.getElementById('callMiniPill').classList.add('hidden');
+  document.getElementById('callOverlay').classList.remove('hidden');
 }
 
 function bindCallOverlay() {
   document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
+  document.getElementById('callMinimizeBtn')?.addEventListener('click', minimizeCall);
+  document.getElementById('callMiniPill')?.addEventListener('click', restoreCall);
+  document.getElementById('callMuteBtn')?.addEventListener('click', () => {
+    _callMuted = !_callMuted;
+    document.getElementById('callMuteBtn').classList.toggle('active', _callMuted);
+    if (_callLocalStream) _callLocalStream.getAudioTracks().forEach(t => t.enabled = !_callMuted);
+  });
+  document.getElementById('callSpeakerBtn')?.addEventListener('click', () => {
+    _callSpeakerOn = !_callSpeakerOn;
+    document.getElementById('callSpeakerBtn').classList.toggle('active', _callSpeakerOn);
+    const remoteVideo = document.getElementById('callRemoteVideo');
+    if (remoteVideo) remoteVideo.muted = !_callSpeakerOn;
+  });
+  document.getElementById('callKeyboardBtn')?.addEventListener('click', () => {
+    document.getElementById('callTextChat').classList.toggle('hidden');
+  });
+  document.getElementById('callTextSendBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('callTextInput');
+    if (input.value.trim()) { handleSend(input.value.trim()); input.value = ''; }
+  });
+  document.getElementById('callTextInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.value.trim()) { handleSend(e.target.value.trim()); e.target.value = ''; }
+  });
 }
 
 /* ============ AI 自主行为 ============ */
@@ -655,20 +791,15 @@ function pickReplyingContactForMoment(moment) {
   const posterContact = getContactById(moment.contactId);
   if (posterContact) return posterContact;
   const priorCommenter = (moment.comments || []).slice().reverse().find(c => c.contactId);
-  if (priorCommenter) {
-    const c = getContactById(priorCommenter.contactId);
-    if (c) return c;
-  }
+  if (priorCommenter) { const c = getContactById(priorCommenter.contactId); if (c) return c; }
   if (state.contacts.length) return state.contacts[secureRandomInt(state.contacts.length)];
   return null;
 }
-
 async function aiReplyToMoment(momentId, userComment) {
   const moment = state.moments.find(m => m.id === momentId);
   if (!moment) return;
   moment.comments = moment.comments || [];
   moment.comments.push({ from: 'me', text: userComment });
-
   const contact = pickReplyingContactForMoment(moment);
   if (!contact) { persist(); renderMoments(); return; }
   const cards = drawCards(3);
@@ -677,12 +808,11 @@ async function aiReplyToMoment(momentId, userComment) {
   moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
   persist(); renderMoments();
 }
-
 setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
-/* ============ 朋友圈：展示 + 用户发朋友圈 + AI评论 ============ */
+/* ============ 朋友圈展示/发布 ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
@@ -712,9 +842,7 @@ function bindMomentsDelegation() {
     }
   });
 }
-
 let _postMomentImage = null;
-
 function bindPostMoment() {
   document.getElementById('btnPostMoment')?.addEventListener('click', () => {
     document.getElementById('postMomentText').value = '';
@@ -722,12 +850,8 @@ function bindPostMoment() {
     _postMomentImage = null;
     document.getElementById('postMomentSheet').classList.remove('hidden');
   });
-  document.getElementById('postMomentCancel')?.addEventListener('click', () => {
-    document.getElementById('postMomentSheet').classList.add('hidden');
-  });
-  document.getElementById('postMomentAddImgBtn')?.addEventListener('click', () => {
-    document.getElementById('postMomentImgInput').click();
-  });
+  document.getElementById('postMomentCancel')?.addEventListener('click', () => document.getElementById('postMomentSheet').classList.add('hidden'));
+  document.getElementById('postMomentAddImgBtn')?.addEventListener('click', () => document.getElementById('postMomentImgInput').click());
   document.getElementById('postMomentImgInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -741,21 +865,10 @@ function bindPostMoment() {
   document.getElementById('postMomentConfirm')?.addEventListener('click', () => {
     const text = document.getElementById('postMomentText').value.trim();
     if (!text && !_postMomentImage) { alert('写点什么或加张图吧'); return; }
-    const moment = {
-      id: Date.now(),
-      contactId: 'me',
-      name: state.myName || '我',
-      avatar: state.myAvatar,
-      content: text,
-      image: _postMomentImage,
-      ts: Date.now(),
-      comments: []
-    };
+    const moment = { id: Date.now(), contactId: 'me', name: state.myName || '我', avatar: state.myAvatar, content: text, image: _postMomentImage, ts: Date.now(), comments: [] };
     state.moments.unshift(moment);
-    persist();
-    renderMoments();
+    persist(); renderMoments();
     document.getElementById('postMomentSheet').classList.add('hidden');
-
     if (state.contacts.length) {
       const commenterCount = Math.min(state.contacts.length, 1 + secureRandomInt(2));
       const shuffled = [...state.contacts].sort(() => secureRandomInt(2) - 0.5);
@@ -765,7 +878,6 @@ function bindPostMoment() {
     }
   });
 }
-
 async function aiCommentOnUserMoment(momentId, contactId) {
   const moment = state.moments.find(m => m.id === momentId);
   const contact = getContactById(contactId);
@@ -775,8 +887,7 @@ async function aiCommentOnUserMoment(momentId, contactId) {
   const picks = await interpretAndReply(`(看到我发的朋友圈：${moment.content})`, cards, pool, contact.persona);
   moment.comments = moment.comments || [];
   moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
-  persist();
-  renderMoments();
+  persist(); renderMoments();
 }
 
 /* ============ 红包 ============ */
@@ -792,27 +903,22 @@ function bindRedPacket() {
     const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
     document.getElementById('sendRedPacketSheet').classList.add('hidden');
     document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
-
     setTimeout(() => {
       const list = state.chats[chatId] || [];
       const target = list.find(m => m.id === msg.id);
       if (!target || target.redpacket.status === 'claimed') return;
       let claimer;
-      if (isGroupChat(chatId)) {
-        const g = getGroupById(chatId.slice(2));
-        claimer = g?.memberIds?.[secureRandomInt(g.memberIds.length)];
-      } else claimer = chatId;
+      if (isGroupChat(chatId)) { const g = getGroupById(chatId.slice(2)); claimer = g?.memberIds?.[secureRandomInt(g.memberIds.length)]; }
+      else claimer = chatId;
       if (!claimer) return;
       const claimerName = getContactById(claimer)?.name || '对方';
-      target.redpacket.status = 'claimed';
-      target.redpacket.claimedBy = claimer;
+      target.redpacket.status = 'claimed'; target.redpacket.claimedBy = claimer;
       persist(); renderMessages();
       addMessage(chatId, claimer, `${claimerName} 领取了你的红包`, { systemNote: true });
       replyWithTarot(chatId, claimer, '(收到了你发的红包，表达感谢)', getContactById(claimer)?.persona);
     }, 1500 + secureRandomInt(3000));
   });
 }
-
 function openRedPacketDetail(msgId) {
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
@@ -824,7 +930,6 @@ function openRedPacketDetail(msgId) {
   const resultBox = document.getElementById('rpDetailResult');
   const midBox = document.getElementById('rpDetailMid');
   const amountShow = document.getElementById('rpAmountShow');
-
   if (msg.redpacket.status === 'claimed') {
     midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
     amountShow.textContent = `¥${msg.redpacket.amount}`;
@@ -843,7 +948,6 @@ function openRedPacketDetail(msgId) {
 
 /* ============ 塔罗弹层 & 字卡管理 ============ */
 function bindSheetClose() { document.getElementById('sheetClose')?.addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
-
 function renderWordCardList(contactId) {
   const list = contactId ? WordCards.getContactList(contactId) : WordCards.getAll();
   const box = document.getElementById('wordCardList');
@@ -875,70 +979,47 @@ function bindWordCardSheet() {
   });
 }
 
-/* ============ 底部"+"面板 & 发图片 & 表情包 & 通话 & 位置 ============ */
+/* ============ 底部"+"面板：图片/表情包/通话/位置 ============ */
 function bindPlusPanel() {
   const panel = document.getElementById('plusPanelInline');
-  document.getElementById('btnMore')?.addEventListener('click', () => {
-    panel?.classList.toggle('hidden');
-  });
+  document.getElementById('btnMore')?.addEventListener('click', () => panel?.classList.toggle('hidden'));
   document.getElementById('plusPanelGrid')?.addEventListener('click', e => {
-    const item = e.target.closest('[data-action]');
-    if (!item) return;
+    const item = e.target.closest('[data-action]'); if (!item) return;
     const action = item.dataset.action;
     panel?.classList.add('hidden');
     if (action === 'photo') document.getElementById('sendPhotoFileInput').click();
     else if (action === 'camera') document.getElementById('sendCameraFileInput').click();
     else if (action === 'redpacket') openSendRedPacket();
     else if (action === 'sticker') { renderStickerGrid(); document.getElementById('stickerPickerSheet').classList.remove('hidden'); }
-    else if (action === 'location') sendLocationMessage();
+    else if (action === 'location') openLocationPicker();
     else if (action === 'videocall' || action === 'voicecall') {
       const chatId = state.activeChatId;
       if (isGroupChat(chatId)) { alert('群聊暂不支持通话'); return; }
       const contact = getContactById(chatId);
       openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact);
-    }
-    else alert('该功能暂未开放');
+    } else alert('该功能暂未开放');
   });
   document.getElementById('sendPhotoFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => sendImageMessage(ev.target.result);
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
   });
   document.getElementById('sendCameraFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => sendImageMessage(ev.target.result);
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
   });
 }
-
 function renderStickerGrid() {
-  const grid = document.getElementById('stickerGrid');
-  if (!grid) return;
+  const grid = document.getElementById('stickerGrid'); if (!grid) return;
   const stickers = getStickers();
-  grid.innerHTML = stickers.map(s => `
-    <div class="avatar-lib-item" data-sticker-id="${s.id}">
-      <img src="${s.dataUrl}">
-      <div class="del-x" data-del-sticker="${s.id}">×</div>
-    </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:24px;font-size:13px;">还没有表情包，点下方按钮添加</div>';
+  grid.innerHTML = stickers.map(s => `<div class="avatar-lib-item" data-sticker-id="${s.id}"><img src="${s.dataUrl}"><div class="del-x" data-del-sticker="${s.id}">×</div></div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:24px;font-size:13px;">还没有表情包，点下方按钮添加</div>';
 }
 function bindStickerPicker() {
   document.getElementById('stickerAddBtn')?.addEventListener('click', () => document.getElementById('stickerFileInput').click());
   document.getElementById('stickerFileInput')?.addEventListener('change', e => {
-    const files = [...e.target.files];
-    let remaining = files.length;
+    const files = [...e.target.files]; let remaining = files.length;
     files.forEach(file => {
       const reader = new FileReader();
-      reader.onload = ev => {
-        const stickers = getStickers();
-        stickers.push({ id: Date.now() + Math.random(), dataUrl: ev.target.result });
-        saveStickers(stickers);
-        remaining--;
-        if (remaining === 0) renderStickerGrid();
-      };
+      reader.onload = ev => { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result }); saveStickers(stickers); remaining--; if (remaining===0) renderStickerGrid(); };
       reader.readAsDataURL(file);
     });
     e.target.value = '';
@@ -946,20 +1027,9 @@ function bindStickerPicker() {
   document.getElementById('stickerPickerClose')?.addEventListener('click', () => document.getElementById('stickerPickerSheet').classList.add('hidden'));
   document.getElementById('stickerGrid')?.addEventListener('click', e => {
     const del = e.target.closest('[data-del-sticker]');
-    if (del) {
-      const stickers = getStickers().filter(s => String(s.id) !== del.dataset.delSticker);
-      saveStickers(stickers);
-      renderStickerGrid();
-      return;
-    }
+    if (del) { const stickers = getStickers().filter(s => String(s.id) !== del.dataset.delSticker); saveStickers(stickers); renderStickerGrid(); return; }
     const item = e.target.closest('[data-sticker-id]');
-    if (item) {
-      const s = getStickers().find(x => String(x.id) === item.dataset.stickerId);
-      if (s) {
-        sendImageMessage(s.dataUrl);
-        document.getElementById('stickerPickerSheet').classList.add('hidden');
-      }
-    }
+    if (item) { const s = getStickers().find(x => String(x.id) === item.dataset.stickerId); if (s) { sendImageMessage(s.dataUrl); document.getElementById('stickerPickerSheet').classList.add('hidden'); } }
   });
 }
 
@@ -978,7 +1048,7 @@ function bindAddContact() {
     const name = document.getElementById('newContactName').value.trim();
     const persona = document.getElementById('newContactPersona').value.trim();
     if (!name) { alert('请输入昵称'); return; }
-    const contact = { id: Date.now(), name, persona, avatar: null, wordCardMode: 'global', customWordCards: [] };
+    const contact = { id: Date.now(), name, persona, avatar: null, wordCardMode: 'global', customWordCards: [], callMedia: null, callMediaType: null };
     state.contacts.push(contact); state.chats[String(contact.id)] = [];
     persist();
     document.getElementById('newContactName').value = ''; document.getElementById('newContactPersona').value = '';
@@ -988,8 +1058,7 @@ function bindAddContact() {
 }
 function openAddGroupSheet() {
   const box = document.getElementById('groupMemberChecklist');
-  box.innerHTML = state.contacts.map(c => `
-    <div class="wc-item"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" value="${c.id}" class="group-member-check"> ${escapeHtml(c.name)}</label></div>`).join('') || '<div style="padding:10px;color:#999;">还没有角色，请先添加角色</div>';
+  box.innerHTML = state.contacts.map(c => `<div class="wc-item"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" value="${c.id}" class="group-member-check"> ${escapeHtml(c.name)}</label></div>`).join('') || '<div style="padding:10px;color:#999;">还没有角色，请先添加角色</div>';
   document.getElementById('addGroupSheet').classList.remove('hidden');
 }
 function bindAddGroup() {
@@ -1009,9 +1078,8 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置 ============ */
+/* ============ 聊天设置（含通话形象上传） ============ */
 let chatSettingsTarget = null;
-
 function openChatSettings() {
   const chatId = state.activeChatId;
   if (!chatId) return;
@@ -1034,6 +1102,11 @@ function openChatSettings() {
       <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;">
         ${state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>'}
       </div>
+      <div class="settings-group-title">视频通话形象（图片或视频，可选）</div>
+      <div id="callMediaPreview" style="margin-bottom:8px;">${c.callMedia ? (c.callMediaType==='video' ? `<video src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;" muted loop autoplay playsinline></video>` : `<img src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;">`) : '<div style="color:#999;font-size:13px;">未设置，通话时将显示头像</div>'}</div>
+      <input type="file" id="callMediaFileInput" accept="image/*,video/*" class="hidden">
+      <div class="menu-row" id="uploadCallMediaBtn">上传通话形象</div>
+      ${c.callMedia ? '<div class="menu-row" id="removeCallMediaBtn" style="color:#fa5151;">移除通话形象</div>' : ''}
       <div class="settings-group-title">角色设定</div>
       <textarea id="editPersona" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;">${escapeHtml(c.persona || '')}</textarea>
       <div class="settings-group-title">字卡来源</div>
@@ -1043,7 +1116,6 @@ function openChatSettings() {
   }
   document.getElementById('chatSettingsSheet').classList.remove('hidden');
 }
-
 function bindChatSettingsDelegation() {
   const body = document.getElementById('chatSettingsBody');
   if (!body) return;
@@ -1056,10 +1128,14 @@ function bindChatSettingsDelegation() {
       if (c && a) { c.avatar = a.dataUrl; persist(); renderMessages(); renderChatList(); renderContactList(); alert('头像已更新'); }
       return;
     }
-    if (e.target.closest('#editContactCustomCards') && chatSettingsTarget.type === 'contact') {
-      openWordCardSheet(String(chatSettingsTarget.id));
+    if (e.target.closest('#uploadCallMediaBtn') && chatSettingsTarget.type === 'contact') { document.getElementById('callMediaFileInput').click(); return; }
+    if (e.target.closest('#removeCallMediaBtn') && chatSettingsTarget.type === 'contact') {
+      const c = getContactById(chatSettingsTarget.id);
+      if (c) { c.callMedia = null; c.callMediaType = null; persist(); }
+      openChatSettings();
       return;
     }
+    if (e.target.closest('#editContactCustomCards') && chatSettingsTarget.type === 'contact') { openWordCardSheet(String(chatSettingsTarget.id)); return; }
     if (e.target.closest('#savePersonaBtn') && chatSettingsTarget.type === 'contact') {
       const c = getContactById(chatSettingsTarget.id);
       if (c) {
@@ -1084,18 +1160,25 @@ function bindChatSettingsDelegation() {
       return;
     }
   });
+  document.getElementById('callMediaFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
+    const isVideo = file.type.startsWith('video/');
+    if (file.size > 8 * 1024 * 1024) { if (!confirm('文件较大，可能导致存储空间超限，是否继续？')) { e.target.value=''; return; } }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const c = getContactById(chatSettingsTarget.id);
+      if (c) { c.callMedia = ev.target.result; c.callMediaType = isVideo ? 'video' : 'image'; persist(); }
+      openChatSettings();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
 }
 
 /* ============ 头像库管理页 ============ */
 function renderAvatarLibGrid() {
-  const grid = document.getElementById('avatarLibGrid');
-  if (!grid) return;
-  grid.innerHTML = state.avatarLibrary.map(a => `
-    <div class="avatar-lib-item" data-id="${a.id}">
-      <img src="${a.dataUrl}">
-      <div class="del-x" data-del="${a.id}">×</div>
-      <input placeholder="标签(如:开心)" value="${escapeHtml(a.tag || '')}" data-tag="${a.id}">
-    </div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:30px;">还没有头像，点右上角 + 添加</div>';
+  const grid = document.getElementById('avatarLibGrid'); if (!grid) return;
+  grid.innerHTML = state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-id="${a.id}"><img src="${a.dataUrl}"><div class="del-x" data-del="${a.id}">×</div><input placeholder="标签(如:开心)" value="${escapeHtml(a.tag || '')}" data-tag="${a.id}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:30px;">还没有头像，点右上角 + 添加</div>';
 }
 function bindAvatarLib() {
   document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); pushPage('page-avatarlib'); });
@@ -1104,7 +1187,7 @@ function bindAvatarLib() {
   document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
     [...e.target.files].forEach(file => {
       const reader = new FileReader();
-      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now() + Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
+      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
       reader.readAsDataURL(file);
     });
     e.target.value = '';
@@ -1120,7 +1203,6 @@ function bindAvatarLib() {
   });
 }
 
-/* ============ 自己头像上传 ============ */
 function bindMyAvatarUpload() {
   document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
@@ -1140,8 +1222,7 @@ function exportData() {
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `塔罗对话备份_${Date.now()}.json`; a.click();
+  const a = document.createElement('a'); a.href = url; a.download = `塔罗对话备份_${Date.now()}.json`; a.click();
   URL.revokeObjectURL(url);
 }
 function importData(file) {
@@ -1191,21 +1272,11 @@ function loadCloudSettingsForm() {
   document.getElementById('cfgCloudEnabled').checked = cfg.enabled;
   document.getElementById('cfgRoomId').value = cfg.roomId;
 }
-function saveCurrentCloudForm() {
-  saveCloudConfig({
-    enabled: document.getElementById('cfgCloudEnabled').checked,
-    roomId: document.getElementById('cfgRoomId').value.trim()
-  });
-}
+function saveCurrentCloudForm() { saveCloudConfig({ enabled: document.getElementById('cfgCloudEnabled').checked, roomId: document.getElementById('cfgRoomId').value.trim() }); }
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
     saveCurrentCloudForm();
-    const ok = await cloudUpload({
-      contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
-      avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
-      chatBg: state.chatBg, momentsCover: state.momentsCover,
-      wordCards: WordCards.getAll(), stickers: getStickers()
-    });
+    const ok = await cloudUpload({ contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: WordCards.getAll(), stickers: getStickers() });
     alert(ok ? '已上传到云端' : '上传失败，请检查房间ID是否已填写、开关是否已打开');
   });
   document.getElementById('cloudDownloadBtn')?.addEventListener('click', async () => {
@@ -1215,7 +1286,6 @@ function bindCloudSync() {
     location.reload();
   });
 }
-
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -1263,24 +1333,12 @@ function bindInputBar() {
   const moreBtn = document.getElementById('btnMore');
   const sendBtn = document.getElementById('btnSend');
   if (!msgInput || !holdBtn || !micBtn || !moreBtn || !sendBtn) return;
-
-  function toggleSendBtn() {
-    const hasText = msgInput.value.trim().length > 0;
-    sendBtn.classList.toggle('hidden', !hasText);
-    moreBtn.classList.toggle('hidden', hasText);
-  }
-  function doSend() {
-    if (!msgInput.value.trim()) return;
-    handleSend(msgInput.value);
-    msgInput.value = '';
-    toggleSendBtn();
-  }
-
+  function toggleSendBtn() { const hasText = msgInput.value.trim().length > 0; sendBtn.classList.toggle('hidden', !hasText); moreBtn.classList.toggle('hidden', hasText); }
+  function doSend() { if (!msgInput.value.trim()) return; handleSend(msgInput.value); msgInput.value = ''; toggleSendBtn(); }
   msgInput.addEventListener('input', toggleSendBtn);
   msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
   msgInput.addEventListener('focus', () => document.getElementById('plusPanelInline')?.classList.add('hidden'));
   sendBtn.addEventListener('click', doSend);
-
   micBtn.addEventListener('click', () => {
     const enteringVoiceMode = !msgInput.classList.contains('hidden');
     msgInput.classList.toggle('hidden', enteringVoiceMode);
@@ -1289,7 +1347,6 @@ function bindInputBar() {
     if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
     else toggleSendBtn();
   });
-
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognizer = null;
   if (SR) {
@@ -1327,6 +1384,8 @@ async function init() {
   safeStep('bindPlusPanel', bindPlusPanel);
   safeStep('bindStickerPicker', bindStickerPicker);
   safeStep('bindCallOverlay', bindCallOverlay);
+  safeStep('bindLocationPicker', bindLocationPicker);
+  safeStep('bindViewLocation', bindViewLocation);
   safeStep('bindAddMenu', bindAddMenu);
   safeStep('bindAddContact', bindAddContact);
   safeStep('bindAddGroup', bindAddGroup);
