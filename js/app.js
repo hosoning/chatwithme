@@ -326,6 +326,7 @@ function renderChatList() {
     if (last) {
       if (last.type === 'redpacket') lastText = '[红包]';
       else if (last.type === 'image') lastText = '[图片]';
+      else if (last.type === 'location') lastText = '[位置]';
       else lastText = escapeHtml(last.text);
     }
     return `<div class="chat-item" data-id="${it.id}">
@@ -399,6 +400,11 @@ function renderMessages() {
       </div>`;
     } else if (m.type === 'image') {
       bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
+    } else if (m.type === 'location') {
+      bubbleHtml = `<div class="bubble location">
+        <div class="location-map"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></div>
+        <div class="location-text">${escapeHtml(m.text || '我的位置')}</div>
+      </div>`;
     } else if (m.voiceUrl) {
       bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
     } else {
@@ -463,6 +469,12 @@ function sendImageMessage(dataUrl) {
   const chatId = state.activeChatId;
   if (!chatId) return;
   addMessage(chatId, 'me', '[图片]', { type: 'image', image: dataUrl });
+}
+
+function sendLocationMessage() {
+  const chatId = state.activeChatId;
+  if (!chatId) return;
+  addMessage(chatId, 'me', '我的位置', { type: 'location' });
 }
 
 const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '改头像'];
@@ -532,6 +544,14 @@ async function processGroupBatch(groupId) {
   }
 }
 
+/* ============ 换头像（这次做了防御性加固） ============
+   之前逻辑理论上没问题，但实测头像确实没有真正切换。
+   这次改动：
+   1. 设置 contact.avatar 之后，立刻主动调用 renderMessages / renderChatList / renderContactList，
+      不再依赖 addMessage 内部的自动渲染顺序（避免任何潜在的时序问题）。
+   2. 如果 pickAvatarFromCards 返回的对象没有 dataUrl（数据异常），
+      会明确提示"换头像失败"，不会再出现"提示已换但其实没换"的假象。
+==================================================== */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -541,11 +561,69 @@ async function requestAvatarChange(contactId, chatId) {
   }
   const cards = drawCards(3);
   const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
-  if (!chosen) return;
+  if (!chosen || !chosen.dataUrl) {
+    addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，试试重新上传一张）', { systemNote: true });
+    return;
+  }
   contact.avatar = chosen.dataUrl;
   persist();
+  renderChatList();
+  renderContactList();
+  if (chatId === state.activeChatId) renderMessages();
   addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
-  renderChatList(); renderContactList();
+}
+
+/* ============ 模拟通话 ============ */
+let _activeCallTimer = null;
+let _activeCallSeconds = 0;
+
+function openCallOverlay(type, contact) {
+  if (!contact) { alert('请先选择一个角色'); return; }
+  const avatarEl = document.getElementById('callAvatar');
+  avatarEl.style.backgroundImage = contact.avatar ? `url('${contact.avatar}')` : '';
+  avatarEl.style.backgroundColor = contact.avatar ? 'transparent' : hashColor(contact.name);
+  document.getElementById('callName').textContent = contact.name;
+  document.getElementById('callStatus').textContent = (type === 'video' ? '视频通话' : '语音通话') + ' 正在呼叫...';
+  const overlay = document.getElementById('callOverlay');
+  overlay.classList.remove('hidden');
+  overlay.dataset.type = type;
+  overlay.dataset.contactId = contact.id;
+  _activeCallSeconds = 0;
+  clearInterval(_activeCallTimer);
+
+  setTimeout(() => {
+    const statusEl = document.getElementById('callStatus');
+    if (statusEl && !overlay.classList.contains('hidden')) statusEl.textContent = '通话中 00:00';
+  }, 1600);
+
+  _activeCallTimer = setInterval(() => {
+    _activeCallSeconds++;
+    const statusEl = document.getElementById('callStatus');
+    if (statusEl && _activeCallSeconds >= 2) {
+      const m = Math.floor(_activeCallSeconds / 60);
+      const s = _activeCallSeconds % 60;
+      statusEl.textContent = `通话中 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+  }, 1000);
+}
+
+function closeCallOverlay() {
+  clearInterval(_activeCallTimer);
+  const overlay = document.getElementById('callOverlay');
+  const type = overlay.dataset.type;
+  overlay.classList.add('hidden');
+  const chatId = state.activeChatId;
+  if (chatId && _activeCallSeconds > 0) {
+    const m = Math.floor(_activeCallSeconds / 60);
+    const s = _activeCallSeconds % 60;
+    const label = type === 'video' ? '视频通话' : '语音通话';
+    addMessage(chatId, 'me', `${label}时长 ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`, { systemNote: true });
+  }
+  _activeCallSeconds = 0;
+}
+
+function bindCallOverlay() {
+  document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
 }
 
 /* ============ AI 自主行为 ============ */
@@ -572,29 +650,17 @@ async function aiAutoChangeAvatar() {
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
 
-/* ============ 朋友圈评论逻辑（本次修复重点）============
-   之前的bug：aiReplyToMoment 只会用 moment.contactId 去找角色，
-   但如果朋友圈是"我"自己发的（contactId === 'me'），
-   就永远找不到角色，导致回复变成"随机抽字卡但署名成自己"的怪异结果。
-   现在改成：
-   1. 如果是角色发的朋友圈 → 还是那个角色回复（跟以前一样）
-   2. 如果是"我"自己发的朋友圈 → 优先找"之前已经评论过这条朋友圈的角色"来接话，
-      这样你可以针对某个角色的评论持续往下聊；如果还没人评论过，就随机挑一个角色。
-      如果压根没有任何角色（联系人列表是空的），就只记录你的评论，不强行造出AI回复。
-============================================================ */
+/* ============ 朋友圈评论逻辑 ============ */
 function pickReplyingContactForMoment(moment) {
   const posterContact = getContactById(moment.contactId);
-  if (posterContact) return posterContact; // 情况1：角色自己发的朋友圈
-
-  // 情况2：我自己发的朋友圈 —— 找最近一个评论过的角色
+  if (posterContact) return posterContact;
   const priorCommenter = (moment.comments || []).slice().reverse().find(c => c.contactId);
   if (priorCommenter) {
     const c = getContactById(priorCommenter.contactId);
     if (c) return c;
   }
-  // 还没人评论过，随机挑一个角色
   if (state.contacts.length) return state.contacts[secureRandomInt(state.contacts.length)];
-  return null; // 一个角色都没有
+  return null;
 }
 
 async function aiReplyToMoment(momentId, userComment) {
@@ -604,11 +670,7 @@ async function aiReplyToMoment(momentId, userComment) {
   moment.comments.push({ from: 'me', text: userComment });
 
   const contact = pickReplyingContactForMoment(moment);
-  if (!contact) {
-    // 没有任何角色可以回复，只记录用户自己的评论
-    persist(); renderMoments();
-    return;
-  }
+  if (!contact) { persist(); renderMoments(); return; }
   const cards = drawCards(3);
   const pool = WordCards.getForContact(contact);
   const picks = await interpretAndReply(userComment, cards, pool, contact.persona);
@@ -813,7 +875,7 @@ function bindWordCardSheet() {
   });
 }
 
-/* ============ 底部"+"面板 & 发图片 & 表情包 ============ */
+/* ============ 底部"+"面板 & 发图片 & 表情包 & 通话 & 位置 ============ */
 function bindPlusPanel() {
   const panel = document.getElementById('plusPanelInline');
   document.getElementById('btnMore')?.addEventListener('click', () => {
@@ -828,6 +890,13 @@ function bindPlusPanel() {
     else if (action === 'camera') document.getElementById('sendCameraFileInput').click();
     else if (action === 'redpacket') openSendRedPacket();
     else if (action === 'sticker') { renderStickerGrid(); document.getElementById('stickerPickerSheet').classList.remove('hidden'); }
+    else if (action === 'location') sendLocationMessage();
+    else if (action === 'videocall' || action === 'voicecall') {
+      const chatId = state.activeChatId;
+      if (isGroupChat(chatId)) { alert('群聊暂不支持通话'); return; }
+      const contact = getContactById(chatId);
+      openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact);
+    }
     else alert('该功能暂未开放');
   });
   document.getElementById('sendPhotoFileInput')?.addEventListener('change', e => {
@@ -1257,6 +1326,7 @@ async function init() {
   safeStep('bindWordCardSheet', bindWordCardSheet);
   safeStep('bindPlusPanel', bindPlusPanel);
   safeStep('bindStickerPicker', bindStickerPicker);
+  safeStep('bindCallOverlay', bindCallOverlay);
   safeStep('bindAddMenu', bindAddMenu);
   safeStep('bindAddContact', bindAddContact);
   safeStep('bindAddGroup', bindAddGroup);
