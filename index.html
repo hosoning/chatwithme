@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>WeChat</title>
+<title>微信</title>
 <link rel="manifest" href="manifest.json">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; }
@@ -51,6 +51,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .bubble.voice svg, .bubble.call svg { width:19px !important; height:19px !important; flex-shrink:0; }
 .call-bubble-text { display:flex; flex-direction:column; gap:1px; }
 .call-bubble-duration { font-size:12px; opacity:.65; }
+.call-bubble-loghint { font-size:11px; opacity:.55; text-decoration:underline; }
 .bubble.image { background:transparent; padding:0; box-shadow:none; }
 .bubble.image::before { display:none; }
 .bubble.image img { max-width:220px; max-height:280px; border-radius:6px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
@@ -217,7 +218,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 
 /* ===== 通话界面 ===== */
 .call-mask { position:absolute; inset:0; background:#1c1c1e; z-index:200; display:flex; flex-direction:column; }
-.call-topbar { display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top) + 10px) 16px 10px; flex-shrink:0; }
+.call-topbar { display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top) + 10px) 16px 10px; flex-shrink:0; position:relative; z-index:20; }
 .call-minimize-btn { width:24px !important; height:24px !important; cursor:pointer; }
 .call-type-label { color:#eee; font-size:14px; }
 .call-remote-area { flex:1; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; }
@@ -230,20 +231,32 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .call-info-overlay { position:absolute; top:70px; left:0; right:0; text-align:center; color:#fff; z-index:4; pointer-events:none; }
 .call-name { font-size:22px; font-weight:600; }
 .call-status { font-size:14.5px; color:#ddd; margin-top:6px; }
-.call-textchat { position:absolute; bottom:120px; left:12px; right:12px; display:flex; gap:8px; z-index:6; }
+.call-remote-upload-btn { position:absolute; left:14px; bottom:14px; width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; z-index:6; cursor:pointer; }
+.call-remote-upload-btn svg { width:20px !important; height:20px !important; }
+.call-remote-upload-hint { position:absolute; left:58px; bottom:14px; color:#fff; font-size:12px; opacity:.75; z-index:6; pointer-events:none; }
+
+.call-chat-log { position:absolute; left:12px; right:12px; bottom:172px; max-height:160px; overflow-y:auto; z-index:6; display:flex; flex-direction:column; gap:6px; }
+.call-log-line { align-self:flex-start; background:rgba(255,255,255,.16); color:#fff; font-size:13px; padding:6px 11px; border-radius:12px; max-width:80%; word-break:break-word; }
+.call-log-line.me { align-self:flex-end; background:rgba(7,193,96,.55); }
+
+.call-textchat { position:absolute; bottom:118px; left:12px; right:12px; display:flex; gap:8px; z-index:6; }
 .call-textchat input { flex:1; height:38px; border:none; border-radius:19px; padding:0 14px; font-size:14.5px; background:rgba(255,255,255,.92); }
 .call-textchat button { background:#07c160; color:#fff; border:none; border-radius:19px; padding:0 14px; font-size:14px; }
-.call-actions-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:16px 20px calc(24px + env(safe-area-inset-bottom)); flex-shrink:0; }
-.call-ctrl-btn { display:flex; flex-direction:column; align-items:center; gap:6px; color:#ddd; font-size:11.5px; cursor:pointer; }
-.call-ctrl-btn .circle { width:52px; height:52px; border-radius:50%; background:rgba(255,255,255,.16); display:flex; align-items:center; justify-content:center; }
+.call-actions-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; padding:16px 14px calc(20px + env(safe-area-inset-bottom)); flex-shrink:0; position:relative; z-index:20; }
+.call-ctrl-btn { display:flex; flex-direction:column; align-items:center; gap:6px; color:#ddd; font-size:10.5px; cursor:pointer; }
+.call-ctrl-btn .circle { width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,.16); display:flex; align-items:center; justify-content:center; transition:background .15s; }
 .call-ctrl-btn.active .circle { background:#fff; }
 .call-ctrl-btn.active svg path, .call-ctrl-btn.active svg circle { stroke:#1c1c1e !important; }
 .call-ctrl-btn.active svg.filled path { fill:#1c1c1e !important; }
-.call-ctrl-btn svg { width:24px !important; height:24px !important; }
+.call-ctrl-btn svg { width:22px !important; height:22px !important; }
 .call-ctrl-btn.hangup .circle { background:#fa5151; }
+.call-ctrl-btn.voicehold .circle.recording { background:#07c160; }
 
 .call-minipill { position:absolute; top:calc(env(safe-area-inset-top) + 8px); right:12px; z-index:150; background:#1c1c1e; color:#fff; border-radius:20px; padding:6px 12px 6px 6px; display:flex; align-items:center; gap:7px; font-size:12.5px; box-shadow:0 3px 10px rgba(0,0,0,.3); cursor:pointer; }
 .call-minipill-avatar { width:24px; height:24px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; }
+
+.call-log-view-line { padding:6px 0; border-bottom:1px solid #f2f2f2; font-size:14px; }
+.call-log-view-line .who { font-weight:600; color:#576b95; margin-right:4px; }
 
 svg { max-width:100%; max-height:100%; }
 #debugErrorBanner { font-family:monospace; }
@@ -675,7 +688,14 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 通话形象上传（角色设置内嵌） -->
+  <!-- 查看通话中的文字记录 -->
+  <div class="mask hidden" id="callLogViewSheet">
+    <div class="sheet">
+      <div class="sheet-title">通话中的对话</div>
+      <div id="callLogViewList"></div>
+      <div class="sheet-close" id="callLogViewClose">关闭</div>
+    </div>
+  </div>
 
   <!-- 模拟通话界面 -->
   <div class="call-mask hidden" id="callOverlay">
@@ -690,6 +710,7 @@ svg { max-width:100%; max-height:100%; }
       <div class="call-name" id="callName"></div>
       <div class="call-status" id="callStatus">正在呼叫...</div>
     </div>
+    <div class="call-chat-log" id="callChatLogBox"></div>
     <div class="call-textchat hidden" id="callTextChat">
       <input id="callTextInput" placeholder="输入消息...">
       <button id="callTextSendBtn">发送</button>
@@ -702,6 +723,10 @@ svg { max-width:100%; max-height:100%; }
       <div class="call-ctrl-btn" id="callSpeakerBtn">
         <div class="circle"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l6 5V4l-6 5z" fill="#fff"/><path d="M17 9a4 4 0 0 1 0 6" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div>
         <span>扬声器</span>
+      </div>
+      <div class="call-ctrl-btn voicehold" id="callVoiceHoldBtn">
+        <div class="circle"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div>
+        <span>按住说话</span>
       </div>
       <div class="call-ctrl-btn" id="callKeyboardBtn">
         <div class="circle"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2" fill="none" stroke="#fff" stroke-width="1.6"/><line x1="7" y1="11" x2="7" y2="11.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="11" x2="11" y2="11.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="15" y1="11" x2="15" y2="11.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="15" x2="16" y2="15" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg></div>
@@ -717,12 +742,13 @@ svg { max-width:100%; max-height:100%; }
     <div class="call-minipill-avatar" id="callMiniPillAvatar"></div>
     <span id="callMiniPillText">通话中 00:00</span>
   </div>
+  <input type="file" id="callInCallMediaFileInput" accept="image/*,video/*" class="hidden">
 
 </div>
-<script src="js/tarot.js?v=12" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=12" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=12" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=12" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=12" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=13" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=13" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=13" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=13" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=13" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
