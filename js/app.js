@@ -22,7 +22,7 @@
     try {
       const marker = sessionStorage.getItem('__pending_op__');
       if (marker) {
-        setTimeout(() => showError(`上次操作（${marker}）进行到一半时页面被重新加载了，很可能是系统内存不足自动刷新造成的（尤其在低电量模式下更容易发生），不是逻辑错误。建议关闭低电量模式后重试。`), 800);
+        setTimeout(() => showError(`上次操作（${marker}）进行到一半时页面被重新加载了，很可能是系统内存不足自动刷新造成的。建议关闭低电量模式后重试，或使用"直接设置头像"功能。`), 800);
         sessionStorage.removeItem('__pending_op__');
       }
     } catch(e) {}
@@ -328,9 +328,11 @@ function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
   if (!box) return;
   let pressTimer = null;
+  let startX = 0, startY = 0;
   box.addEventListener('click', e => { const item = e.target.closest('[data-id]'); if (item) openChat(item.dataset.id); });
   box.addEventListener('pointerdown', e => {
     const item = e.target.closest('[data-id]'); if (!item) return;
+    startX = e.clientX; startY = e.clientY;
     pressTimer = setTimeout(() => {
       if (isGroupChat(item.dataset.id)) {
         const g = getGroupById(item.dataset.id.slice(2));
@@ -340,6 +342,10 @@ function bindListDelegation(containerId) {
         if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[item.dataset.id]; persist(); renderChatList(); renderContactList(); }
       }
     }, 550);
+  });
+  box.addEventListener('pointermove', e => {
+    if (!pressTimer) return;
+    if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) clearTimeout(pressTimer);
   });
   ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
 }
@@ -389,7 +395,7 @@ function renderMessages() {
       const hasLog = m.callChatLog && m.callChatLog.length;
       bubbleHtml = `<div class="bubble call" ${hasLog ? `data-calllog="${m.id}"` : ''}>
         <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
-        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div>${hasLog ? '<div class="call-bubble-loghint">点击查看对话内容</div>' : ''}</div>
+        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
     } else if (m.voiceUrl) {
       bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
@@ -406,11 +412,27 @@ function renderMessages() {
   box.scrollTop = box.scrollHeight;
 }
 
+/* ============ 消息长按逻辑（这次修复了"误选取关闭文字"的问题） ============
+   问题根源：iOS Safari 长按文字时会弹出系统的"选取/复制"callout菜单，
+   -webkit-touch-callout 属性没有被正确禁用（跟user-select是两个不同的东西）。
+   这次在index.html全局 * 选择器里加上了 -webkit-touch-callout:none。
+   同时加了"手指移动超过10px就取消长按判定"的逻辑，避免滑动列表时误触发。
+================================================================== */
 function bindMsgListDelegation() {
   const box = document.getElementById('msgList');
   if (!box) return;
   let pressTimer = null;
-  box.addEventListener('pointerdown', e => { const row = e.target.closest('.msg-row'); if (row) pressTimer = setTimeout(() => openTarotSheet(row.dataset.id), 480); });
+  let startX = 0, startY = 0;
+  box.addEventListener('pointerdown', e => {
+    const row = e.target.closest('.msg-row');
+    if (!row) return;
+    startX = e.clientX; startY = e.clientY;
+    pressTimer = setTimeout(() => openTarotSheet(row.dataset.id), 480);
+  });
+  box.addEventListener('pointermove', e => {
+    if (!pressTimer) return;
+    if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) clearTimeout(pressTimer);
+  });
   ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
   box.addEventListener('contextmenu', e => e.preventDefault());
   box.addEventListener('click', e => {
@@ -527,28 +549,45 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============ 换头像（防御性加固） ============ */
+/* ============ 换头像（塔罗抽牌流程，包了完整try/catch，报错会直接显示） ============ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
   if (!state.avatarLibrary.length) {
-    addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦）', { systemNote: true });
+    addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦。也可以在"角色设置"里用"直接设置头像"一步到位）', { systemNote: true });
     return;
   }
   markOpStart('换头像');
-  const cards = drawCards(3);
-  const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
-  if (!chosen || !chosen.dataUrl) {
-    addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，试试重新上传一张）', { systemNote: true });
+  try {
+    const cards = drawCards(3);
+    const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
+    if (!chosen || !chosen.dataUrl) {
+      addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，建议在"角色设置"里用"直接设置头像"手动指定）', { systemNote: true });
+      markOpDone();
+      return;
+    }
+    contact.avatar = chosen.dataUrl;
+    persist();
+    renderChatList(); renderContactList();
+    if (chatId === state.activeChatId) renderMessages();
+    addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
+  } catch (err) {
+    addMessage(chatId, contactId, `（换头像出错了：${err?.message || '未知错误'}，建议改用"角色设置→直接设置头像"）`, { systemNote: true });
+  } finally {
     markOpDone();
-    return;
   }
-  contact.avatar = chosen.dataUrl;
+}
+
+/* ============ 【新增】直接手动设置头像 —— 保证一定成功 ============
+   不经过塔罗抽牌/AI挑选逻辑，选好图片直接绑定为头像，最稳定的兜底方案。
+=================================================================== */
+function directSetContactAvatar(contactId, dataUrl) {
+  const contact = getContactById(contactId);
+  if (!contact) return;
+  contact.avatar = dataUrl;
   persist();
   renderChatList(); renderContactList();
-  if (chatId === state.activeChatId) renderMessages();
-  addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
-  markOpDone();
+  if (String(state.activeChatId) === String(contactId)) renderMessages();
 }
 
 /* ============ 位置分享 ============ */
@@ -632,7 +671,7 @@ function bindCallLogView() {
   document.getElementById('callLogViewClose')?.addEventListener('click', () => document.getElementById('callLogViewSheet').classList.add('hidden'));
 }
 
-/* ============ 通话系统（含通话内文字/语音对话） ============ */
+/* ============ 通话系统 ============ */
 let _callLocalStream = null;
 let _callTimer = null;
 let _callSeconds = 0;
@@ -649,26 +688,18 @@ function initCallRecognizer() {
   const r = new SR();
   r.lang = 'zh-CN';
   r.continuous = false;
-  r.onresult = ev => {
-    const text = ev.results[0][0]?.transcript;
-    if (text) sendDuringCall(text);
-  };
+  r.onresult = ev => { const text = ev.results[0][0]?.transcript; if (text) sendDuringCall(text); };
   r.onerror = () => document.getElementById('callVoiceHoldBtn')?.classList.remove('active');
   r.onend = () => document.getElementById('callVoiceHoldBtn')?.classList.remove('active');
   return r;
 }
-
-function addCallLogEntry(from, text) {
-  _callChatLog.push({ from, text, ts: Date.now() });
-  renderCallLogBox();
-}
+function addCallLogEntry(from, text) { _callChatLog.push({ from, text, ts: Date.now() }); renderCallLogBox(); }
 function renderCallLogBox() {
   const box = document.getElementById('callChatLogBox');
   if (!box) return;
   box.innerHTML = _callChatLog.map(e => `<div class="call-log-line ${e.from === 'me' ? 'me' : ''}">${escapeHtml(e.text)}</div>`).join('');
   box.scrollTop = box.scrollHeight;
 }
-
 async function sendDuringCall(text) {
   if (!text || !text.trim() || !_callActiveContact) return;
   addCallLogEntry('me', text.trim());
@@ -684,7 +715,6 @@ async function sendDuringCall(text) {
     if (voiceUrl) { const audio = new Audio(voiceUrl); audio.play().catch(()=>{}); }
   }
 }
-
 function renderCallRemoteMedia(contact, type) {
   const remoteArea = document.getElementById('callRemoteArea');
   remoteArea.innerHTML = '';
@@ -714,7 +744,6 @@ function renderCallRemoteMedia(contact, type) {
     }
   }
 }
-
 async function openCallOverlay(type, contact) {
   if (!contact) { alert('请先选择一个角色'); return; }
   _callActiveContact = contact; _callActiveType = type;
@@ -724,13 +753,10 @@ async function openCallOverlay(type, contact) {
   document.getElementById('callTextChat').classList.add('hidden');
   document.getElementById('callMiniPill').classList.add('hidden');
   renderCallLogBox();
-
   document.getElementById('callTypeLabel').textContent = type === 'video' ? '视频通话' : '语音通话';
   document.getElementById('callName').textContent = contact.name;
   document.getElementById('callStatus').textContent = '正在呼叫...';
-
   renderCallRemoteMedia(contact, type);
-
   const localPreview = document.getElementById('callLocalPreview');
   if (type === 'video') {
     localPreview.classList.remove('hidden');
@@ -741,9 +767,7 @@ async function openCallOverlay(type, contact) {
     try { _callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
   }
-
   _callRecognizer = initCallRecognizer();
-
   document.getElementById('callOverlay').classList.remove('hidden');
   clearInterval(_callTimer);
   setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1500);
@@ -759,7 +783,6 @@ async function openCallOverlay(type, contact) {
     }
   }, 1000);
 }
-
 function closeCallOverlay() {
   clearInterval(_callTimer);
   if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
@@ -785,7 +808,6 @@ function minimizeCall() {
   pill.classList.remove('hidden');
 }
 function restoreCall() { document.getElementById('callMiniPill').classList.add('hidden'); document.getElementById('callOverlay').classList.remove('hidden'); }
-
 function bindCallOverlay() {
   document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
   document.getElementById('callMinimizeBtn')?.addEventListener('click', minimizeCall);
@@ -818,20 +840,12 @@ function bindCallOverlay() {
   const stopVoiceHold = () => { voiceHoldBtn?.classList.remove('active'); if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e){} } };
   voiceHoldBtn?.addEventListener('pointerup', stopVoiceHold);
   voiceHoldBtn?.addEventListener('pointerleave', stopVoiceHold);
-
-  document.getElementById('callRemoteArea')?.addEventListener('click', e => {
-    if (e.target.closest('#callRemoteUploadBtnDynamic')) document.getElementById('callInCallMediaFileInput').click();
-  });
+  document.getElementById('callRemoteArea')?.addEventListener('click', e => { if (e.target.closest('#callRemoteUploadBtnDynamic')) document.getElementById('callInCallMediaFileInput').click(); });
   document.getElementById('callInCallMediaFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file || !_callActiveContact) return;
     const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
-    reader.onload = ev => {
-      _callActiveContact.callMedia = ev.target.result;
-      _callActiveContact.callMediaType = isVideo ? 'video' : 'image';
-      persist();
-      renderCallRemoteMedia(_callActiveContact, _callActiveType);
-    };
+    reader.onload = ev => { _callActiveContact.callMedia = ev.target.result; _callActiveContact.callMediaType = isVideo ? 'video' : 'image'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); };
     reader.readAsDataURL(file);
     e.target.value = '';
   });
@@ -1054,7 +1068,7 @@ function bindWordCardSheet() {
   });
 }
 
-/* ============ 底部"+"面板：图片/表情包/通话/位置 ============ */
+/* ============ 底部"+"面板 ============ */
 function bindPlusPanel() {
   const panel = document.getElementById('plusPanelInline');
   document.getElementById('btnMore')?.addEventListener('click', () => panel?.classList.toggle('hidden'));
@@ -1153,7 +1167,7 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置（含通话形象上传） ============ */
+/* ============ 聊天设置（新增"直接设置头像"，保证一定成功） ============ */
 let chatSettingsTarget = null;
 function openChatSettings() {
   const chatId = state.activeChatId;
@@ -1173,7 +1187,10 @@ function openChatSettings() {
     if (!c) return;
     document.getElementById('chatSettingsTitle').textContent = '角色设置';
     body.innerHTML = `
-      <div class="settings-group-title">头像（点击从头像库指定）</div>
+      <div class="settings-group-title">直接设置头像（最稳定，一步到位）</div>
+      <div class="direct-avatar-preview">${avatarHtml(c.avatar, c.name, 56)}<div class="menu-row" id="directSetAvatarBtn" style="border-bottom:none;flex:1;text-align:left;padding-left:4px;">点击选择照片直接设为头像</div></div>
+      <input type="file" id="directAvatarFileInput" accept="image/*" class="hidden">
+      <div class="settings-group-title">或从头像库自动挑选（点击指定）</div>
       <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;">
         ${state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>'}
       </div>
@@ -1196,11 +1213,11 @@ function bindChatSettingsDelegation() {
   if (!body) return;
   body.addEventListener('click', e => {
     if (!chatSettingsTarget) return;
+    if (e.target.closest('#directSetAvatarBtn') && chatSettingsTarget.type === 'contact') { document.getElementById('directAvatarFileInput').click(); return; }
     const avatarItem = e.target.closest('[data-avatar-id]');
     if (avatarItem && chatSettingsTarget.type === 'contact') {
-      const c = getContactById(chatSettingsTarget.id);
       const a = state.avatarLibrary.find(x => String(x.id) === avatarItem.dataset.avatarId);
-      if (c && a) { c.avatar = a.dataUrl; persist(); renderMessages(); renderChatList(); renderContactList(); alert('头像已更新'); }
+      if (a) { directSetContactAvatar(chatSettingsTarget.id, a.dataUrl); openChatSettings(); }
       return;
     }
     if (e.target.closest('#uploadCallMediaBtn') && chatSettingsTarget.type === 'contact') { document.getElementById('callMediaFileInput').click(); return; }
@@ -1234,6 +1251,13 @@ function bindChatSettingsDelegation() {
       }
       return;
     }
+  });
+  document.getElementById('directAvatarFileInput')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
+    const reader = new FileReader();
+    reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   });
   document.getElementById('callMediaFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
