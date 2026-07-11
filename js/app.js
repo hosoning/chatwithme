@@ -17,7 +17,6 @@
   window.addEventListener('DOMContentLoaded', createBanner);
   window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
-
   window.addEventListener('DOMContentLoaded', () => {
     try {
       const marker = sessionStorage.getItem('__pending_op__');
@@ -30,6 +29,29 @@
 })();
 function markOpStart(name) { try { sessionStorage.setItem('__pending_op__', name); } catch(e) {} }
 function markOpDone() { try { sessionStorage.removeItem('__pending_op__'); } catch(e) {} }
+
+/* ============ 全局：JS层面拦截长按选取/系统菜单（CSS不够可靠，双重保险） ============ */
+(function preventNativeLongPressMenus() {
+  document.addEventListener('touchstart', function(e) {
+    // 只拦截默认行为（文字选取放大镜/系统菜单），不阻止滚动本身
+    if (e.target.closest('input, textarea')) return; // 输入框保留原生选取
+    // 不在这里 preventDefault，交给各自的长按逻辑处理，避免影响正常点击/滚动
+  }, { passive: true });
+  document.addEventListener('contextmenu', function(e) {
+    if (e.target.closest('input, textarea')) return;
+    e.preventDefault();
+  });
+  // 定期清除意外产生的文字选区（兜底）
+  setInterval(() => {
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.toString().length > 0) {
+        const active = document.activeElement;
+        if (!active || (active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA')) sel.removeAllRanges();
+      }
+    } catch(e) {}
+  }, 400);
+})();
 
 /* ============ 安全存储 ============ */
 function safeLoadJSON(key, def) {
@@ -51,9 +73,23 @@ const STORE = {
   myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1'
 };
 const STICKER_KEY = 'tarot_stickers_v1';
+const WALLET_KEY = 'tarot_wallet_v1';
+const PINNED_CHATS_KEY = 'tarot_pinned_chats_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
 function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
+function getWallet() { return safeLoadJSON(WALLET_KEY, { balance: 0, transactions: [] }); }
+function saveWallet(w) { safeSaveJSON(WALLET_KEY, w); }
+function getPinnedChats() { return safeLoadJSON(PINNED_CHATS_KEY, []); }
+function savePinnedChats(list) { safeSaveJSON(PINNED_CHATS_KEY, list); }
+function isChatPinned(chatId) { return getPinnedChats().includes(String(chatId)); }
+function toggleChatPinned(chatId) {
+  const list = getPinnedChats();
+  const idx = list.indexOf(String(chatId));
+  if (idx >= 0) list.splice(idx, 1);
+  else list.unshift(String(chatId));
+  savePinnedChats(list);
+}
 
 const state = {
   contacts: safeLoadJSON(STORE.contacts, []),
@@ -290,14 +326,22 @@ function bindDiscoverPlaceholders() {
   document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
 }
 
-/* ============ 聊天列表 / 通讯录 ============ */
+/* ============ 聊天列表 / 通讯录（含置顶排序） ============ */
 function renderChatList() {
   const box = document.getElementById('chatListItems');
   if (!box) return;
+  const pinned = getPinnedChats();
   const items = [
     ...state.contacts.map(c => ({ id: String(c.id), name: c.name, avatar: c.avatar })),
     ...state.groups.map(g => ({ id: 'g_' + g.id, name: g.name, avatar: null }))
   ];
+  items.sort((a, b) => {
+    const ap = pinned.indexOf(a.id), bp = pinned.indexOf(b.id);
+    if (ap >= 0 && bp >= 0) return ap - bp;
+    if (ap >= 0) return -1;
+    if (bp >= 0) return 1;
+    return 0;
+  });
   if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; return; }
   box.innerHTML = items.map(it => {
     const msgs = state.chats[it.id] || [];
@@ -310,10 +354,12 @@ function renderChatList() {
       else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
       else lastText = escapeHtml(last.text);
     }
-    return `<div class="chat-item" data-id="${it.id}">
+    const isPinned = pinned.includes(it.id);
+    const pinTag = isPinned ? `<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>` : (last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : '');
+    return `<div class="chat-item ${isPinned ? 'pinned' : ''}" data-id="${it.id}">
       ${avatarHtml(it.avatar, it.name, 50)}
       <div class="info">
-        <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : ''}</span></div>
+        <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${pinTag}</span></div>
         <div class="last-msg">${lastText}</div>
       </div></div>`;
   }).join('');
@@ -324,30 +370,64 @@ function renderContactList() {
   if (!state.contacts.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色</div>`; return; }
   box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 50)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
+
+/* ============ 长按逻辑：聊天列表长按弹出操作菜单（置顶/删除），配合 touchstart preventDefault ============ */
+let _actionSheetTargetId = null;
 function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
   if (!box) return;
   let pressTimer = null;
   let startX = 0, startY = 0;
-  box.addEventListener('click', e => { const item = e.target.closest('[data-id]'); if (item) openChat(item.dataset.id); });
-  box.addEventListener('pointerdown', e => {
-    const item = e.target.closest('[data-id]'); if (!item) return;
-    startX = e.clientX; startY = e.clientY;
+  let longPressFired = false;
+
+  box.addEventListener('touchstart', e => {
+    const item = e.target.closest('[data-id]');
+    if (!item) return;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    longPressFired = false;
     pressTimer = setTimeout(() => {
-      if (isGroupChat(item.dataset.id)) {
-        const g = getGroupById(item.dataset.id.slice(2));
-        if (g && confirm(`删除群聊「${g.name}」？`)) { state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[item.dataset.id]; persist(); renderChatList(); }
-      } else {
-        const c = getContactById(item.dataset.id);
-        if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[item.dataset.id]; persist(); renderChatList(); renderContactList(); }
-      }
-    }, 550);
-  });
-  box.addEventListener('pointermove', e => {
+      longPressFired = true;
+      try { window.getSelection()?.removeAllRanges(); } catch(_) {}
+      _actionSheetTargetId = item.dataset.id;
+      const isGroup = isGroupChat(item.dataset.id);
+      document.getElementById('chatItemPinToggle').textContent = isChatPinned(item.dataset.id) ? '取消置顶' : '置顶该聊天';
+      document.getElementById('chatItemDelete').textContent = isGroup ? '删除该群聊' : '删除该聊天';
+      document.getElementById('chatItemActionSheet').classList.remove('hidden');
+    }, 500);
+  }, { passive: true });
+  box.addEventListener('touchmove', e => {
     if (!pressTimer) return;
-    if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) clearTimeout(pressTimer);
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) { clearTimeout(pressTimer); pressTimer = null; }
+  }, { passive: true });
+  box.addEventListener('touchend', () => { clearTimeout(pressTimer); pressTimer = null; }, { passive: true });
+  box.addEventListener('touchcancel', () => { clearTimeout(pressTimer); pressTimer = null; }, { passive: true });
+
+  box.addEventListener('click', e => {
+    if (longPressFired) { longPressFired = false; return; }
+    const item = e.target.closest('[data-id]'); if (item) openChat(item.dataset.id);
   });
-  ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
+}
+function bindChatItemActionSheet() {
+  document.getElementById('chatItemActionCancel')?.addEventListener('click', () => document.getElementById('chatItemActionSheet').classList.add('hidden'));
+  document.getElementById('chatItemPinToggle')?.addEventListener('click', () => {
+    if (_actionSheetTargetId) toggleChatPinned(_actionSheetTargetId);
+    document.getElementById('chatItemActionSheet').classList.add('hidden');
+    renderChatList();
+  });
+  document.getElementById('chatItemDelete')?.addEventListener('click', () => {
+    const id = _actionSheetTargetId;
+    if (!id) return;
+    if (isGroupChat(id)) {
+      const g = getGroupById(id.slice(2));
+      if (g && confirm(`删除群聊「${g.name}」？`)) { state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[id]; persist(); renderChatList(); }
+    } else {
+      const c = getContactById(id);
+      if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[id]; persist(); renderChatList(); renderContactList(); }
+    }
+    document.getElementById('chatItemActionSheet').classList.add('hidden');
+  });
 }
 
 /* ============ 聊天详情 ============ */
@@ -412,30 +492,37 @@ function renderMessages() {
   box.scrollTop = box.scrollHeight;
 }
 
-/* ============ 消息长按逻辑（这次修复了"误选取关闭文字"的问题） ============
-   问题根源：iOS Safari 长按文字时会弹出系统的"选取/复制"callout菜单，
-   -webkit-touch-callout 属性没有被正确禁用（跟user-select是两个不同的东西）。
-   这次在index.html全局 * 选择器里加上了 -webkit-touch-callout:none。
-   同时加了"手指移动超过10px就取消长按判定"的逻辑，避免滑动列表时误触发。
-================================================================== */
+/* ============ 消息长按逻辑（JS层拦截 + 手动判定，双重保险） ============ */
 function bindMsgListDelegation() {
   const box = document.getElementById('msgList');
   if (!box) return;
   let pressTimer = null;
   let startX = 0, startY = 0;
-  box.addEventListener('pointerdown', e => {
+  let longPressFired = false;
+
+  box.addEventListener('touchstart', e => {
     const row = e.target.closest('.msg-row');
     if (!row) return;
-    startX = e.clientX; startY = e.clientY;
-    pressTimer = setTimeout(() => openTarotSheet(row.dataset.id), 480);
-  });
-  box.addEventListener('pointermove', e => {
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    longPressFired = false;
+    pressTimer = setTimeout(() => {
+      longPressFired = true;
+      try { window.getSelection()?.removeAllRanges(); } catch(_) {}
+      openTarotSheet(row.dataset.id);
+    }, 480);
+  }, { passive: true });
+  box.addEventListener('touchmove', e => {
     if (!pressTimer) return;
-    if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) clearTimeout(pressTimer);
-  });
-  ['pointerup','pointerleave','pointercancel'].forEach(ev => box.addEventListener(ev, () => clearTimeout(pressTimer)));
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) { clearTimeout(pressTimer); pressTimer = null; }
+  }, { passive: true });
+  box.addEventListener('touchend', () => { clearTimeout(pressTimer); pressTimer = null; }, { passive: true });
+  box.addEventListener('touchcancel', () => { clearTimeout(pressTimer); pressTimer = null; }, { passive: true });
   box.addEventListener('contextmenu', e => e.preventDefault());
+
   box.addEventListener('click', e => {
+    if (longPressFired) { longPressFired = false; return; }
     const playEl = e.target.closest('[data-play]');
     if (playEl) {
       const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
@@ -549,7 +636,7 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============ 换头像（塔罗抽牌流程，包了完整try/catch，报错会直接显示） ============ */
+/* ============ 换头像（塔罗流程） ============ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -578,9 +665,7 @@ async function requestAvatarChange(contactId, chatId) {
   }
 }
 
-/* ============ 【新增】直接手动设置头像 —— 保证一定成功 ============
-   不经过塔罗抽牌/AI挑选逻辑，选好图片直接绑定为头像，最稳定的兜底方案。
-=================================================================== */
+/* ============ 直接手动设置头像 —— 保证一定成功 ============ */
 function directSetContactAvatar(contactId, dataUrl) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -875,7 +960,7 @@ async function aiAutoChangeAvatar() {
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
 
-/* ============ 朋友圈评论逻辑 ============ */
+/* ============ 朋友圈评论逻辑（含置顶排序） ============ */
 function pickReplyingContactForMoment(moment) {
   const posterContact = getContactById(moment.contactId);
   if (posterContact) return posterContact;
@@ -901,18 +986,24 @@ setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } c
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
-/* ============ 朋友圈展示/发布 ============ */
+/* ============ 朋友圈展示/发布（含置顶） ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
-  box.innerHTML = state.moments.map(m => `
+  const sorted = [...state.moments].sort((a, b) => ((b.pinned?1:0) - (a.pinned?1:0)));
+  box.innerHTML = sorted.map(m => `
     <div class="moment-item" data-id="${m.id}">
       ${avatarHtml(m.avatar, m.name, 44)}
       <div class="moment-body">
-        <div class="mname">${escapeHtml(m.name)}</div>
+        <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
         ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
         ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
-        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span><span class="comment-btn" data-toggle-comment="${m.id}">评论</span></div>
+        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
+          <span>
+            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
+            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
+          </span>
+        </div>
         ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
         <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
       </div></div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
@@ -921,6 +1012,13 @@ function bindMomentsDelegation() {
   const box = document.getElementById('momentsList');
   if (!box) return;
   box.addEventListener('click', e => {
+    const pinToggle = e.target.closest('[data-toggle-pin]');
+    if (pinToggle) {
+      const id = Number(pinToggle.dataset.togglePin);
+      const m = state.moments.find(x => x.id === id);
+      if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
+      return;
+    }
     const toggle = e.target.closest('[data-toggle-comment]');
     if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
     const submit = e.target.closest('[data-comment-submit]');
@@ -1167,7 +1265,7 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置（新增"直接设置头像"，保证一定成功） ============ */
+/* ============ 聊天设置（直接设置头像/通话形象/角色设定） ============ */
 let chatSettingsTarget = null;
 function openChatSettings() {
   const chatId = state.activeChatId;
@@ -1308,6 +1406,65 @@ function bindMyAvatarUpload() {
     const reader = new FileReader();
     reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); };
     reader.readAsDataURL(file);
+  });
+}
+
+/* ============ 钱包（模拟，非真实支付） ============ */
+function renderWalletPage() {
+  const w = getWallet();
+  document.getElementById('walletBalanceAmount').textContent = `¥${w.balance.toFixed(2)}`;
+  const list = document.getElementById('walletTxList');
+  list.innerHTML = w.transactions.slice().reverse().map(t => `
+    <div class="wallet-tx-item">
+      <div class="tx-info"><div class="tx-title">${escapeHtml(t.title)}</div><div class="tx-time">${new Date(t.ts).toLocaleString()}</div></div>
+      <div class="wallet-tx-amount">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
+    </div>`).join('') || '<div style="padding:30px;text-align:center;color:#999;font-size:14px;">暂无交易记录</div>';
+}
+function runFaceIdSimulation(onSuccess) {
+  const sheet = document.getElementById('faceidSheet');
+  const iconBox = document.getElementById('faceidIconBox');
+  const statusText = document.getElementById('faceidStatusText');
+  iconBox.classList.add('scanning');
+  statusText.textContent = '请保持不动，正在识别...';
+  sheet.classList.remove('hidden');
+  const timer = setTimeout(() => {
+    iconBox.classList.remove('scanning');
+    statusText.textContent = '识别成功';
+    setTimeout(() => { sheet.classList.add('hidden'); onSuccess(); }, 500);
+  }, 1600);
+  document.getElementById('faceidCancel').onclick = () => { clearTimeout(timer); sheet.classList.add('hidden'); };
+}
+function bindWallet() {
+  document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
+  document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
+  document.getElementById('btnRechargeOpen')?.addEventListener('click', () => {
+    document.getElementById('rechargeAmountInput').value = '';
+    document.getElementById('rechargeSheet').classList.remove('hidden');
+  });
+  document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
+  document.getElementById('rechargeNext')?.addEventListener('click', () => {
+    const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
+    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
+    document.getElementById('rechargeSheet').classList.add('hidden');
+    runFaceIdSimulation(() => {
+      const w = getWallet();
+      w.balance += amount;
+      w.transactions.push({ title: '充值（模拟，非真实支付）', amount, ts: Date.now() });
+      saveWallet(w);
+      renderWalletPage();
+      alert('充值成功（本功能为模拟效果，不涉及真实支付）');
+    });
+  });
+  document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
+    const w = getWallet();
+    if (w.balance <= 0) { alert('余额不足'); return; }
+    runFaceIdSimulation(() => {
+      w.transactions.push({ title: '提现（模拟）', amount: -w.balance, ts: Date.now() });
+      w.balance = 0;
+      saveWallet(w);
+      renderWalletPage();
+      alert('提现成功（模拟效果）');
+    });
   });
 }
 
@@ -1502,6 +1659,8 @@ async function init() {
   safeStep('bindSwipeBack', bindSwipeBack);
   safeStep('bindCloudSync', bindCloudSync);
   safeStep('bindPostMoment', bindPostMoment);
+  safeStep('bindWallet', bindWallet);
+  safeStep('bindChatItemActionSheet', bindChatItemActionSheet);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
