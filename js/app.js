@@ -17,31 +17,14 @@
   window.addEventListener('DOMContentLoaded', createBanner);
   window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
-  window.addEventListener('DOMContentLoaded', () => {
-    try {
-      const marker = sessionStorage.getItem('__pending_op__');
-      if (marker) {
-        setTimeout(() => showError(`上次操作（${marker}）进行到一半时页面被重新加载了，很可能是系统内存不足自动刷新造成的。建议关闭低电量模式后重试，或使用"直接设置头像"功能。`), 800);
-        sessionStorage.removeItem('__pending_op__');
-      }
-    } catch(e) {}
-  });
 })();
-function markOpStart(name) { try { sessionStorage.setItem('__pending_op__', name); } catch(e) {} }
-function markOpDone() { try { sessionStorage.removeItem('__pending_op__'); } catch(e) {} }
 
-/* ============ 全局：JS层面拦截长按选取/系统菜单（CSS不够可靠，双重保险） ============ */
+/* ============ 全局：JS层面拦截长按选取/系统菜单 ============ */
 (function preventNativeLongPressMenus() {
-  document.addEventListener('touchstart', function(e) {
-    // 只拦截默认行为（文字选取放大镜/系统菜单），不阻止滚动本身
-    if (e.target.closest('input, textarea')) return; // 输入框保留原生选取
-    // 不在这里 preventDefault，交给各自的长按逻辑处理，避免影响正常点击/滚动
-  }, { passive: true });
   document.addEventListener('contextmenu', function(e) {
     if (e.target.closest('input, textarea')) return;
     e.preventDefault();
   });
-  // 定期清除意外产生的文字选区（兜底）
   setInterval(() => {
     try {
       const sel = window.getSelection();
@@ -53,7 +36,7 @@ function markOpDone() { try { sessionStorage.removeItem('__pending_op__'); } cat
   }, 400);
 })();
 
-/* ============ 安全存储 ============ */
+/* ============ 安全存储（带存满提示） ============ */
 function safeLoadJSON(key, def) {
   try {
     const raw = localStorage.getItem(key);
@@ -62,9 +45,76 @@ function safeLoadJSON(key, def) {
     return (parsed === null || parsed === undefined) ? def : parsed;
   } catch (e) { console.error(`读取[${key}]失败`, e); try { localStorage.removeItem(key); } catch(_) {} return def; }
 }
-function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } }
+let _quotaWarnedRecently = false;
+function warnQuotaExceeded() {
+  if (_quotaWarnedRecently) return;
+  _quotaWarnedRecently = true;
+  setTimeout(() => { _quotaWarnedRecently = false; }, 5000);
+  alert('本地存储空间已满，最新的图片/数据可能没有保存成功！建议：删除头像库/聊天记录里不需要的图片来释放空间。');
+}
+function safeSaveJSON(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+  catch (e) {
+    console.error(e);
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) warnQuotaExceeded();
+    return false;
+  }
+}
 function safeGetItem(key, def = null) { try { const v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
-function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) { console.error(e); } }
+function safeSetItem(key, val) {
+  try { localStorage.setItem(key, val); return true; }
+  catch (e) {
+    console.error(e);
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) warnQuotaExceeded();
+    return false;
+  }
+}
+
+/* ============ 图片压缩（解决存储超限导致的头像/背景丢失问题） ============ */
+function compressImage(dataUrl, maxDim = 800, quality = 0.72) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width <= 0 || height <= 0) { resolve(dataUrl); return; }
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height >= width && height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        try { resolve(canvas.toDataURL('image/jpeg', quality)); }
+        catch(e) { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch(e) { resolve(dataUrl); }
+  });
+}
+function readFileAsCompressedDataUrl(file, maxDim = 800, quality = 0.72) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async ev => { resolve(await compressImage(ev.target.result, maxDim, quality)); };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+function blobToDataUrlLocal(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+async function blobUrlToDataUrl(blobUrl) {
+  try {
+    const res = await fetch(blobUrl);
+    const blob = await res.blob();
+    return await blobToDataUrlLocal(blob);
+  } catch(e) { console.error(e); return null; }
+}
 
 /* ============ 状态 ============ */
 const STORE = {
@@ -75,6 +125,7 @@ const STORE = {
 const STICKER_KEY = 'tarot_stickers_v1';
 const WALLET_KEY = 'tarot_wallet_v1';
 const PINNED_CHATS_KEY = 'tarot_pinned_chats_v1';
+const STT_CFG_KEY = 'tarot_stt_config_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
 function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
@@ -90,6 +141,11 @@ function toggleChatPinned(chatId) {
   else list.unshift(String(chatId));
   savePinnedChats(list);
 }
+function getSTTConfig() {
+  const def = { enabled: false, endpoint: '', apiKey: '', model: 'whisper-1' };
+  return { ...def, ...safeLoadJSON(STT_CFG_KEY, {}) };
+}
+function saveSTTConfig(cfg) { safeSaveJSON(STT_CFG_KEY, cfg); }
 
 const state = {
   contacts: safeLoadJSON(STORE.contacts, []),
@@ -103,7 +159,8 @@ const state = {
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   activeChatId: null,
   pendingBatch: {},
-  batchTimer: {}
+  batchTimer: {},
+  lastUserActivity: Date.now()
 };
 
 let _cloudSyncTimer = null;
@@ -168,9 +225,11 @@ function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c
 function getContactById(id) { return state.contacts.find(c => String(c.id) === String(id)); }
 function getGroupById(id) { return state.groups.find(g => String(g.id) === String(id)); }
 function isGroupChat(chatId) { return typeof chatId === 'string' && chatId.startsWith('g_'); }
-function avatarHtml(dataUrl, name, size = 40) {
-  if (dataUrl) return `<div class="avatar img" style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
-  return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
+function avatarHtml(dataUrl, name, size = 40, ownerId = null) {
+  const ownerAttr = ownerId != null ? ` data-avatar-owner="${escapeHtml(String(ownerId))}"` : '';
+  const clickCls = ownerId != null ? ' clickable' : '';
+  if (dataUrl) return `<div class="avatar img${clickCls}"${ownerAttr} style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
+  return `<div class="avatar${clickCls}"${ownerAttr} style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
 }
 
 /* ============ 导航 ============ */
@@ -282,11 +341,10 @@ function applyChatBackground() {
 }
 function bindChatBackground() {
   document.getElementById('rowChatBg')?.addEventListener('click', () => document.getElementById('chatBgFileInput')?.click());
-  document.getElementById('chatBgFileInput')?.addEventListener('change', e => {
+  document.getElementById('chatBgFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => { state.chatBg = ev.target.result; persist(); applyChatBackground(); alert('背景已更新'); };
-    reader.readAsDataURL(file);
+    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.7);
+    if (dataUrl) { state.chatBg = dataUrl; persist(); applyChatBackground(); alert('背景已更新'); }
     e.target.value = '';
   });
   document.getElementById('rowChatBgClear')?.addEventListener('click', () => { state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景'); });
@@ -312,18 +370,59 @@ function renderMomentsProfile() {
 }
 function bindMomentsProfile() {
   document.getElementById('momentsCoverImg')?.addEventListener('click', () => document.getElementById('momentsCoverFileInput')?.click());
-  document.getElementById('momentsCoverFileInput')?.addEventListener('change', e => {
+  document.getElementById('momentsCoverFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => { state.momentsCover = ev.target.result; persist(); renderMomentsProfile(); };
-    reader.readAsDataURL(file);
+    const dataUrl = await readFileAsCompressedDataUrl(file, 1200, 0.72);
+    if (dataUrl) { state.momentsCover = dataUrl; persist(); renderMomentsProfile(); }
     e.target.value = '';
   });
-  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); });
+  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => openContactProfile('me'));
 }
 function bindDiscoverPlaceholders() {
   document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
   document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
+}
+
+/* ============ 角色/我 的朋友圈主页 ============ */
+function momentItemHtml(m) {
+  return `
+    <div class="moment-item" data-id="${m.id}">
+      ${avatarHtml(m.avatar, m.name, 44, m.contactId)}
+      <div class="moment-body">
+        <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
+        ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
+        ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
+        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
+          <span>
+            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
+            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
+          </span>
+        </div>
+        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
+        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
+      </div></div>`;
+}
+function openContactProfile(ownerId) {
+  const isMe = ownerId === 'me';
+  const name = isMe ? (state.myName || '我') : (getContactById(ownerId)?.name || '角色');
+  const avatarUrl = isMe ? state.myAvatar : (getContactById(ownerId)?.avatar || null);
+  document.getElementById('profilePageName').textContent = name;
+  document.getElementById('profilePageDisplayName').textContent = name;
+  const avatarBox = document.getElementById('profilePageAvatar');
+  const newAvatarHtml = avatarHtml(avatarUrl, name, 72).replace('class="avatar', 'id="profilePageAvatar" class="avatar');
+  avatarBox.outerHTML = newAvatarHtml;
+  const filtered = state.moments.filter(m => String(m.contactId) === String(ownerId));
+  renderProfileMoments(filtered);
+  pushPage('page-profile');
+}
+function renderProfileMoments(list) {
+  const box = document.getElementById('profileMomentsList');
+  const sorted = [...list].sort((a,b)=> ((b.pinned?1:0)-(a.pinned?1:0)));
+  box.innerHTML = sorted.map(momentItemHtml).join('') || '<div style="padding:40px;text-align:center;color:#999;">还没有发过朋友圈</div>';
+}
+function bindProfilePage() {
+  document.getElementById('backFromProfile')?.addEventListener('click', () => popPage());
+  document.getElementById('profileMomentsList')?.addEventListener('click', momentsClickHandler);
 }
 
 /* ============ 聊天列表 / 通讯录（含置顶排序） ============ */
@@ -351,6 +450,7 @@ function renderChatList() {
       if (last.type === 'redpacket') lastText = '[红包]';
       else if (last.type === 'image') lastText = '[图片]';
       else if (last.type === 'location') lastText = '[位置]';
+      else if (last.type === 'voice') lastText = '[语音]';
       else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
       else lastText = escapeHtml(last.text);
     }
@@ -371,7 +471,7 @@ function renderContactList() {
   box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 50)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
 
-/* ============ 长按逻辑：聊天列表长按弹出操作菜单（置顶/删除），配合 touchstart preventDefault ============ */
+/* ============ 长按逻辑：聊天列表长按弹出操作菜单 ============ */
 let _actionSheetTargetId = null;
 function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
@@ -456,6 +556,7 @@ function renderMessages() {
     const senderContact = !isMe ? getContactById(m.from) : null;
     const name = isMe ? (state.myName || '我') : (senderContact?.name || '角色');
     const avatarDataUrl = isMe ? state.myAvatar : (senderContact?.avatar || null);
+    const ownerId = isMe ? 'me' : (senderContact ? senderContact.id : m.from);
 
     let bubbleHtml;
     if (m.type === 'redpacket') {
@@ -477,8 +578,16 @@ function renderMessages() {
         <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
         <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
-    } else if (m.voiceUrl) {
-      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
+    } else if (m.type === 'voice') {
+      const dur = m.voiceDuration || 1;
+      const transcribed = m.transcribedText;
+      const voiceInner = `<div class="bubble voice" data-voice-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${dur}″</span></div>
+        ${transcribed ? `<div class="voice-transcript-text">${escapeHtml(transcribed)}</div>` : `<div class="voice-transcribe-btn" data-voice-transcribe="${m.id}">转文字</div>`}`;
+      const senderLabel0 = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
+      return `<div class="msg-col ${isMe ? 'me' : ''}">
+        ${senderLabel0}
+        <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40, ownerId)}<div class="voice-msg-wrap">${voiceInner}</div></div>
+      </div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
@@ -486,13 +595,13 @@ function renderMessages() {
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
-      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
+      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40, ownerId)}${bubbleHtml}</div>
     </div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
 
-/* ============ 消息长按逻辑（JS层拦截 + 手动判定，双重保险） ============ */
+/* ============ 消息长按逻辑 + 点击头像跳转主页 ============ */
 function bindMsgListDelegation() {
   const box = document.getElementById('msgList');
   if (!box) return;
@@ -523,12 +632,16 @@ function bindMsgListDelegation() {
 
   box.addEventListener('click', e => {
     if (longPressFired) { longPressFired = false; return; }
-    const playEl = e.target.closest('[data-play]');
+    const avatarOwnerEl = e.target.closest('[data-avatar-owner]');
+    if (avatarOwnerEl) { openContactProfile(avatarOwnerEl.dataset.avatarOwner); return; }
+    const playEl = e.target.closest('[data-voice-play]');
     if (playEl) {
-      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
-      if (msg?.voiceUrl) new Audio(msg.voiceUrl).play().catch(()=>{});
+      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.voicePlay);
+      if (msg?.voiceData) new Audio(msg.voiceData).play().catch(()=>{});
       return;
     }
+    const transcribeEl = e.target.closest('[data-voice-transcribe]');
+    if (transcribeEl) { handleVoiceTranscribeClick(transcribeEl.dataset.voiceTranscribe); return; }
     const rpEl = e.target.closest('[data-redpacket]');
     if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
     const locEl = e.target.closest('[data-location]');
@@ -553,6 +666,40 @@ function openTarotSheet(msgId) {
   document.getElementById('tarotSheet')?.classList.remove('hidden');
 }
 
+/* ============ 语音转文字 ============ */
+async function transcribeAudioDataUrl(dataUrl, cfg) {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const form = new FormData();
+  form.append('file', blob, 'audio.webm');
+  form.append('model', cfg.model || 'whisper-1');
+  const resp = await fetch(cfg.endpoint, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${cfg.apiKey}` },
+    body: form
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  return data.text || data.transcript || data.result || JSON.stringify(data);
+}
+async function handleVoiceTranscribeClick(msgId) {
+  const chatId = state.activeChatId;
+  const msg = (state.chats[chatId]||[]).find(m => String(m.id) === String(msgId));
+  if (!msg || msg.transcribedText) return;
+  const cfg = getSTTConfig();
+  if (!cfg.enabled || !cfg.apiKey || !cfg.endpoint) { alert('请先在"我→AI/语音设置"中配置并启用"语音转文字"功能'); return; }
+  const btn = document.querySelector(`[data-voice-transcribe="${msg.id}"]`);
+  if (btn) btn.textContent = '转换中...';
+  try {
+    const text = await transcribeAudioDataUrl(msg.voiceData, cfg);
+    msg.transcribedText = text || '（识别结果为空）';
+  } catch(e) {
+    msg.transcribedText = '（识别失败：' + (e.message||'未知错误') + '，请检查STT设置是否正确）';
+  }
+  persist();
+  renderMessages();
+}
+
 /* ============ 发消息 & 塔罗回复 ============ */
 function addMessage(chatId, from, text, extra = {}) {
   const msg = { id: Date.now() + Math.random(), from, text, ts: Date.now(), ...extra };
@@ -574,6 +721,7 @@ const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你
 function handleSend(text) {
   const chatId = state.activeChatId;
   if (!chatId || !text || !text.trim()) return;
+  state.lastUserActivity = Date.now();
   addMessage(chatId, 'me', text.trim());
 
   if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
@@ -608,10 +756,20 @@ async function replyWithTarot(chatId, fromId, text, persona) {
     return;
   }
   const picks = await interpretAndReply(text, cards, pool, persona);
+  const cfg = getAIConfig();
   for (let i = 0; i < picks.length; i++) {
     await new Promise(r => setTimeout(r, 450));
-    const voiceUrl = await synthesizeVoice(picks[i]);
-    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
+    if (cfg.voiceEnabled) {
+      const rawUrl = await synthesizeVoice(picks[i]);
+      if (rawUrl) {
+        const dataUrl = await blobUrlToDataUrl(rawUrl);
+        if (dataUrl) {
+          addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, type:'voice', voiceData: dataUrl, voiceDuration: Math.max(1, Math.round(picks[i].length/3)), isUserRecording:false, transcribedText: picks[i] });
+          continue;
+        }
+      }
+    }
+    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield });
   }
 }
 async function processSingleBatch(contactId) {
@@ -636,7 +794,7 @@ async function processGroupBatch(groupId) {
   }
 }
 
-/* ============ 换头像（塔罗流程） ============ */
+/* ============ 换头像 ============ */
 async function requestAvatarChange(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -644,13 +802,11 @@ async function requestAvatarChange(contactId, chatId) {
     addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦。也可以在"角色设置"里用"直接设置头像"一步到位）', { systemNote: true });
     return;
   }
-  markOpStart('换头像');
   try {
     const cards = drawCards(3);
     const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
     if (!chosen || !chosen.dataUrl) {
       addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，建议在"角色设置"里用"直接设置头像"手动指定）', { systemNote: true });
-      markOpDone();
       return;
     }
     contact.avatar = chosen.dataUrl;
@@ -660,12 +816,8 @@ async function requestAvatarChange(contactId, chatId) {
     addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
   } catch (err) {
     addMessage(chatId, contactId, `（换头像出错了：${err?.message || '未知错误'}，建议改用"角色设置→直接设置头像"）`, { systemNote: true });
-  } finally {
-    markOpDone();
   }
 }
-
-/* ============ 直接手动设置头像 —— 保证一定成功 ============ */
 function directSetContactAvatar(contactId, dataUrl) {
   const contact = getContactById(contactId);
   if (!contact) return;
@@ -756,7 +908,7 @@ function bindCallLogView() {
   document.getElementById('callLogViewClose')?.addEventListener('click', () => document.getElementById('callLogViewSheet').classList.add('hidden'));
 }
 
-/* ============ 通话系统 ============ */
+/* ============ 通话系统（含来电） ============ */
 let _callLocalStream = null;
 let _callTimer = null;
 let _callSeconds = 0;
@@ -766,6 +918,8 @@ let _callActiveContact = null;
 let _callActiveType = 'voice';
 let _callChatLog = [];
 let _callRecognizer = null;
+let _callPendingType = null;
+let _callPendingContact = null;
 
 function initCallRecognizer() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -829,19 +983,14 @@ function renderCallRemoteMedia(contact, type) {
     }
   }
 }
-async function openCallOverlay(type, contact) {
-  if (!contact) { alert('请先选择一个角色'); return; }
+async function beginActiveCallMedia(type, contact) {
   _callActiveContact = contact; _callActiveType = type;
   _callSeconds = 0; _callMuted = false; _callSpeakerOn = false; _callChatLog = [];
   document.getElementById('callMuteBtn').classList.remove('active');
   document.getElementById('callSpeakerBtn').classList.remove('active');
   document.getElementById('callTextChat').classList.add('hidden');
-  document.getElementById('callMiniPill').classList.add('hidden');
   renderCallLogBox();
-  document.getElementById('callTypeLabel').textContent = type === 'video' ? '视频通话' : '语音通话';
-  document.getElementById('callName').textContent = contact.name;
   document.getElementById('callStatus').textContent = '正在呼叫...';
-  renderCallRemoteMedia(contact, type);
   const localPreview = document.getElementById('callLocalPreview');
   if (type === 'video') {
     localPreview.classList.remove('hidden');
@@ -853,9 +1002,8 @@ async function openCallOverlay(type, contact) {
     catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
   }
   _callRecognizer = initCallRecognizer();
-  document.getElementById('callOverlay').classList.remove('hidden');
   clearInterval(_callTimer);
-  setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1500);
+  setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1200);
   _callTimer = setInterval(() => {
     _callSeconds++;
     if (_callSeconds >= 2) {
@@ -868,13 +1016,48 @@ async function openCallOverlay(type, contact) {
     }
   }, 1000);
 }
+async function openCallOverlay(type, contact, incoming = false) {
+  if (!contact) { alert('请先选择一个角色'); return; }
+  document.getElementById('callTypeLabel').textContent = type==='video'?'视频通话':'语音通话';
+  document.getElementById('callName').textContent = contact.name;
+  document.getElementById('callMiniPill').classList.add('hidden');
+  document.getElementById('callTextChat').classList.add('hidden');
+  document.getElementById('callChatLogBox').innerHTML = '';
+  document.getElementById('callOverlay').classList.remove('hidden');
+  renderCallRemoteMedia(contact, type);
+  if (incoming) {
+    document.getElementById('callActionsGrid').classList.add('hidden');
+    document.getElementById('incomingCallActions').classList.remove('hidden');
+    document.getElementById('callStatus').textContent = (type==='video'?'邀请你视频通话':'邀请你语音通话');
+    _callPendingType = type; _callPendingContact = contact;
+    return;
+  }
+  document.getElementById('callActionsGrid').classList.remove('hidden');
+  document.getElementById('incomingCallActions').classList.add('hidden');
+  await beginActiveCallMedia(type, contact);
+}
+function acceptIncomingCall() {
+  document.getElementById('incomingCallActions').classList.add('hidden');
+  document.getElementById('callActionsGrid').classList.remove('hidden');
+  beginActiveCallMedia(_callPendingType, _callPendingContact);
+}
+function declineIncomingCall() {
+  const contact = _callPendingContact;
+  const type = _callPendingType;
+  document.getElementById('callOverlay').classList.add('hidden');
+  if (contact) {
+    const chatId = String(contact.id);
+    addMessage(chatId, contact.id, '', { type:'call', callType:type, callDurationText:'已拒绝' });
+  }
+  _callPendingContact = null; _callPendingType = null;
+}
 function closeCallOverlay() {
   clearInterval(_callTimer);
   if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
   if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e) {} _callRecognizer = null; }
   document.getElementById('callOverlay').classList.add('hidden');
   document.getElementById('callMiniPill').classList.add('hidden');
-  const chatId = state.activeChatId;
+  const chatId = _callActiveContact ? String(_callActiveContact.id) : state.activeChatId;
   if (chatId && _callSeconds >= 1) {
     const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
     const durationText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
@@ -895,6 +1078,8 @@ function minimizeCall() {
 function restoreCall() { document.getElementById('callMiniPill').classList.add('hidden'); document.getElementById('callOverlay').classList.remove('hidden'); }
 function bindCallOverlay() {
   document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
+  document.getElementById('callAcceptBtn')?.addEventListener('click', acceptIncomingCall);
+  document.getElementById('callDeclineBtn')?.addEventListener('click', declineIncomingCall);
   document.getElementById('callMinimizeBtn')?.addEventListener('click', minimizeCall);
   document.getElementById('callMiniPill')?.addEventListener('click', restoreCall);
   document.getElementById('callMuteBtn')?.addEventListener('click', () => {
@@ -926,17 +1111,22 @@ function bindCallOverlay() {
   voiceHoldBtn?.addEventListener('pointerup', stopVoiceHold);
   voiceHoldBtn?.addEventListener('pointerleave', stopVoiceHold);
   document.getElementById('callRemoteArea')?.addEventListener('click', e => { if (e.target.closest('#callRemoteUploadBtnDynamic')) document.getElementById('callInCallMediaFileInput').click(); });
-  document.getElementById('callInCallMediaFileInput')?.addEventListener('change', e => {
+  document.getElementById('callInCallMediaFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file || !_callActiveContact) return;
     const isVideo = file.type.startsWith('video/');
-    const reader = new FileReader();
-    reader.onload = ev => { _callActiveContact.callMedia = ev.target.result; _callActiveContact.callMediaType = isVideo ? 'video' : 'image'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); };
-    reader.readAsDataURL(file);
+    if (isVideo) {
+      const reader = new FileReader();
+      reader.onload = ev => { _callActiveContact.callMedia = ev.target.result; _callActiveContact.callMediaType = 'video'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); };
+      reader.readAsDataURL(file);
+    } else {
+      const dataUrl = await readFileAsCompressedDataUrl(file, 900, 0.75);
+      if (dataUrl) { _callActiveContact.callMedia = dataUrl; _callActiveContact.callMediaType = 'image'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); }
+    }
     e.target.value = '';
   });
 }
 
-/* ============ AI 自主行为 ============ */
+/* ============ AI 自主行为（提高触发概率+来电） ============ */
 async function aiAutoSendMessage() {
   const cfg = getAIConfig();
   if (!cfg.autoMsg || !state.contacts.length) return;
@@ -959,8 +1149,17 @@ async function aiAutoChangeAvatar() {
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
+async function aiAutoCall() {
+  const cfg = getAIConfig();
+  if (!cfg.autoCall || !state.contacts.length) return;
+  if (!document.getElementById('callOverlay').classList.contains('hidden')) return;
+  const contact = state.contacts[secureRandomInt(state.contacts.length)];
+  state.activeChatId = String(contact.id);
+  const type = secureRandomInt(2) === 0 ? 'voice' : 'video';
+  openCallOverlay(type, contact, true);
+}
 
-/* ============ 朋友圈评论逻辑（含置顶排序） ============ */
+/* ============ 朋友圈评论逻辑 ============ */
 function pickReplyingContactForMoment(moment) {
   const posterContact = getContactById(moment.contactId);
   if (posterContact) return posterContact;
@@ -975,59 +1174,58 @@ async function aiReplyToMoment(momentId, userComment) {
   moment.comments = moment.comments || [];
   moment.comments.push({ from: 'me', text: userComment });
   const contact = pickReplyingContactForMoment(moment);
-  if (!contact) { persist(); renderMoments(); return; }
+  if (!contact) { persist(); renderMoments(); renderProfileMomentsIfOpen(); return; }
   const cards = drawCards(3);
   const pool = WordCards.getForContact(contact);
   const picks = await interpretAndReply(userComment, cards, pool, contact.persona);
   moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
-  persist(); renderMoments();
+  persist(); renderMoments(); renderProfileMomentsIfOpen();
 }
-setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
-setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
-setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
+function renderProfileMomentsIfOpen() {
+  if (!document.getElementById('page-profile')?.classList.contains('hidden')) {
+    // 重新按当前显示的名字过滤刷新（简单起见：直接不特别处理，主要靠下次进入时刷新）
+  }
+}
 
-/* ============ 朋友圈展示/发布（含置顶） ============ */
+setInterval(() => { try { if (secureRandomInt(100) < 18) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 30000);
+setInterval(() => { try { if (secureRandomInt(100) < 12) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 45000);
+setInterval(() => { try { if (secureRandomInt(100) < 8) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 60000);
+setInterval(() => { try { if (secureRandomInt(100) < 6) aiAutoCall(); } catch(e){ console.error(e); } }, 40000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    try { if (secureRandomInt(100) < 25) aiAutoSendMessage(); } catch(e){}
+  }
+});
+
+/* ============ 朋友圈展示/发布 ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
-  const sorted = [...state.moments].sort((a, b) => ((b.pinned?1:0) - (a.pinned?1:0)));
-  box.innerHTML = sorted.map(m => `
-    <div class="moment-item" data-id="${m.id}">
-      ${avatarHtml(m.avatar, m.name, 44)}
-      <div class="moment-body">
-        <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
-        ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
-        ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
-        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
-          <span>
-            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
-            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
-          </span>
-        </div>
-        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
-        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
-      </div></div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
+  const sorted = [...state.moments].sort((a,b)=> ((b.pinned?1:0)-(a.pinned?1:0)));
+  box.innerHTML = sorted.map(momentItemHtml).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
+}
+function momentsClickHandler(e) {
+  const box = e.currentTarget;
+  const avatarOwnerEl = e.target.closest('[data-avatar-owner]');
+  if (avatarOwnerEl) { openContactProfile(avatarOwnerEl.dataset.avatarOwner); return; }
+  const pinToggle = e.target.closest('[data-toggle-pin]');
+  if (pinToggle) {
+    const id = Number(pinToggle.dataset.togglePin);
+    const m = state.moments.find(x => x.id === id);
+    if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
+    return;
+  }
+  const toggle = e.target.closest('[data-toggle-comment]');
+  if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
+  const submit = e.target.closest('[data-comment-submit]');
+  if (submit) {
+    const id = Number(submit.dataset.commentSubmit);
+    const input = box.querySelector(`[data-comment-input="${id}"]`);
+    if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
+  }
 }
 function bindMomentsDelegation() {
-  const box = document.getElementById('momentsList');
-  if (!box) return;
-  box.addEventListener('click', e => {
-    const pinToggle = e.target.closest('[data-toggle-pin]');
-    if (pinToggle) {
-      const id = Number(pinToggle.dataset.togglePin);
-      const m = state.moments.find(x => x.id === id);
-      if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
-      return;
-    }
-    const toggle = e.target.closest('[data-toggle-comment]');
-    if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
-    const submit = e.target.closest('[data-comment-submit]');
-    if (submit) {
-      const id = Number(submit.dataset.commentSubmit);
-      const input = box.querySelector(`[data-comment-input="${id}"]`);
-      if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
-    }
-  });
+  document.getElementById('momentsList')?.addEventListener('click', momentsClickHandler);
 }
 let _postMomentImage = null;
 function bindPostMoment() {
@@ -1039,14 +1237,13 @@ function bindPostMoment() {
   });
   document.getElementById('postMomentCancel')?.addEventListener('click', () => document.getElementById('postMomentSheet').classList.add('hidden'));
   document.getElementById('postMomentAddImgBtn')?.addEventListener('click', () => document.getElementById('postMomentImgInput').click());
-  document.getElementById('postMomentImgInput')?.addEventListener('change', e => {
+  document.getElementById('postMomentImgInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      _postMomentImage = ev.target.result;
+    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
+    if (dataUrl) {
+      _postMomentImage = dataUrl;
       document.getElementById('postMomentImgPreview').innerHTML = `<img src="${_postMomentImage}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;">`;
-    };
-    reader.readAsDataURL(file);
+    }
     e.target.value = '';
   });
   document.getElementById('postMomentConfirm')?.addEventListener('click', () => {
@@ -1077,7 +1274,7 @@ async function aiCommentOnUserMoment(momentId, contactId) {
   persist(); renderMoments();
 }
 
-/* ============ 红包 ============ */
+/* ============ 红包（接入钱包） ============ */
 function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
 function bindRedPacket() {
   document.getElementById('rpCancel')?.addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
@@ -1090,6 +1287,12 @@ function bindRedPacket() {
     const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
     document.getElementById('sendRedPacketSheet').classList.add('hidden');
     document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
+
+    const w = getWallet();
+    w.balance -= amount;
+    w.transactions.push({ title: '发出红包', amount: -amount, ts: msg.ts, refId: msg.id });
+    saveWallet(w);
+
     setTimeout(() => {
       const list = state.chats[chatId] || [];
       const target = list.find(m => m.id === msg.id);
@@ -1126,11 +1329,107 @@ function openRedPacketDetail(msgId) {
       if (msg.from === 'me') { alert('自己发的红包不能自己领取哦'); return; }
       msg.redpacket.status = 'claimed'; msg.redpacket.claimedBy = 'me';
       persist(); renderMessages();
+      const w = getWallet();
+      const amt = parseFloat(msg.redpacket.amount);
+      const senderName = getContactById(msg.from)?.name || '对方';
+      w.balance += amt;
+      w.transactions.push({ title: `收到${senderName}的红包`, amount: amt, ts: Date.now(), refId: msg.id });
+      saveWallet(w);
       midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
       amountShow.textContent = `¥${msg.redpacket.amount}`;
     };
   }
   document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');
+}
+
+/* ============ 钱包历史迁移（一次性） ============ */
+function ensureWalletMigrated() {
+  if (safeGetItem('tarot_wallet_migrated_v2', null)) return;
+  const w = getWallet();
+  Object.keys(state.chats).forEach(chatId => {
+    (state.chats[chatId] || []).forEach(m => {
+      if (m.type !== 'redpacket') return;
+      const already = w.transactions.some(t => t.refId === m.id);
+      if (already) return;
+      if (m.from === 'me') {
+        const amt = parseFloat(m.redpacket.amount);
+        w.balance -= amt;
+        w.transactions.push({ title: '发出红包', amount: -amt, ts: m.ts, refId: m.id });
+      } else if (m.redpacket.status === 'claimed' && String(m.redpacket.claimedBy) === 'me') {
+        const amt = parseFloat(m.redpacket.amount);
+        const senderName = getContactById(m.from)?.name || '对方';
+        w.balance += amt;
+        w.transactions.push({ title: `收到${senderName}的红包`, amount: amt, ts: m.ts, refId: m.id });
+      }
+    });
+  });
+  saveWallet(w);
+  safeSetItem('tarot_wallet_migrated_v2', '1');
+}
+
+/* ============ 钱包UI ============ */
+function renderWalletPage() {
+  const w = getWallet();
+  document.getElementById('walletBalanceAmount').textContent = `¥${w.balance.toFixed(2)}`;
+}
+function renderWalletBillsPage() {
+  const w = getWallet();
+  const box = document.getElementById('walletBillsList');
+  const sorted = w.transactions.slice().sort((a,b)=> b.ts - a.ts);
+  box.innerHTML = sorted.map(t => `
+    <div class="bill-item">
+      <div class="bill-info"><div class="bill-title">${escapeHtml(t.title)}</div><div class="bill-time">${new Date(t.ts).toLocaleString()}</div></div>
+      <div class="bill-amount ${t.amount >= 0 ? 'income' : 'expense'}">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
+    </div>`).join('') || '<div style="padding:40px;text-align:center;color:#999;font-size:14px;">暂无账单记录</div>';
+}
+function runFaceIdSimulation(onSuccess) {
+  const sheet = document.getElementById('faceidSheet');
+  const iconBox = document.getElementById('faceidIconBox');
+  const statusText = document.getElementById('faceidStatusText');
+  iconBox.classList.add('scanning');
+  statusText.textContent = '请保持不动，正在识别...';
+  sheet.classList.remove('hidden');
+  const timer = setTimeout(() => {
+    iconBox.classList.remove('scanning');
+    statusText.textContent = '识别成功';
+    setTimeout(() => { sheet.classList.add('hidden'); onSuccess(); }, 500);
+  }, 1400);
+  document.getElementById('faceidCancel').onclick = () => { clearTimeout(timer); sheet.classList.add('hidden'); };
+}
+function bindWallet() {
+  document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
+  document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
+  document.getElementById('rowWalletBills')?.addEventListener('click', () => { renderWalletBillsPage(); pushPage('page-wallet-bills'); });
+  document.getElementById('backFromWalletBills')?.addEventListener('click', () => popPage());
+  document.getElementById('btnRechargeOpen')?.addEventListener('click', () => {
+    document.getElementById('rechargeAmountInput').value = '';
+    document.getElementById('rechargeSheet').classList.remove('hidden');
+  });
+  document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
+  document.getElementById('rechargeNext')?.addEventListener('click', () => {
+    const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
+    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
+    document.getElementById('rechargeSheet').classList.add('hidden');
+    runFaceIdSimulation(() => {
+      const w = getWallet();
+      w.balance += amount;
+      w.transactions.push({ title: '零钱充值', amount, ts: Date.now() });
+      saveWallet(w);
+      renderWalletPage();
+      alert('充值成功');
+    });
+  });
+  document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
+    const w = getWallet();
+    if (w.balance <= 0) { alert('余额不足'); return; }
+    runFaceIdSimulation(() => {
+      w.transactions.push({ title: '零钱提现', amount: -w.balance, ts: Date.now() });
+      w.balance = 0;
+      saveWallet(w);
+      renderWalletPage();
+      alert('提现成功');
+    });
+  });
 }
 
 /* ============ 塔罗弹层 & 字卡管理 ============ */
@@ -1183,16 +1482,20 @@ function bindPlusPanel() {
       const chatId = state.activeChatId;
       if (isGroupChat(chatId)) { alert('群聊暂不支持通话'); return; }
       const contact = getContactById(chatId);
-      openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact);
+      openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact, false);
     } else alert('该功能暂未开放');
   });
-  document.getElementById('sendPhotoFileInput')?.addEventListener('change', e => {
+  document.getElementById('sendPhotoFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
+    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
+    if (dataUrl) sendImageMessage(dataUrl);
+    e.target.value = '';
   });
-  document.getElementById('sendCameraFileInput')?.addEventListener('change', e => {
+  document.getElementById('sendCameraFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
+    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
+    if (dataUrl) sendImageMessage(dataUrl);
+    e.target.value = '';
   });
 }
 function renderStickerGrid() {
@@ -1202,13 +1505,13 @@ function renderStickerGrid() {
 }
 function bindStickerPicker() {
   document.getElementById('stickerAddBtn')?.addEventListener('click', () => document.getElementById('stickerFileInput').click());
-  document.getElementById('stickerFileInput')?.addEventListener('change', e => {
-    const files = [...e.target.files]; let remaining = files.length;
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result }); saveStickers(stickers); remaining--; if (remaining===0) renderStickerGrid(); };
-      reader.readAsDataURL(file);
-    });
+  document.getElementById('stickerFileInput')?.addEventListener('change', async e => {
+    const files = [...e.target.files];
+    for (const file of files) {
+      const dataUrl = await readFileAsCompressedDataUrl(file, 400, 0.7);
+      if (dataUrl) { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl }); saveStickers(stickers); }
+    }
+    renderStickerGrid();
     e.target.value = '';
   });
   document.getElementById('stickerPickerClose')?.addEventListener('click', () => document.getElementById('stickerPickerSheet').classList.add('hidden'));
@@ -1265,7 +1568,7 @@ function bindAddGroup() {
   });
 }
 
-/* ============ 聊天设置（直接设置头像/通话形象/角色设定） ============ */
+/* ============ 聊天设置 ============ */
 let chatSettingsTarget = null;
 function openChatSettings() {
   const chatId = state.activeChatId;
@@ -1350,24 +1653,26 @@ function bindChatSettingsDelegation() {
       return;
     }
   });
-  document.getElementById('directAvatarFileInput')?.addEventListener('change', e => {
+  document.getElementById('directAvatarFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
-    const reader = new FileReader();
-    reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
-    reader.readAsDataURL(file);
+    const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
+    if (dataUrl) { directSetContactAvatar(chatSettingsTarget.id, dataUrl); openChatSettings(); }
     e.target.value = '';
   });
-  document.getElementById('callMediaFileInput')?.addEventListener('change', e => {
+  document.getElementById('callMediaFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
     const isVideo = file.type.startsWith('video/');
     if (file.size > 8 * 1024 * 1024) { if (!confirm('文件较大，可能导致存储空间超限，是否继续？')) { e.target.value=''; return; } }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const c = getContactById(chatSettingsTarget.id);
-      if (c) { c.callMedia = ev.target.result; c.callMediaType = isVideo ? 'video' : 'image'; persist(); }
+    const c = getContactById(chatSettingsTarget.id);
+    if (isVideo) {
+      const reader = new FileReader();
+      reader.onload = ev => { if (c) { c.callMedia = ev.target.result; c.callMediaType = 'video'; persist(); } openChatSettings(); };
+      reader.readAsDataURL(file);
+    } else {
+      const dataUrl = await readFileAsCompressedDataUrl(file, 900, 0.75);
+      if (c && dataUrl) { c.callMedia = dataUrl; c.callMediaType = 'image'; persist(); }
       openChatSettings();
-    };
-    reader.readAsDataURL(file);
+    }
     e.target.value = '';
   });
 }
@@ -1381,12 +1686,13 @@ function bindAvatarLib() {
   document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); pushPage('page-avatarlib'); });
   document.getElementById('backFromAvatarLib')?.addEventListener('click', () => popPage());
   document.getElementById('btnAddAvatarImg')?.addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
-  document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
-    [...e.target.files].forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
-      reader.readAsDataURL(file);
-    });
+  document.getElementById('avatarLibFileInput')?.addEventListener('change', async e => {
+    const files = [...e.target.files];
+    for (const file of files) {
+      const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
+      if (dataUrl) { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl, tag: '' }); persist(); }
+    }
+    renderAvatarLibGrid();
     e.target.value = '';
   });
   document.getElementById('avatarLibGrid')?.addEventListener('click', e => {
@@ -1401,70 +1707,114 @@ function bindAvatarLib() {
 }
 
 function bindMyAvatarUpload() {
-  document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
+  document.getElementById('myAvatarFileInput')?.addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); };
-    reader.readAsDataURL(file);
+    const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
+    if (dataUrl) { state.myAvatar = dataUrl; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); }
+    e.target.value = '';
   });
 }
 
-/* ============ 钱包（模拟，非真实支付） ============ */
-function renderWalletPage() {
-  const w = getWallet();
-  document.getElementById('walletBalanceAmount').textContent = `¥${w.balance.toFixed(2)}`;
-  const list = document.getElementById('walletTxList');
-  list.innerHTML = w.transactions.slice().reverse().map(t => `
-    <div class="wallet-tx-item">
-      <div class="tx-info"><div class="tx-title">${escapeHtml(t.title)}</div><div class="tx-time">${new Date(t.ts).toLocaleString()}</div></div>
-      <div class="wallet-tx-amount">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
-    </div>`).join('') || '<div style="padding:30px;text-align:center;color:#999;font-size:14px;">暂无交易记录</div>';
+/* ============ 搜索功能 ============ */
+function searchContactsAndGroups(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const items = [
+    ...state.contacts.map(c => ({ id:String(c.id), name:c.name, avatar:c.avatar })),
+    ...state.groups.map(g => ({ id:'g_'+g.id, name:g.name, avatar:null }))
+  ];
+  return items.filter(it => it.name.toLowerCase().includes(q));
 }
-function runFaceIdSimulation(onSuccess) {
-  const sheet = document.getElementById('faceidSheet');
-  const iconBox = document.getElementById('faceidIconBox');
-  const statusText = document.getElementById('faceidStatusText');
-  iconBox.classList.add('scanning');
-  statusText.textContent = '请保持不动，正在识别...';
-  sheet.classList.remove('hidden');
-  const timer = setTimeout(() => {
-    iconBox.classList.remove('scanning');
-    statusText.textContent = '识别成功';
-    setTimeout(() => { sheet.classList.add('hidden'); onSuccess(); }, 500);
-  }, 1600);
-  document.getElementById('faceidCancel').onclick = () => { clearTimeout(timer); sheet.classList.add('hidden'); };
-}
-function bindWallet() {
-  document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
-  document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
-  document.getElementById('btnRechargeOpen')?.addEventListener('click', () => {
-    document.getElementById('rechargeAmountInput').value = '';
-    document.getElementById('rechargeSheet').classList.remove('hidden');
-  });
-  document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
-  document.getElementById('rechargeNext')?.addEventListener('click', () => {
-    const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
-    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
-    document.getElementById('rechargeSheet').classList.add('hidden');
-    runFaceIdSimulation(() => {
-      const w = getWallet();
-      w.balance += amount;
-      w.transactions.push({ title: '充值（模拟，非真实支付）', amount, ts: Date.now() });
-      saveWallet(w);
-      renderWalletPage();
-      alert('充值成功（本功能为模拟效果，不涉及真实支付）');
+function searchAllMessages(query, limit=50) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const results = [];
+  Object.keys(state.chats).forEach(chatId => {
+    (state.chats[chatId]||[]).forEach(m => {
+      if (m.systemNote) return;
+      const text = m.text || m.transcribedText || '';
+      if (!text) return;
+      if (text.toLowerCase().includes(q)) {
+        const isGroup = isGroupChat(chatId);
+        const nameLabel = isGroup ? (getGroupById(chatId.slice(2))?.name||'群聊') : (getContactById(chatId)?.name||'角色');
+        results.push({ chatId, msgId: m.id, text, ts: m.ts, nameLabel });
+      }
     });
   });
-  document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
-    const w = getWallet();
-    if (w.balance <= 0) { alert('余额不足'); return; }
-    runFaceIdSimulation(() => {
-      w.transactions.push({ title: '提现（模拟）', amount: -w.balance, ts: Date.now() });
-      w.balance = 0;
-      saveWallet(w);
-      renderWalletPage();
-      alert('提现成功（模拟效果）');
-    });
+  results.sort((a,b)=> b.ts - a.ts);
+  return results.slice(0, limit);
+}
+function searchMessagesInChat(chatId, query, limit=50) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return (state.chats[chatId]||[]).filter(m => {
+    if (m.systemNote) return false;
+    const text = m.text || m.transcribedText || '';
+    return text && text.toLowerCase().includes(q);
+  }).map(m => ({ msgId:m.id, text:(m.text||m.transcribedText), ts:m.ts })).slice(0, limit);
+}
+function jumpToMessageInCurrentChat(msgId) {
+  setTimeout(() => {
+    const row = document.querySelector(`#msgList [data-id="${msgId}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior:'smooth', block:'center' });
+      const bubble = row.querySelector('.bubble') || row;
+      bubble.classList.add('msg-flash');
+      setTimeout(()=> bubble.classList.remove('msg-flash'), 1600);
+    }
+  }, 150);
+}
+function jumpToChatAndMessage(chatId, msgId) {
+  document.getElementById('page-search')?.classList.add('hidden');
+  navStack = ['page-chatlist'];
+  openChat(chatId);
+  if (msgId) jumpToMessageInCurrentChat(msgId);
+}
+function bindGlobalSearch() {
+  document.getElementById('btnGlobalSearch')?.addEventListener('click', () => {
+    document.getElementById('globalSearchInput').value = '';
+    document.getElementById('globalSearchContactResults').innerHTML = '';
+    document.getElementById('globalSearchMessageResults').innerHTML = '';
+    pushPage('page-search');
+    setTimeout(() => document.getElementById('globalSearchInput')?.focus(), 300);
+  });
+  document.getElementById('backFromSearch')?.addEventListener('click', () => popPage());
+  document.getElementById('globalSearchInput')?.addEventListener('input', e => {
+    const q = e.target.value;
+    const contactResults = searchContactsAndGroups(q);
+    const msgResults = q.trim() ? searchAllMessages(q) : [];
+    document.getElementById('globalSearchContactResults').innerHTML = contactResults.map(it => `
+      <div class="chat-item" data-jump-contact="${it.id}">${avatarHtml(it.avatar, it.name, 44)}<div class="info"><div class="name">${escapeHtml(it.name)}</div></div></div>
+    `).join('') || (q.trim() ? '<div style="padding:16px;color:#999;font-size:13px;">无匹配联系人</div>' : '');
+    document.getElementById('globalSearchMessageResults').innerHTML = msgResults.map(r => `
+      <div class="chat-item" data-jump-msg="${r.chatId}|${r.msgId}">
+        <div class="info" style="margin-left:0;">
+          <div class="row1"><span class="name">${escapeHtml(r.nameLabel)}</span><span class="time">${new Date(r.ts).toLocaleDateString()}</span></div>
+          <div class="last-msg">${escapeHtml(r.text)}</div>
+        </div></div>`).join('') || (q.trim() ? '<div style="padding:16px;color:#999;font-size:13px;">无匹配聊天记录</div>' : '');
+  });
+  document.getElementById('globalSearchResultsScroll')?.addEventListener('click', e => {
+    const c = e.target.closest('[data-jump-contact]'); if (c) { jumpToChatAndMessage(c.dataset.jumpContact, null); return; }
+    const m = e.target.closest('[data-jump-msg]'); if (m) { const [chatId,msgId] = m.dataset.jumpMsg.split('|'); jumpToChatAndMessage(chatId, msgId); }
+  });
+}
+function bindChatSearch() {
+  document.getElementById('btnChatSearch')?.addEventListener('click', () => {
+    document.getElementById('chatSearchInput').value='';
+    document.getElementById('chatSearchResults').innerHTML='';
+    document.getElementById('chatSearchSheet').classList.remove('hidden');
+  });
+  document.getElementById('chatSearchClose')?.addEventListener('click', () => document.getElementById('chatSearchSheet').classList.add('hidden'));
+  document.getElementById('chatSearchInput')?.addEventListener('input', e => {
+    const results = searchMessagesInChat(state.activeChatId, e.target.value);
+    document.getElementById('chatSearchResults').innerHTML = results.map(r => `
+      <div class="wc-item" data-jump-in-chat="${r.msgId}" style="cursor:pointer;"><span>${escapeHtml(String(r.text).slice(0,40))}</span><span style="color:#999;font-size:12px;">${new Date(r.ts).toLocaleTimeString().slice(0,5)}</span></div>
+    `).join('') || (e.target.value.trim() ? '<div style="padding:14px;color:#999;font-size:13px;">无匹配结果</div>' : '');
+  });
+  document.getElementById('chatSearchResults')?.addEventListener('click', e => {
+    const item = e.target.closest('[data-jump-in-chat]'); if (!item) return;
+    document.getElementById('chatSearchSheet').classList.add('hidden');
+    jumpToMessageInCurrentChat(item.dataset.jumpInChat);
   });
 }
 
@@ -1542,6 +1892,22 @@ function bindCloudSync() {
     location.reload();
   });
 }
+function loadSTTSettingsForm() {
+  const cfg = getSTTConfig();
+  document.getElementById('cfgSttEnabled').checked = cfg.enabled;
+  document.getElementById('cfgSttEndpoint').value = cfg.endpoint;
+  document.getElementById('cfgSttApiKey').value = cfg.apiKey;
+  document.getElementById('cfgSttModel').value = cfg.model;
+}
+function saveCurrentSTTForm() {
+  const textCfg = getAIConfig();
+  saveSTTConfig({
+    enabled: document.getElementById('cfgSttEnabled').checked,
+    endpoint: document.getElementById('cfgSttEndpoint').value.trim(),
+    apiKey: document.getElementById('cfgSttApiKey').value.trim() || textCfg.apiKey,
+    model: document.getElementById('cfgSttModel').value.trim() || 'whisper-1'
+  });
+}
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -1557,7 +1923,9 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
+  document.getElementById('cfgAutoCall').checked = !!cfg.autoCall;
   loadCloudSettingsForm();
+  loadSTTSettingsForm();
 }
 function bindSettingsSave() {
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
@@ -1574,14 +1942,71 @@ function bindSettingsSave() {
       autoMsg: document.getElementById('cfgAutoMsg').checked,
       autoMoment: document.getElementById('cfgAutoMoment').checked,
       autoAvatar: document.getElementById('cfgAutoAvatar').checked,
-      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
+      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked,
+      autoCall: document.getElementById('cfgAutoCall').checked
     });
     saveCurrentCloudForm();
+    saveCurrentSTTForm();
     alert('已保存');
   });
 }
 
-/* ============ 输入框 & 语音输入 ============ */
+/* ============ 输入框 & 真实语音录制发送 ============ */
+let _voiceRecorder = null, _voiceChunks = [], _voiceRecordStart = 0, _voiceRecognizerLive = null, _voiceLiveTranscript = '';
+
+function pickRecorderMimeType() {
+  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/wav'];
+  for (const c of candidates) { if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c; }
+  return '';
+}
+async function startVoiceRecording() {
+  _voiceChunks = [];
+  _voiceLiveTranscript = '';
+  _voiceRecordStart = Date.now();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = pickRecorderMimeType();
+    _voiceRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    _voiceRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) _voiceChunks.push(e.data); };
+    _voiceRecorder.start();
+  } catch(e) { console.error('麦克风获取失败', e); alert('无法访问麦克风，请检查权限设置'); return false; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    _voiceRecognizerLive = new SR();
+    _voiceRecognizerLive.lang = 'zh-CN';
+    _voiceRecognizerLive.continuous = true;
+    _voiceRecognizerLive.interimResults = false;
+    _voiceRecognizerLive.onresult = ev => {
+      for (let i = ev.resultIndex; i < ev.results.length; i++) { _voiceLiveTranscript += ev.results[i][0].transcript; }
+    };
+    _voiceRecognizerLive.onerror = () => {};
+    try { _voiceRecognizerLive.start(); } catch(e) {}
+  }
+  return true;
+}
+function stopVoiceRecordingAndSend(chatId) {
+  if (_voiceRecognizerLive) { try { _voiceRecognizerLive.stop(); } catch(e){} }
+  if (!_voiceRecorder) return;
+  const duration = Math.max(1, Math.round((Date.now() - _voiceRecordStart)/1000));
+  const recorderRef = _voiceRecorder;
+  recorderRef.onstop = async () => {
+    if (_voiceChunks.length === 0) return;
+    const blob = new Blob(_voiceChunks, { type: recorderRef.mimeType || 'audio/webm' });
+    try { recorderRef.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
+    const dataUrl = await blobToDataUrlLocal(blob);
+    addMessage(chatId, 'me', '[语音]', { type:'voice', voiceData: dataUrl, voiceDuration: duration, isUserRecording: true, transcribedText: null });
+    const contextText = _voiceLiveTranscript.trim() || '(用户发送了一条语音消息)';
+    state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
+    state.pendingBatch[chatId].push(contextText);
+    clearTimeout(state.batchTimer[chatId]);
+    state.batchTimer[chatId] = setTimeout(() => {
+      if (isGroupChat(chatId)) processGroupBatch(chatId); else processSingleBatch(chatId);
+    }, 900);
+  };
+  try { recorderRef.stop(); } catch(e) {}
+  _voiceRecorder = null;
+}
+
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
@@ -1603,16 +2028,15 @@ function bindInputBar() {
     if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
     else toggleSendBtn();
   });
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let recognizer = null;
-  if (SR) {
-    recognizer = new SR(); recognizer.lang = 'zh-CN'; recognizer.continuous = false;
-    recognizer.onresult = ev => { const text = ev.results[0][0].transcript; if (text) handleSend(text); };
-    recognizer.onerror = () => holdBtn.classList.remove('active');
-    recognizer.onend = () => holdBtn.classList.remove('active');
-  }
-  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) { try { recognizer.start(); } catch(e){} } });
-  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) { try { recognizer.stop(); } catch(e){} } else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
+  let recordingActive = false;
+  holdBtn.addEventListener('pointerdown', async () => {
+    holdBtn.classList.add('active');
+    recordingActive = await startVoiceRecording();
+  });
+  const stopTalk = () => {
+    holdBtn.classList.remove('active');
+    if (recordingActive) { stopVoiceRecordingAndSend(state.activeChatId); recordingActive = false; }
+  };
   holdBtn.addEventListener('pointerup', stopTalk);
   holdBtn.addEventListener('pointerleave', stopTalk);
 }
@@ -1623,6 +2047,7 @@ async function safeStepAsync(name, fn) { try { await fn(); } catch (e) { console
 
 async function init() {
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
+  safeStep('ensureWalletMigrated', ensureWalletMigrated);
   safeStep('renderTabBars', renderTabBars);
   safeStep('renderMePage', renderMePage);
   safeStep('renderChatList', renderChatList);
@@ -1634,6 +2059,7 @@ async function init() {
   safeStep('bindMsgListDelegation', bindMsgListDelegation);
   safeStep('bindMomentsDelegation', bindMomentsDelegation);
   safeStep('bindMomentsProfile', bindMomentsProfile);
+  safeStep('bindProfilePage', bindProfilePage);
   safeStep('bindDiscoverPlaceholders', bindDiscoverPlaceholders);
   safeStep('bindSheetClose', bindSheetClose);
   safeStep('bindWordCardSheet', bindWordCardSheet);
@@ -1661,6 +2087,8 @@ async function init() {
   safeStep('bindPostMoment', bindPostMoment);
   safeStep('bindWallet', bindWallet);
   safeStep('bindChatItemActionSheet', bindChatItemActionSheet);
+  safeStep('bindGlobalSearch', bindGlobalSearch);
+  safeStep('bindChatSearch', bindChatSearch);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
