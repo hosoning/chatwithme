@@ -17,10 +17,24 @@
   window.addEventListener('DOMContentLoaded', createBanner);
   window.addEventListener('error', e => showError((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', e => showError('Promise错误: ' + (e.reason?.message || JSON.stringify(e.reason))));
+  window.addEventListener('DOMContentLoaded', () => {
+    try {
+      const marker = sessionStorage.getItem('__pending_op__');
+      if (marker) {
+        setTimeout(() => showError(`上次操作（${marker}）进行到一半时页面被重新加载了，很可能是系统内存不足自动刷新造成的。`), 800);
+        sessionStorage.removeItem('__pending_op__');
+      }
+    } catch(e) {}
+  });
 })();
+function markOpStart(name) { try { sessionStorage.setItem('__pending_op__', name); } catch(e) {} }
+function markOpDone() { try { sessionStorage.removeItem('__pending_op__'); } catch(e) {} }
 
 /* ============ 全局：JS层面拦截长按选取/系统菜单 ============ */
 (function preventNativeLongPressMenus() {
+  document.addEventListener('touchstart', function(e) {
+    if (e.target.closest('input, textarea')) return;
+  }, { passive: true });
   document.addEventListener('contextmenu', function(e) {
     if (e.target.closest('input, textarea')) return;
     e.preventDefault();
@@ -36,7 +50,7 @@
   }, 400);
 })();
 
-/* ============ 安全存储（带存满提示） ============ */
+/* ============ 安全存储 ============ */
 function safeLoadJSON(key, def) {
   try {
     const raw = localStorage.getItem(key);
@@ -45,91 +59,26 @@ function safeLoadJSON(key, def) {
     return (parsed === null || parsed === undefined) ? def : parsed;
   } catch (e) { console.error(`读取[${key}]失败`, e); try { localStorage.removeItem(key); } catch(_) {} return def; }
 }
-let _quotaWarnedRecently = false;
-function warnQuotaExceeded() {
-  if (_quotaWarnedRecently) return;
-  _quotaWarnedRecently = true;
-  setTimeout(() => { _quotaWarnedRecently = false; }, 5000);
-  alert('本地存储空间已满，最新的图片/数据可能没有保存成功！建议：删除头像库/聊天记录里不需要的图片来释放空间。');
-}
-function safeSaveJSON(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-  catch (e) {
-    console.error(e);
-    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) warnQuotaExceeded();
-    return false;
-  }
-}
+function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } }
 function safeGetItem(key, def = null) { try { const v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
-function safeSetItem(key, val) {
-  try { localStorage.setItem(key, val); return true; }
-  catch (e) {
-    console.error(e);
-    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) warnQuotaExceeded();
-    return false;
-  }
-}
-
-/* ============ 图片压缩（解决存储超限导致的头像/背景丢失问题） ============ */
-function compressImage(dataUrl, maxDim = 800, quality = 0.72) {
-  return new Promise((resolve) => {
-    try {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width <= 0 || height <= 0) { resolve(dataUrl); return; }
-        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
-        else if (height >= width && height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        try { resolve(canvas.toDataURL('image/jpeg', quality)); }
-        catch(e) { resolve(dataUrl); }
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    } catch(e) { resolve(dataUrl); }
-  });
-}
-function readFileAsCompressedDataUrl(file, maxDim = 800, quality = 0.72) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = async ev => { resolve(await compressImage(ev.target.result, maxDim, quality)); };
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
-}
-function blobToDataUrlLocal(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-async function blobUrlToDataUrl(blobUrl) {
-  try {
-    const res = await fetch(blobUrl);
-    const blob = await res.blob();
-    return await blobToDataUrlLocal(blob);
-  } catch(e) { console.error(e); return null; }
-}
+function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) { console.error(e); } }
 
 /* ============ 状态 ============ */
 const STORE = {
   contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
   moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1',
-  myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1'
+  myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1',
+  unread: 'tarot_unread_v1'
 };
 const STICKER_KEY = 'tarot_stickers_v1';
 const WALLET_KEY = 'tarot_wallet_v1';
 const PINNED_CHATS_KEY = 'tarot_pinned_chats_v1';
-const STT_CFG_KEY = 'tarot_stt_config_v1';
+const AD_DAILY_KEY = 'tarot_ad_daily_v1';
+const TEA_ADDRESS_KEY = 'tarot_tea_address_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
 function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
-function getWallet() { return safeLoadJSON(WALLET_KEY, { balance: 0, transactions: [] }); }
+function getWallet() { return safeLoadJSON(WALLET_KEY, { balance: 9999, transactions: [], rechargeToday: { date:'', amount:0 } }); }
 function saveWallet(w) { safeSaveJSON(WALLET_KEY, w); }
 function getPinnedChats() { return safeLoadJSON(PINNED_CHATS_KEY, []); }
 function savePinnedChats(list) { safeSaveJSON(PINNED_CHATS_KEY, list); }
@@ -141,11 +90,8 @@ function toggleChatPinned(chatId) {
   else list.unshift(String(chatId));
   savePinnedChats(list);
 }
-function getSTTConfig() {
-  const def = { enabled: false, endpoint: '', apiKey: '', model: 'whisper-1' };
-  return { ...def, ...safeLoadJSON(STT_CFG_KEY, {}) };
-}
-function saveSTTConfig(cfg) { safeSaveJSON(STT_CFG_KEY, cfg); }
+function getAdDailyState() { return safeLoadJSON(AD_DAILY_KEY, { date:'', count:0 }); }
+function saveAdDailyState(s) { safeSaveJSON(AD_DAILY_KEY, s); }
 
 const state = {
   contacts: safeLoadJSON(STORE.contacts, []),
@@ -157,10 +103,10 @@ const state = {
   myName: safeGetItem(STORE.myName, '我') || '我',
   chatBg: safeGetItem(STORE.chatBg, null) || null,
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
+  unread: safeLoadJSON(STORE.unread, {}),
   activeChatId: null,
   pendingBatch: {},
-  batchTimer: {},
-  lastUserActivity: Date.now()
+  batchTimer: {}
 };
 
 let _cloudSyncTimer = null;
@@ -174,6 +120,7 @@ function persist() {
   safeSetItem(STORE.myName, state.myName || '我');
   safeSetItem(STORE.chatBg, state.chatBg || '');
   safeSetItem(STORE.momentsCover, state.momentsCover || '');
+  safeSaveJSON(STORE.unread, state.unread);
 
   clearTimeout(_cloudSyncTimer);
   _cloudSyncTimer = setTimeout(() => {
@@ -221,15 +168,55 @@ function hashColor(str) {
   for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
   return `hsl(${Math.abs(h) % 360},55%,55%)`;
 }
+function hashColorDark(str) {
+  let h = 0; const s = String(str || '');
+  for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+  return `hsl(${Math.abs(h) % 360},50%,32%)`;
+}
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function getContactById(id) { return state.contacts.find(c => String(c.id) === String(id)); }
 function getGroupById(id) { return state.groups.find(g => String(g.id) === String(id)); }
 function isGroupChat(chatId) { return typeof chatId === 'string' && chatId.startsWith('g_'); }
-function avatarHtml(dataUrl, name, size = 40, ownerId = null) {
-  const ownerAttr = ownerId != null ? ` data-avatar-owner="${escapeHtml(String(ownerId))}"` : '';
-  const clickCls = ownerId != null ? ' clickable' : '';
-  if (dataUrl) return `<div class="avatar img${clickCls}"${ownerAttr} style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
-  return `<div class="avatar${clickCls}"${ownerAttr} style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
+function avatarHtml(dataUrl, name, size = 40) {
+  if (dataUrl) return `<div class="avatar img" style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
+  return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
+}
+function formatMomentDate(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+/* ============ 灵动岛 Face ID 模拟动画 ============ */
+function runFaceIdSimulation(onSuccess) {
+  const island = document.getElementById('dynIsland');
+  const label = document.getElementById('dynLabel');
+  if (!island) { onSuccess(); return; }
+  island.classList.remove('hidden-island', 'success');
+  if (label) label.textContent = 'Face ID';
+  requestAnimationFrame(() => { island.classList.add('expanded'); });
+  setTimeout(() => {
+    island.classList.add('success');
+    if (label) label.textContent = '已验证';
+    setTimeout(() => {
+      island.classList.remove('expanded');
+      setTimeout(() => { island.classList.add('hidden-island'); island.classList.remove('success'); }, 400);
+      onSuccess();
+    }, 700);
+  }, 1400);
+}
+
+/* ============ 朋友圈/广告消息：纯AI自由文本生成（不使用字卡） ============ */
+const MOMENT_FALLBACK_PHRASES = ["今天心情不错～","想找人聊聊","忙里偷闲的一天","有点想你们了","日子过得很快呀","今天也要加油","晴朗的一天，心情也跟着好起来","有些事想不明白，但也不纠结了","偶尔emo一下，很快就好","生活总有惊喜"];
+const AD_FALLBACK_TEMPLATES = ["限时惊喜，戳我了解详情～","新品上架，要不要一起试试？","今天有个小活动，别错过啦","突然想起有个好东西要推荐给你"];
+
+async function generateFreeformMomentText(cards, persona, context) {
+  const cardDesc = (cards || []).map(c => `${c.name}(${c.reversed?'逆位':'正位'}):${c.meaning}`).join('; ');
+  const sys = `你正在扮演角色:"${persona || '一个真实的人'}"。请结合塔罗牌意，写一句自然、简短、像真人一样的中文句子（不超过40字，不要加引号，不要解释塔罗牌，只输出最终句子本身，不要输出任何多余文字）。`;
+  const result = await callLLM(sys, `场景: ${context}\n抽到的塔罗牌: ${cardDesc}`);
+  if (result && result.trim()) {
+    return result.trim().replace(/^["""'']+|["""'']+$/g, '');
+  }
+  return MOMENT_FALLBACK_PHRASES[secureRandomInt(MOMENT_FALLBACK_PHRASES.length)];
 }
 
 /* ============ 导航 ============ */
@@ -254,6 +241,7 @@ function pushPage(id) {
 function popPage() {
   if (navStack.length <= 1) return;
   const topId = navStack.pop();
+  if (topId === 'page-chat') { state.activeChatId = null; renderChatList(); }
   const top = document.getElementById(topId);
   if (!top) return;
   top.style.transition = 'transform 0.28s cubic-bezier(.25,.46,.45,.94)';
@@ -263,13 +251,14 @@ function popPage() {
 function bindSwipeBack() {
   const appEl = document.getElementById('app');
   if (!appEl) return;
-  let startX = 0, startY = 0, dragging = false, topEl = null;
+  let startX = 0, startY = 0, dragging = false, topEl = null, poppedId = null;
   appEl.addEventListener('touchstart', e => {
     if (navStack.length <= 1) return;
     const t = e.touches[0];
     if (t.clientX > 40) return;
     startX = t.clientX; startY = t.clientY; dragging = true;
-    topEl = document.getElementById(navStack[navStack.length - 1]);
+    poppedId = navStack[navStack.length - 1];
+    topEl = document.getElementById(poppedId);
     if (topEl) topEl.style.transition = 'none';
   }, { passive: true });
   appEl.addEventListener('touchmove', e => {
@@ -289,6 +278,7 @@ function bindSwipeBack() {
       const w = appEl.clientWidth;
       topEl.style.transform = `translateX(${w}px)`;
       navStack.pop();
+      if (poppedId === 'page-chat') { state.activeChatId = null; renderChatList(); }
       const el = topEl;
       setTimeout(() => { el.classList.add('hidden'); el.style.transform=''; el.style.transition=''; el.style.zIndex=''; }, 250);
     } else topEl.style.transform = 'translateX(0)';
@@ -341,10 +331,11 @@ function applyChatBackground() {
 }
 function bindChatBackground() {
   document.getElementById('rowChatBg')?.addEventListener('click', () => document.getElementById('chatBgFileInput')?.click());
-  document.getElementById('chatBgFileInput')?.addEventListener('change', async e => {
+  document.getElementById('chatBgFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.7);
-    if (dataUrl) { state.chatBg = dataUrl; persist(); applyChatBackground(); alert('背景已更新'); }
+    const reader = new FileReader();
+    reader.onload = ev => { state.chatBg = ev.target.result; persist(); applyChatBackground(); alert('背景已更新'); };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
   document.getElementById('rowChatBgClear')?.addEventListener('click', () => { state.chatBg = null; persist(); applyChatBackground(); alert('已恢复默认背景'); });
@@ -370,62 +361,32 @@ function renderMomentsProfile() {
 }
 function bindMomentsProfile() {
   document.getElementById('momentsCoverImg')?.addEventListener('click', () => document.getElementById('momentsCoverFileInput')?.click());
-  document.getElementById('momentsCoverFileInput')?.addEventListener('change', async e => {
+  document.getElementById('momentsCoverFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 1200, 0.72);
-    if (dataUrl) { state.momentsCover = dataUrl; persist(); renderMomentsProfile(); }
+    const reader = new FileReader();
+    reader.onload = ev => { state.momentsCover = ev.target.result; persist(); renderMomentsProfile(); };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
-  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => openContactProfile('me'));
+  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); });
 }
 function bindDiscoverPlaceholders() {
   document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
   document.getElementById('rowChannels')?.addEventListener('click', () => alert('视频号功能暂未开放'));
 }
 
-/* ============ 角色/我 的朋友圈主页 ============ */
-function momentItemHtml(m) {
-  return `
-    <div class="moment-item" data-id="${m.id}">
-      ${avatarHtml(m.avatar, m.name, 44, m.contactId)}
-      <div class="moment-body">
-        <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
-        ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
-        ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
-        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
-          <span>
-            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
-            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
-          </span>
-        </div>
-        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
-        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
-      </div></div>`;
+/* ============ 未读消息统计 & 顶部标题更新 ============ */
+function totalUnreadCount() {
+  return Object.values(state.unread || {}).reduce((sum, n) => sum + (n || 0), 0);
 }
-function openContactProfile(ownerId) {
-  const isMe = ownerId === 'me';
-  const name = isMe ? (state.myName || '我') : (getContactById(ownerId)?.name || '角色');
-  const avatarUrl = isMe ? state.myAvatar : (getContactById(ownerId)?.avatar || null);
-  document.getElementById('profilePageName').textContent = name;
-  document.getElementById('profilePageDisplayName').textContent = name;
-  const avatarBox = document.getElementById('profilePageAvatar');
-  const newAvatarHtml = avatarHtml(avatarUrl, name, 72).replace('class="avatar', 'id="profilePageAvatar" class="avatar');
-  avatarBox.outerHTML = newAvatarHtml;
-  const filtered = state.moments.filter(m => String(m.contactId) === String(ownerId));
-  renderProfileMoments(filtered);
-  pushPage('page-profile');
-}
-function renderProfileMoments(list) {
-  const box = document.getElementById('profileMomentsList');
-  const sorted = [...list].sort((a,b)=> ((b.pinned?1:0)-(a.pinned?1:0)));
-  box.innerHTML = sorted.map(momentItemHtml).join('') || '<div style="padding:40px;text-align:center;color:#999;">还没有发过朋友圈</div>';
-}
-function bindProfilePage() {
-  document.getElementById('backFromProfile')?.addEventListener('click', () => popPage());
-  document.getElementById('profileMomentsList')?.addEventListener('click', momentsClickHandler);
+function updateChatListNavTitle() {
+  const el = document.getElementById('chatListNavTitle');
+  if (!el) return;
+  const total = totalUnreadCount();
+  el.textContent = total > 0 ? `微信 (${total > 99 ? '99+' : total})` : '微信';
 }
 
-/* ============ 聊天列表 / 通讯录（含置顶排序） ============ */
+/* ============ 聊天列表 / 通讯录（含置顶排序 + 未读徽标） ============ */
 function renderChatList() {
   const box = document.getElementById('chatListItems');
   if (!box) return;
@@ -441,7 +402,7 @@ function renderChatList() {
     if (bp >= 0) return 1;
     return 0;
   });
-  if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; return; }
+  if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; updateChatListNavTitle(); return; }
   box.innerHTML = items.map(it => {
     const msgs = state.chats[it.id] || [];
     const last = msgs[msgs.length - 1];
@@ -450,19 +411,20 @@ function renderChatList() {
       if (last.type === 'redpacket') lastText = '[红包]';
       else if (last.type === 'image') lastText = '[图片]';
       else if (last.type === 'location') lastText = '[位置]';
-      else if (last.type === 'voice') lastText = '[语音]';
       else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
       else lastText = escapeHtml(last.text);
     }
     const isPinned = pinned.includes(it.id);
+    const unreadN = state.unread[it.id] || 0;
     const pinTag = isPinned ? `<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>` : (last ? new Date(last.ts).toLocaleTimeString().slice(0,5) : '');
     return `<div class="chat-item ${isPinned ? 'pinned' : ''}" data-id="${it.id}">
-      ${avatarHtml(it.avatar, it.name, 50)}
+      <div class="avatar-wrap">${avatarHtml(it.avatar, it.name, 50)}${unreadN>0 ? `<span class="unread-badge">${unreadN>99?'99+':unreadN}</span>` : ''}</div>
       <div class="info">
         <div class="row1"><span class="name">${escapeHtml(it.name)}</span><span class="time">${pinTag}</span></div>
         <div class="last-msg">${lastText}</div>
       </div></div>`;
   }).join('');
+  updateChatListNavTitle();
 }
 function renderContactList() {
   const box = document.getElementById('contactListItems');
@@ -471,7 +433,7 @@ function renderContactList() {
   box.innerHTML = state.contacts.map(c => `<div class="contact-item" data-id="${c.id}">${avatarHtml(c.avatar, c.name, 50)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`).join('');
 }
 
-/* ============ 长按逻辑：聊天列表长按弹出操作菜单 ============ */
+/* ============ 长按逻辑：聊天列表长按弹出操作菜单（置顶/删除） ============ */
 let _actionSheetTargetId = null;
 function bindListDelegation(containerId) {
   const box = document.getElementById(containerId);
@@ -521,10 +483,10 @@ function bindChatItemActionSheet() {
     if (!id) return;
     if (isGroupChat(id)) {
       const g = getGroupById(id.slice(2));
-      if (g && confirm(`删除群聊「${g.name}」？`)) { state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[id]; persist(); renderChatList(); }
+      if (g && confirm(`删除群聊「${g.name}」？`)) { state.groups = state.groups.filter(x => x.id !== g.id); delete state.chats[id]; delete state.unread[id]; persist(); renderChatList(); }
     } else {
       const c = getContactById(id);
-      if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[id]; persist(); renderChatList(); renderContactList(); }
+      if (c && confirm(`删除角色「${c.name}」及其聊天记录？`)) { state.contacts = state.contacts.filter(x => x.id !== c.id); delete state.chats[id]; delete state.unread[id]; persist(); renderChatList(); renderContactList(); }
     }
     document.getElementById('chatItemActionSheet').classList.add('hidden');
   });
@@ -533,12 +495,15 @@ function bindChatItemActionSheet() {
 /* ============ 聊天详情 ============ */
 function openChat(chatId) {
   state.activeChatId = chatId;
+  state.unread[chatId] = 0;
+  persist();
   const name = isGroupChat(chatId) ? (getGroupById(chatId.slice(2))?.name || '群聊') : (getContactById(chatId)?.name || '角色');
   const nameEl = document.getElementById('chatPeerName');
   if (nameEl) nameEl.textContent = name;
   if (!state.chats[chatId]) state.chats[chatId] = [];
   document.getElementById('plusPanelInline')?.classList.add('hidden');
   renderMessages();
+  renderChatList();
   applyChatBackground();
   pushPage('page-chat');
 }
@@ -556,7 +521,6 @@ function renderMessages() {
     const senderContact = !isMe ? getContactById(m.from) : null;
     const name = isMe ? (state.myName || '我') : (senderContact?.name || '角色');
     const avatarDataUrl = isMe ? state.myAvatar : (senderContact?.avatar || null);
-    const ownerId = isMe ? 'me' : (senderContact ? senderContact.id : m.from);
 
     let bubbleHtml;
     if (m.type === 'redpacket') {
@@ -578,16 +542,8 @@ function renderMessages() {
         <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
         <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
-    } else if (m.type === 'voice') {
-      const dur = m.voiceDuration || 1;
-      const transcribed = m.transcribedText;
-      const voiceInner = `<div class="bubble voice" data-voice-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${dur}″</span></div>
-        ${transcribed ? `<div class="voice-transcript-text">${escapeHtml(transcribed)}</div>` : `<div class="voice-transcribe-btn" data-voice-transcribe="${m.id}">转文字</div>`}`;
-      const senderLabel0 = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
-      return `<div class="msg-col ${isMe ? 'me' : ''}">
-        ${senderLabel0}
-        <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40, ownerId)}<div class="voice-msg-wrap">${voiceInner}</div></div>
-      </div>`;
+    } else if (m.voiceUrl) {
+      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
@@ -595,13 +551,13 @@ function renderMessages() {
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
-      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40, ownerId)}${bubbleHtml}</div>
+      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
     </div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
 
-/* ============ 消息长按逻辑 + 点击头像跳转主页 ============ */
+/* ============ 消息长按逻辑 ============ */
 function bindMsgListDelegation() {
   const box = document.getElementById('msgList');
   if (!box) return;
@@ -632,16 +588,12 @@ function bindMsgListDelegation() {
 
   box.addEventListener('click', e => {
     if (longPressFired) { longPressFired = false; return; }
-    const avatarOwnerEl = e.target.closest('[data-avatar-owner]');
-    if (avatarOwnerEl) { openContactProfile(avatarOwnerEl.dataset.avatarOwner); return; }
-    const playEl = e.target.closest('[data-voice-play]');
+    const playEl = e.target.closest('[data-play]');
     if (playEl) {
-      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.voicePlay);
-      if (msg?.voiceData) new Audio(msg.voiceData).play().catch(()=>{});
+      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
+      if (msg?.voiceUrl) new Audio(msg.voiceUrl).play().catch(()=>{});
       return;
     }
-    const transcribeEl = e.target.closest('[data-voice-transcribe]');
-    if (transcribeEl) { handleVoiceTranscribeClick(transcribeEl.dataset.voiceTranscribe); return; }
     const rpEl = e.target.closest('[data-redpacket]');
     if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
     const locEl = e.target.closest('[data-location]');
@@ -666,45 +618,14 @@ function openTarotSheet(msgId) {
   document.getElementById('tarotSheet')?.classList.remove('hidden');
 }
 
-/* ============ 语音转文字 ============ */
-async function transcribeAudioDataUrl(dataUrl, cfg) {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  const form = new FormData();
-  form.append('file', blob, 'audio.webm');
-  form.append('model', cfg.model || 'whisper-1');
-  const resp = await fetch(cfg.endpoint, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${cfg.apiKey}` },
-    body: form
-  });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const data = await resp.json();
-  return data.text || data.transcript || data.result || JSON.stringify(data);
-}
-async function handleVoiceTranscribeClick(msgId) {
-  const chatId = state.activeChatId;
-  const msg = (state.chats[chatId]||[]).find(m => String(m.id) === String(msgId));
-  if (!msg || msg.transcribedText) return;
-  const cfg = getSTTConfig();
-  if (!cfg.enabled || !cfg.apiKey || !cfg.endpoint) { alert('请先在"我→AI/语音设置"中配置并启用"语音转文字"功能'); return; }
-  const btn = document.querySelector(`[data-voice-transcribe="${msg.id}"]`);
-  if (btn) btn.textContent = '转换中...';
-  try {
-    const text = await transcribeAudioDataUrl(msg.voiceData, cfg);
-    msg.transcribedText = text || '（识别结果为空）';
-  } catch(e) {
-    msg.transcribedText = '（识别失败：' + (e.message||'未知错误') + '，请检查STT设置是否正确）';
-  }
-  persist();
-  renderMessages();
-}
-
 /* ============ 发消息 & 塔罗回复 ============ */
 function addMessage(chatId, from, text, extra = {}) {
   const msg = { id: Date.now() + Math.random(), from, text, ts: Date.now(), ...extra };
   if (!state.chats[chatId]) state.chats[chatId] = [];
   state.chats[chatId].push(msg);
+  if (from !== 'me' && chatId !== state.activeChatId) {
+    state.unread[chatId] = (state.unread[chatId] || 0) + 1;
+  }
   persist();
   if (chatId === state.activeChatId) renderMessages();
   renderChatList();
@@ -714,6 +635,10 @@ function sendImageMessage(dataUrl) {
   const chatId = state.activeChatId; if (!chatId) return;
   addMessage(chatId, 'me', '[图片]', { type: 'image', image: dataUrl });
 }
+function lastMessageOf(chatId) {
+  const msgs = state.chats[chatId] || [];
+  return msgs[msgs.length - 1];
+}
 
 const AVATAR_CHANGE_KEYWORDS = ['换头像', '换个头像', '换张头像', '改头像'];
 const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你现在在哪', '定位'];
@@ -721,8 +646,20 @@ const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你
 function handleSend(text) {
   const chatId = state.activeChatId;
   if (!chatId || !text || !text.trim()) return;
-  state.lastUserActivity = Date.now();
+  const priorLast = lastMessageOf(chatId);
   addMessage(chatId, 'me', text.trim());
+
+  // 广告消息对话：如果最近一条是广告消息，用纯AI回，不走塔罗字卡
+  if (priorLast && priorLast.isAd && !isGroupChat(chatId)) {
+    const contact = getContactById(priorLast.from);
+    if (contact) {
+      setTimeout(async () => {
+        const replyText = await generateFreeformMomentText(drawCards(1), contact.persona, `延续这条广告消息的话题随意回应对方，语气自然口语化，不超过30字。之前的消息是：「${priorLast.text}」，对方刚说：「${text.trim()}」`);
+        addMessage(chatId, contact.id, replyText, { isAd:true });
+      }, 900);
+    }
+    return;
+  }
 
   if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
     if (isGroupChat(chatId)) {
@@ -756,20 +693,10 @@ async function replyWithTarot(chatId, fromId, text, persona) {
     return;
   }
   const picks = await interpretAndReply(text, cards, pool, persona);
-  const cfg = getAIConfig();
   for (let i = 0; i < picks.length; i++) {
     await new Promise(r => setTimeout(r, 450));
-    if (cfg.voiceEnabled) {
-      const rawUrl = await synthesizeVoice(picks[i]);
-      if (rawUrl) {
-        const dataUrl = await blobUrlToDataUrl(rawUrl);
-        if (dataUrl) {
-          addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, type:'voice', voiceData: dataUrl, voiceDuration: Math.max(1, Math.round(picks[i].length/3)), isUserRecording:false, transcribedText: picks[i] });
-          continue;
-        }
-      }
-    }
-    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield });
+    const voiceUrl = await synthesizeVoice(picks[i]);
+    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
   }
 }
 async function processSingleBatch(contactId) {
@@ -802,11 +729,13 @@ async function requestAvatarChange(contactId, chatId) {
     addMessage(chatId, contactId, '（头像库是空的，先去"我 → 头像库管理"上传几张照片，我才能挑选新头像哦。也可以在"角色设置"里用"直接设置头像"一步到位）', { systemNote: true });
     return;
   }
+  markOpStart('换头像');
   try {
     const cards = drawCards(3);
     const chosen = await pickAvatarFromCards(cards, state.avatarLibrary, contact.persona);
     if (!chosen || !chosen.dataUrl) {
       addMessage(chatId, contactId, '（换头像失败了，头像库里的图片数据好像有点问题，建议在"角色设置"里用"直接设置头像"手动指定）', { systemNote: true });
+      markOpDone();
       return;
     }
     contact.avatar = chosen.dataUrl;
@@ -816,6 +745,8 @@ async function requestAvatarChange(contactId, chatId) {
     addMessage(chatId, contactId, `${contact.name} 更换了头像`, { systemNote: true, cards });
   } catch (err) {
     addMessage(chatId, contactId, `（换头像出错了：${err?.message || '未知错误'}，建议改用"角色设置→直接设置头像"）`, { systemNote: true });
+  } finally {
+    markOpDone();
   }
 }
 function directSetContactAvatar(contactId, dataUrl) {
@@ -908,7 +839,7 @@ function bindCallLogView() {
   document.getElementById('callLogViewClose')?.addEventListener('click', () => document.getElementById('callLogViewSheet').classList.add('hidden'));
 }
 
-/* ============ 通话系统（含来电） ============ */
+/* ============ 通话系统 ============ */
 let _callLocalStream = null;
 let _callTimer = null;
 let _callSeconds = 0;
@@ -918,8 +849,6 @@ let _callActiveContact = null;
 let _callActiveType = 'voice';
 let _callChatLog = [];
 let _callRecognizer = null;
-let _callPendingType = null;
-let _callPendingContact = null;
 
 function initCallRecognizer() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -983,14 +912,19 @@ function renderCallRemoteMedia(contact, type) {
     }
   }
 }
-async function beginActiveCallMedia(type, contact) {
+async function openCallOverlay(type, contact) {
+  if (!contact) { alert('请先选择一个角色'); return; }
   _callActiveContact = contact; _callActiveType = type;
   _callSeconds = 0; _callMuted = false; _callSpeakerOn = false; _callChatLog = [];
   document.getElementById('callMuteBtn').classList.remove('active');
   document.getElementById('callSpeakerBtn').classList.remove('active');
   document.getElementById('callTextChat').classList.add('hidden');
+  document.getElementById('callMiniPill').classList.add('hidden');
   renderCallLogBox();
+  document.getElementById('callTypeLabel').textContent = type === 'video' ? '视频通话' : '语音通话';
+  document.getElementById('callName').textContent = contact.name;
   document.getElementById('callStatus').textContent = '正在呼叫...';
+  renderCallRemoteMedia(contact, type);
   const localPreview = document.getElementById('callLocalPreview');
   if (type === 'video') {
     localPreview.classList.remove('hidden');
@@ -1002,8 +936,9 @@ async function beginActiveCallMedia(type, contact) {
     catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
   }
   _callRecognizer = initCallRecognizer();
+  document.getElementById('callOverlay').classList.remove('hidden');
   clearInterval(_callTimer);
-  setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1200);
+  setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1500);
   _callTimer = setInterval(() => {
     _callSeconds++;
     if (_callSeconds >= 2) {
@@ -1016,48 +951,13 @@ async function beginActiveCallMedia(type, contact) {
     }
   }, 1000);
 }
-async function openCallOverlay(type, contact, incoming = false) {
-  if (!contact) { alert('请先选择一个角色'); return; }
-  document.getElementById('callTypeLabel').textContent = type==='video'?'视频通话':'语音通话';
-  document.getElementById('callName').textContent = contact.name;
-  document.getElementById('callMiniPill').classList.add('hidden');
-  document.getElementById('callTextChat').classList.add('hidden');
-  document.getElementById('callChatLogBox').innerHTML = '';
-  document.getElementById('callOverlay').classList.remove('hidden');
-  renderCallRemoteMedia(contact, type);
-  if (incoming) {
-    document.getElementById('callActionsGrid').classList.add('hidden');
-    document.getElementById('incomingCallActions').classList.remove('hidden');
-    document.getElementById('callStatus').textContent = (type==='video'?'邀请你视频通话':'邀请你语音通话');
-    _callPendingType = type; _callPendingContact = contact;
-    return;
-  }
-  document.getElementById('callActionsGrid').classList.remove('hidden');
-  document.getElementById('incomingCallActions').classList.add('hidden');
-  await beginActiveCallMedia(type, contact);
-}
-function acceptIncomingCall() {
-  document.getElementById('incomingCallActions').classList.add('hidden');
-  document.getElementById('callActionsGrid').classList.remove('hidden');
-  beginActiveCallMedia(_callPendingType, _callPendingContact);
-}
-function declineIncomingCall() {
-  const contact = _callPendingContact;
-  const type = _callPendingType;
-  document.getElementById('callOverlay').classList.add('hidden');
-  if (contact) {
-    const chatId = String(contact.id);
-    addMessage(chatId, contact.id, '', { type:'call', callType:type, callDurationText:'已拒绝' });
-  }
-  _callPendingContact = null; _callPendingType = null;
-}
 function closeCallOverlay() {
   clearInterval(_callTimer);
   if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
   if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e) {} _callRecognizer = null; }
   document.getElementById('callOverlay').classList.add('hidden');
   document.getElementById('callMiniPill').classList.add('hidden');
-  const chatId = _callActiveContact ? String(_callActiveContact.id) : state.activeChatId;
+  const chatId = state.activeChatId;
   if (chatId && _callSeconds >= 1) {
     const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
     const durationText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
@@ -1078,8 +978,6 @@ function minimizeCall() {
 function restoreCall() { document.getElementById('callMiniPill').classList.add('hidden'); document.getElementById('callOverlay').classList.remove('hidden'); }
 function bindCallOverlay() {
   document.getElementById('callHangupBtn')?.addEventListener('click', closeCallOverlay);
-  document.getElementById('callAcceptBtn')?.addEventListener('click', acceptIncomingCall);
-  document.getElementById('callDeclineBtn')?.addEventListener('click', declineIncomingCall);
   document.getElementById('callMinimizeBtn')?.addEventListener('click', minimizeCall);
   document.getElementById('callMiniPill')?.addEventListener('click', restoreCall);
   document.getElementById('callMuteBtn')?.addEventListener('click', () => {
@@ -1111,22 +1009,17 @@ function bindCallOverlay() {
   voiceHoldBtn?.addEventListener('pointerup', stopVoiceHold);
   voiceHoldBtn?.addEventListener('pointerleave', stopVoiceHold);
   document.getElementById('callRemoteArea')?.addEventListener('click', e => { if (e.target.closest('#callRemoteUploadBtnDynamic')) document.getElementById('callInCallMediaFileInput').click(); });
-  document.getElementById('callInCallMediaFileInput')?.addEventListener('change', async e => {
+  document.getElementById('callInCallMediaFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file || !_callActiveContact) return;
     const isVideo = file.type.startsWith('video/');
-    if (isVideo) {
-      const reader = new FileReader();
-      reader.onload = ev => { _callActiveContact.callMedia = ev.target.result; _callActiveContact.callMediaType = 'video'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); };
-      reader.readAsDataURL(file);
-    } else {
-      const dataUrl = await readFileAsCompressedDataUrl(file, 900, 0.75);
-      if (dataUrl) { _callActiveContact.callMedia = dataUrl; _callActiveContact.callMediaType = 'image'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); }
-    }
+    const reader = new FileReader();
+    reader.onload = ev => { _callActiveContact.callMedia = ev.target.result; _callActiveContact.callMediaType = isVideo ? 'video' : 'image'; persist(); renderCallRemoteMedia(_callActiveContact, _callActiveType); };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
 }
 
-/* ============ AI 自主行为（提高触发概率+来电） ============ */
+/* ============ AI 自主行为 ============ */
 async function aiAutoSendMessage() {
   const cfg = getAIConfig();
   if (!cfg.autoMsg || !state.contacts.length) return;
@@ -1138,9 +1031,8 @@ async function aiAutoPostMoment() {
   if (!cfg.autoMoment || !state.contacts.length) return;
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   const cards = drawCards(3);
-  const pool = WordCards.getForContact(contact);
-  const picks = await interpretAndReply('(发一条朋友圈)', cards, pool, contact.persona);
-  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content: picks.join(' '), image: null, cards, ts: Date.now(), comments: [] });
+  const content = await generateFreeformMomentText(cards, contact.persona, '发一条真实自然的朋友圈动态');
+  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content, image: null, cards, ts: Date.now(), comments: [] });
   persist(); renderMoments();
 }
 async function aiAutoChangeAvatar() {
@@ -1149,17 +1041,27 @@ async function aiAutoChangeAvatar() {
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
-async function aiAutoCall() {
-  const cfg = getAIConfig();
-  if (!cfg.autoCall || !state.contacts.length) return;
-  if (!document.getElementById('callOverlay').classList.contains('hidden')) return;
+async function maybeSendDailyAdMessage() {
+  if (!state.contacts.length) return;
+  const today = new Date().toISOString().slice(0,10);
+  let ad = getAdDailyState();
+  if (ad.date !== today) ad = { date: today, count: 0 };
+  if (ad.count >= 2) { saveAdDailyState(ad); return; }
+  if (secureRandomInt(100) >= 6) { saveAdDailyState(ad); return; }
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
-  state.activeChatId = String(contact.id);
-  const type = secureRandomInt(2) === 0 ? 'voice' : 'video';
-  openCallOverlay(type, contact, true);
+  const cards = drawCards(1);
+  let text = await generateFreeformMomentText(cards, contact.persona, '生成一条像正规商业广告/推广文案一样的消息，语气自然俏皮，不超过30字，不要出现塔罗/占卜相关字眼');
+  if (!text) text = AD_FALLBACK_TEMPLATES[secureRandomInt(AD_FALLBACK_TEMPLATES.length)];
+  addMessage(String(contact.id), contact.id, text, { isAd:true });
+  ad.count++;
+  saveAdDailyState(ad);
 }
+setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
+setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
+setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
+setInterval(() => { try { maybeSendDailyAdMessage(); } catch(e){ console.error(e); } }, 90000);
 
-/* ============ 朋友圈评论逻辑 ============ */
+/* ============ 朋友圈评论逻辑（纯AI） ============ */
 function pickReplyingContactForMoment(moment) {
   const posterContact = getContactById(moment.contactId);
   if (posterContact) return posterContact;
@@ -1174,59 +1076,111 @@ async function aiReplyToMoment(momentId, userComment) {
   moment.comments = moment.comments || [];
   moment.comments.push({ from: 'me', text: userComment });
   const contact = pickReplyingContactForMoment(moment);
-  if (!contact) { persist(); renderMoments(); renderProfileMomentsIfOpen(); return; }
+  if (!contact) { persist(); renderMoments(); return; }
   const cards = drawCards(3);
-  const pool = WordCards.getForContact(contact);
-  const picks = await interpretAndReply(userComment, cards, pool, contact.persona);
-  moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
-  persist(); renderMoments(); renderProfileMomentsIfOpen();
+  const text = await generateFreeformMomentText(cards, contact.persona, `我在你发的朋友圈"${moment.content}"下面留言说："${userComment}"，请给出一句自然真实的回复`);
+  moment.comments.push({ from: contact.name, text, cards, contactId: contact.id });
+  persist(); renderMoments();
 }
-function renderProfileMomentsIfOpen() {
-  if (!document.getElementById('page-profile')?.classList.contains('hidden')) {
-    // 重新按当前显示的名字过滤刷新（简单起见：直接不特别处理，主要靠下次进入时刷新）
-  }
+async function aiCommentOnUserMoment(momentId, contactId) {
+  const moment = state.moments.find(m => m.id === momentId);
+  const contact = getContactById(contactId);
+  if (!moment || !contact) return;
+  const cards = drawCards(3);
+  const text = await generateFreeformMomentText(cards, contact.persona, `看到我发的朋友圈内容是："${moment.content}"，请给出一句简短真实的评论`);
+  moment.comments = moment.comments || [];
+  moment.comments.push({ from: contact.name, text, cards, contactId: contact.id });
+  persist();
+  renderMoments();
 }
 
-setInterval(() => { try { if (secureRandomInt(100) < 18) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 30000);
-setInterval(() => { try { if (secureRandomInt(100) < 12) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 45000);
-setInterval(() => { try { if (secureRandomInt(100) < 8) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 60000);
-setInterval(() => { try { if (secureRandomInt(100) < 6) aiAutoCall(); } catch(e){ console.error(e); } }, 40000);
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    try { if (secureRandomInt(100) < 25) aiAutoSendMessage(); } catch(e){}
-  }
-});
-
-/* ============ 朋友圈展示/发布 ============ */
+/* ============ 朋友圈展示/发布（含置顶 + 详情页跳转） ============ */
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
-  const sorted = [...state.moments].sort((a,b)=> ((b.pinned?1:0)-(a.pinned?1:0)));
-  box.innerHTML = sorted.map(momentItemHtml).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
-}
-function momentsClickHandler(e) {
-  const box = e.currentTarget;
-  const avatarOwnerEl = e.target.closest('[data-avatar-owner]');
-  if (avatarOwnerEl) { openContactProfile(avatarOwnerEl.dataset.avatarOwner); return; }
-  const pinToggle = e.target.closest('[data-toggle-pin]');
-  if (pinToggle) {
-    const id = Number(pinToggle.dataset.togglePin);
-    const m = state.moments.find(x => x.id === id);
-    if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
-    return;
-  }
-  const toggle = e.target.closest('[data-toggle-comment]');
-  if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
-  const submit = e.target.closest('[data-comment-submit]');
-  if (submit) {
-    const id = Number(submit.dataset.commentSubmit);
-    const input = box.querySelector(`[data-comment-input="${id}"]`);
-    if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
-  }
+  const sorted = [...state.moments].sort((a, b) => ((b.pinned?1:0) - (a.pinned?1:0)));
+  box.innerHTML = sorted.map(m => `
+    <div class="moment-item" data-id="${m.id}">
+      <div class="moment-header" data-detail="${m.id}">
+        ${avatarHtml(m.avatar, m.name, 44)}
+        <div class="moment-body">
+          <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
+          ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
+          ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
+        </div>
+      </div>
+      <div class="moment-body" style="margin-left:55px;">
+        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
+          <span>
+            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
+            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
+          </span>
+        </div>
+        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
+        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
+      </div>
+    </div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
 }
 function bindMomentsDelegation() {
-  document.getElementById('momentsList')?.addEventListener('click', momentsClickHandler);
+  const box = document.getElementById('momentsList');
+  if (!box) return;
+  box.addEventListener('click', e => {
+    const detailEl = e.target.closest('[data-detail]');
+    if (detailEl) { openMomentDetail(Number(detailEl.dataset.detail)); return; }
+    const pinToggle = e.target.closest('[data-toggle-pin]');
+    if (pinToggle) {
+      const id = Number(pinToggle.dataset.togglePin);
+      const m = state.moments.find(x => x.id === id);
+      if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
+      return;
+    }
+    const toggle = e.target.closest('[data-toggle-comment]');
+    if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
+    const submit = e.target.closest('[data-comment-submit]');
+    if (submit) {
+      const id = Number(submit.dataset.commentSubmit);
+      const input = box.querySelector(`[data-comment-input="${id}"]`);
+      if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
+    }
+  });
 }
+
+/* ============ 朋友圈详情页（含封面+日期） ============ */
+let _currentMomentDetailId = null;
+function openMomentDetail(momentId) {
+  const m = state.moments.find(x => x.id === momentId);
+  if (!m) return;
+  _currentMomentDetailId = momentId;
+  const isMe = m.contactId === 'me';
+  document.getElementById('momentDetailCover').style.backgroundImage = isMe && state.momentsCover ? `url('${state.momentsCover}')` : '';
+  if (!(isMe && state.momentsCover)) {
+    document.getElementById('momentDetailCover').style.background = `linear-gradient(135deg, ${hashColor(m.name)}, ${hashColorDark(m.name)})`;
+  }
+  document.getElementById('momentDetailName').textContent = m.name;
+  const avatarEl = document.getElementById('momentDetailAvatar');
+  avatarEl.style.backgroundImage = m.avatar ? `url('${m.avatar}')` : '';
+  avatarEl.style.backgroundColor = m.avatar ? 'transparent' : hashColor(m.name);
+  avatarEl.style.backgroundSize = 'cover'; avatarEl.style.backgroundPosition = 'center';
+  avatarEl.textContent = m.avatar ? '' : m.name.slice(0,1);
+  if (!m.avatar) { avatarEl.style.display='flex'; avatarEl.style.alignItems='center'; avatarEl.style.justifyContent='center'; avatarEl.style.color='#fff'; avatarEl.style.fontSize='22px'; avatarEl.style.fontWeight='600'; }
+  document.getElementById('momentDetailDate').textContent = formatMomentDate(m.ts);
+  document.getElementById('momentDetailContent').textContent = m.content || '';
+  document.getElementById('momentDetailImageWrap').innerHTML = m.image ? `<img src="${m.image}" style="width:100%;border-radius:8px;display:block;">` : '';
+  document.getElementById('momentDetailComments').innerHTML = (m.comments?.length) ? m.comments.map(c => `<div class="comment-line" style="border-bottom:1px solid #f2f2f2;padding:6px 0;"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('') : '<div style="color:#999;font-size:13px;padding:8px 0;">还没有评论</div>';
+  pushPage('page-moment-detail');
+}
+function bindMomentDetailPage() {
+  document.getElementById('backFromMomentDetail')?.addEventListener('click', () => popPage());
+  document.getElementById('momentDetailCommentSend')?.addEventListener('click', () => {
+    const input = document.getElementById('momentDetailCommentInput');
+    if (input.value.trim() && _currentMomentDetailId) {
+      aiReplyToMoment(_currentMomentDetailId, input.value.trim());
+      input.value = '';
+      setTimeout(() => openMomentDetail(_currentMomentDetailId), 50);
+    }
+  });
+}
+
 let _postMomentImage = null;
 function bindPostMoment() {
   document.getElementById('btnPostMoment')?.addEventListener('click', () => {
@@ -1237,13 +1191,14 @@ function bindPostMoment() {
   });
   document.getElementById('postMomentCancel')?.addEventListener('click', () => document.getElementById('postMomentSheet').classList.add('hidden'));
   document.getElementById('postMomentAddImgBtn')?.addEventListener('click', () => document.getElementById('postMomentImgInput').click());
-  document.getElementById('postMomentImgInput')?.addEventListener('change', async e => {
+  document.getElementById('postMomentImgInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
-    if (dataUrl) {
-      _postMomentImage = dataUrl;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      _postMomentImage = ev.target.result;
       document.getElementById('postMomentImgPreview').innerHTML = `<img src="${_postMomentImage}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;">`;
-    }
+    };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
   document.getElementById('postMomentConfirm')?.addEventListener('click', () => {
@@ -1262,19 +1217,8 @@ function bindPostMoment() {
     }
   });
 }
-async function aiCommentOnUserMoment(momentId, contactId) {
-  const moment = state.moments.find(m => m.id === momentId);
-  const contact = getContactById(contactId);
-  if (!moment || !contact) return;
-  const cards = drawCards(3);
-  const pool = WordCards.getForContact(contact);
-  const picks = await interpretAndReply(`(看到我发的朋友圈：${moment.content})`, cards, pool, contact.persona);
-  moment.comments = moment.comments || [];
-  moment.comments.push({ from: contact.name, text: picks.join(' '), cards, contactId: contact.id });
-  persist(); renderMoments();
-}
 
-/* ============ 红包（接入钱包） ============ */
+/* ============ 红包（含领取即入账钱包） ============ */
 function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
 function bindRedPacket() {
   document.getElementById('rpCancel')?.addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
@@ -1287,12 +1231,6 @@ function bindRedPacket() {
     const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
     document.getElementById('sendRedPacketSheet').classList.add('hidden');
     document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
-
-    const w = getWallet();
-    w.balance -= amount;
-    w.transactions.push({ title: '发出红包', amount: -amount, ts: msg.ts, refId: msg.id });
-    saveWallet(w);
-
     setTimeout(() => {
       const list = state.chats[chatId] || [];
       const target = list.find(m => m.id === msg.id);
@@ -1328,108 +1266,17 @@ function openRedPacketDetail(msgId) {
     midBox.onclick = () => {
       if (msg.from === 'me') { alert('自己发的红包不能自己领取哦'); return; }
       msg.redpacket.status = 'claimed'; msg.redpacket.claimedBy = 'me';
-      persist(); renderMessages();
       const w = getWallet();
-      const amt = parseFloat(msg.redpacket.amount);
-      const senderName = getContactById(msg.from)?.name || '对方';
+      const amt = parseFloat(msg.redpacket.amount) || 0;
       w.balance += amt;
-      w.transactions.push({ title: `收到${senderName}的红包`, amount: amt, ts: Date.now(), refId: msg.id });
+      w.transactions.push({ title: `收到红包-${getContactById(msg.from)?.name || '对方'}`, amount: amt, ts: Date.now() });
       saveWallet(w);
+      persist(); renderMessages();
       midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
       amountShow.textContent = `¥${msg.redpacket.amount}`;
     };
   }
   document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');
-}
-
-/* ============ 钱包历史迁移（一次性） ============ */
-function ensureWalletMigrated() {
-  if (safeGetItem('tarot_wallet_migrated_v2', null)) return;
-  const w = getWallet();
-  Object.keys(state.chats).forEach(chatId => {
-    (state.chats[chatId] || []).forEach(m => {
-      if (m.type !== 'redpacket') return;
-      const already = w.transactions.some(t => t.refId === m.id);
-      if (already) return;
-      if (m.from === 'me') {
-        const amt = parseFloat(m.redpacket.amount);
-        w.balance -= amt;
-        w.transactions.push({ title: '发出红包', amount: -amt, ts: m.ts, refId: m.id });
-      } else if (m.redpacket.status === 'claimed' && String(m.redpacket.claimedBy) === 'me') {
-        const amt = parseFloat(m.redpacket.amount);
-        const senderName = getContactById(m.from)?.name || '对方';
-        w.balance += amt;
-        w.transactions.push({ title: `收到${senderName}的红包`, amount: amt, ts: m.ts, refId: m.id });
-      }
-    });
-  });
-  saveWallet(w);
-  safeSetItem('tarot_wallet_migrated_v2', '1');
-}
-
-/* ============ 钱包UI ============ */
-function renderWalletPage() {
-  const w = getWallet();
-  document.getElementById('walletBalanceAmount').textContent = `¥${w.balance.toFixed(2)}`;
-}
-function renderWalletBillsPage() {
-  const w = getWallet();
-  const box = document.getElementById('walletBillsList');
-  const sorted = w.transactions.slice().sort((a,b)=> b.ts - a.ts);
-  box.innerHTML = sorted.map(t => `
-    <div class="bill-item">
-      <div class="bill-info"><div class="bill-title">${escapeHtml(t.title)}</div><div class="bill-time">${new Date(t.ts).toLocaleString()}</div></div>
-      <div class="bill-amount ${t.amount >= 0 ? 'income' : 'expense'}">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
-    </div>`).join('') || '<div style="padding:40px;text-align:center;color:#999;font-size:14px;">暂无账单记录</div>';
-}
-function runFaceIdSimulation(onSuccess) {
-  const sheet = document.getElementById('faceidSheet');
-  const iconBox = document.getElementById('faceidIconBox');
-  const statusText = document.getElementById('faceidStatusText');
-  iconBox.classList.add('scanning');
-  statusText.textContent = '请保持不动，正在识别...';
-  sheet.classList.remove('hidden');
-  const timer = setTimeout(() => {
-    iconBox.classList.remove('scanning');
-    statusText.textContent = '识别成功';
-    setTimeout(() => { sheet.classList.add('hidden'); onSuccess(); }, 500);
-  }, 1400);
-  document.getElementById('faceidCancel').onclick = () => { clearTimeout(timer); sheet.classList.add('hidden'); };
-}
-function bindWallet() {
-  document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
-  document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
-  document.getElementById('rowWalletBills')?.addEventListener('click', () => { renderWalletBillsPage(); pushPage('page-wallet-bills'); });
-  document.getElementById('backFromWalletBills')?.addEventListener('click', () => popPage());
-  document.getElementById('btnRechargeOpen')?.addEventListener('click', () => {
-    document.getElementById('rechargeAmountInput').value = '';
-    document.getElementById('rechargeSheet').classList.remove('hidden');
-  });
-  document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
-  document.getElementById('rechargeNext')?.addEventListener('click', () => {
-    const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
-    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
-    document.getElementById('rechargeSheet').classList.add('hidden');
-    runFaceIdSimulation(() => {
-      const w = getWallet();
-      w.balance += amount;
-      w.transactions.push({ title: '零钱充值', amount, ts: Date.now() });
-      saveWallet(w);
-      renderWalletPage();
-      alert('充值成功');
-    });
-  });
-  document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
-    const w = getWallet();
-    if (w.balance <= 0) { alert('余额不足'); return; }
-    runFaceIdSimulation(() => {
-      w.transactions.push({ title: '零钱提现', amount: -w.balance, ts: Date.now() });
-      w.balance = 0;
-      saveWallet(w);
-      renderWalletPage();
-      alert('提现成功');
-    });
-  });
 }
 
 /* ============ 塔罗弹层 & 字卡管理 ============ */
@@ -1482,20 +1329,16 @@ function bindPlusPanel() {
       const chatId = state.activeChatId;
       if (isGroupChat(chatId)) { alert('群聊暂不支持通话'); return; }
       const contact = getContactById(chatId);
-      openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact, false);
+      openCallOverlay(action === 'videocall' ? 'video' : 'voice', contact);
     } else alert('该功能暂未开放');
   });
-  document.getElementById('sendPhotoFileInput')?.addEventListener('change', async e => {
+  document.getElementById('sendPhotoFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
-    if (dataUrl) sendImageMessage(dataUrl);
-    e.target.value = '';
+    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
   });
-  document.getElementById('sendCameraFileInput')?.addEventListener('change', async e => {
+  document.getElementById('sendCameraFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 1000, 0.72);
-    if (dataUrl) sendImageMessage(dataUrl);
-    e.target.value = '';
+    const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
   });
 }
 function renderStickerGrid() {
@@ -1505,13 +1348,13 @@ function renderStickerGrid() {
 }
 function bindStickerPicker() {
   document.getElementById('stickerAddBtn')?.addEventListener('click', () => document.getElementById('stickerFileInput').click());
-  document.getElementById('stickerFileInput')?.addEventListener('change', async e => {
-    const files = [...e.target.files];
-    for (const file of files) {
-      const dataUrl = await readFileAsCompressedDataUrl(file, 400, 0.7);
-      if (dataUrl) { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl }); saveStickers(stickers); }
-    }
-    renderStickerGrid();
+  document.getElementById('stickerFileInput')?.addEventListener('change', e => {
+    const files = [...e.target.files]; let remaining = files.length;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result }); saveStickers(stickers); remaining--; if (remaining===0) renderStickerGrid(); };
+      reader.readAsDataURL(file);
+    });
     e.target.value = '';
   });
   document.getElementById('stickerPickerClose')?.addEventListener('click', () => document.getElementById('stickerPickerSheet').classList.add('hidden'));
@@ -1653,26 +1496,24 @@ function bindChatSettingsDelegation() {
       return;
     }
   });
-  document.getElementById('directAvatarFileInput')?.addEventListener('change', async e => {
+  document.getElementById('directAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
-    if (dataUrl) { directSetContactAvatar(chatSettingsTarget.id, dataUrl); openChatSettings(); }
+    const reader = new FileReader();
+    reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
-  document.getElementById('callMediaFileInput')?.addEventListener('change', async e => {
+  document.getElementById('callMediaFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
     const isVideo = file.type.startsWith('video/');
     if (file.size > 8 * 1024 * 1024) { if (!confirm('文件较大，可能导致存储空间超限，是否继续？')) { e.target.value=''; return; } }
-    const c = getContactById(chatSettingsTarget.id);
-    if (isVideo) {
-      const reader = new FileReader();
-      reader.onload = ev => { if (c) { c.callMedia = ev.target.result; c.callMediaType = 'video'; persist(); } openChatSettings(); };
-      reader.readAsDataURL(file);
-    } else {
-      const dataUrl = await readFileAsCompressedDataUrl(file, 900, 0.75);
-      if (c && dataUrl) { c.callMedia = dataUrl; c.callMediaType = 'image'; persist(); }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const c = getContactById(chatSettingsTarget.id);
+      if (c) { c.callMedia = ev.target.result; c.callMediaType = isVideo ? 'video' : 'image'; persist(); }
       openChatSettings();
-    }
+    };
+    reader.readAsDataURL(file);
     e.target.value = '';
   });
 }
@@ -1686,13 +1527,12 @@ function bindAvatarLib() {
   document.getElementById('rowAvatarLib')?.addEventListener('click', () => { renderAvatarLibGrid(); pushPage('page-avatarlib'); });
   document.getElementById('backFromAvatarLib')?.addEventListener('click', () => popPage());
   document.getElementById('btnAddAvatarImg')?.addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
-  document.getElementById('avatarLibFileInput')?.addEventListener('change', async e => {
-    const files = [...e.target.files];
-    for (const file of files) {
-      const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
-      if (dataUrl) { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl, tag: '' }); persist(); }
-    }
-    renderAvatarLibGrid();
+  document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
+    [...e.target.files].forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
+      reader.readAsDataURL(file);
+    });
     e.target.value = '';
   });
   document.getElementById('avatarLibGrid')?.addEventListener('click', e => {
@@ -1707,115 +1547,178 @@ function bindAvatarLib() {
 }
 
 function bindMyAvatarUpload() {
-  document.getElementById('myAvatarFileInput')?.addEventListener('change', async e => {
+  document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const dataUrl = await readFileAsCompressedDataUrl(file, 700, 0.75);
-    if (dataUrl) { state.myAvatar = dataUrl; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); }
-    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); };
+    reader.readAsDataURL(file);
   });
 }
 
-/* ============ 搜索功能 ============ */
-function searchContactsAndGroups(query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const items = [
-    ...state.contacts.map(c => ({ id:String(c.id), name:c.name, avatar:c.avatar })),
-    ...state.groups.map(g => ({ id:'g_'+g.id, name:g.name, avatar:null }))
-  ];
-  return items.filter(it => it.name.toLowerCase().includes(q));
+/* ============ 钱包（初始9999, 只能靠红包/转账增加, 充值每日限1000） ============ */
+function renderWalletPage() {
+  const w = getWallet();
+  document.getElementById('walletBalanceAmount').textContent = `¥${w.balance.toFixed(2)}`;
+  const today = new Date().toISOString().slice(0,10);
+  const rechargedToday = (w.rechargeToday && w.rechargeToday.date === today) ? w.rechargeToday.amount : 0;
+  document.getElementById('walletRechargeQuota').textContent = `今日可充值额度：¥${Math.max(0, 1000 - rechargedToday).toFixed(2)} / ¥1000.00`;
+  const list = document.getElementById('walletTxList');
+  list.innerHTML = w.transactions.slice().reverse().map(t => `
+    <div class="wallet-tx-item">
+      <div class="tx-info"><div class="tx-title">${escapeHtml(t.title)}</div><div class="tx-time">${new Date(t.ts).toLocaleString()}</div></div>
+      <div class="wallet-tx-amount">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
+    </div>`).join('') || '<div style="padding:30px;text-align:center;color:#999;font-size:14px;">暂无交易记录</div>';
 }
-function searchAllMessages(query, limit=50) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const results = [];
-  Object.keys(state.chats).forEach(chatId => {
-    (state.chats[chatId]||[]).forEach(m => {
-      if (m.systemNote) return;
-      const text = m.text || m.transcribedText || '';
-      if (!text) return;
-      if (text.toLowerCase().includes(q)) {
-        const isGroup = isGroupChat(chatId);
-        const nameLabel = isGroup ? (getGroupById(chatId.slice(2))?.name||'群聊') : (getContactById(chatId)?.name||'角色');
-        results.push({ chatId, msgId: m.id, text, ts: m.ts, nameLabel });
-      }
+function bindWallet() {
+  document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
+  document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
+  document.getElementById('btnRechargeOpen')?.addEventListener('click', () => {
+    document.getElementById('rechargeAmountInput').value = '';
+    document.getElementById('rechargeSheet').classList.remove('hidden');
+  });
+  document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
+  document.getElementById('rechargeNext')?.addEventListener('click', () => {
+    const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
+    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
+    const today = new Date().toISOString().slice(0,10);
+    const w = getWallet();
+    if (!w.rechargeToday || w.rechargeToday.date !== today) w.rechargeToday = { date: today, amount: 0 };
+    if (w.rechargeToday.amount + amount > 1000) {
+      alert(`今日充值额度剩余 ¥${(1000 - w.rechargeToday.amount).toFixed(2)}，超出每日1000元限额`);
+      return;
+    }
+    document.getElementById('rechargeSheet').classList.add('hidden');
+    runFaceIdSimulation(() => {
+      const w2 = getWallet();
+      if (!w2.rechargeToday || w2.rechargeToday.date !== today) w2.rechargeToday = { date: today, amount: 0 };
+      w2.balance += amount;
+      w2.rechargeToday.amount += amount;
+      w2.transactions.push({ title:'充值（模拟，非真实支付）', amount, ts:Date.now() });
+      saveWallet(w2);
+      renderWalletPage();
+      alert('充值成功（模拟效果）');
     });
   });
-  results.sort((a,b)=> b.ts - a.ts);
-  return results.slice(0, limit);
+  document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
+    const w = getWallet();
+    if (w.balance <= 0) { alert('余额不足'); return; }
+    runFaceIdSimulation(() => {
+      w.transactions.push({ title: '提现（模拟）', amount: -w.balance, ts: Date.now() });
+      w.balance = 0;
+      saveWallet(w);
+      renderWalletPage();
+      alert('提现成功（模拟效果）');
+    });
+  });
 }
-function searchMessagesInChat(chatId, query, limit=50) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return (state.chats[chatId]||[]).filter(m => {
-    if (m.systemNote) return false;
-    const text = m.text || m.transcribedText || '';
-    return text && text.toLowerCase().includes(q);
-  }).map(m => ({ msgId:m.id, text:(m.text||m.transcribedText), ts:m.ts })).slice(0, limit);
+
+/* ============ 小程式：角色奶茶点单 ============ */
+const TEA_MENU = [
+  {name:'珍珠奶茶', price:15}, {name:'四季春奶绿', price:12}, {name:'芋泥啵啵', price:18},
+  {name:'烤黑糖鲜奶', price:16}, {name:'茉莉花茶', price:10}
+];
+let _teaDraft = { contactId:null, drinkIndex:null, method:'pickup', address:'' };
+let _teaTrackTimers = [];
+
+function bindMiniPrograms() {
+  document.getElementById('rowMiniPrograms')?.addEventListener('click', () => pushPage('page-miniprograms'));
+  document.getElementById('backFromMiniPrograms')?.addEventListener('click', () => popPage());
+  document.getElementById('miniAppTea')?.addEventListener('click', () => openTeaOrder());
 }
-function jumpToMessageInCurrentChat(msgId) {
-  setTimeout(() => {
-    const row = document.querySelector(`#msgList [data-id="${msgId}"]`);
-    if (row) {
-      row.scrollIntoView({ behavior:'smooth', block:'center' });
-      const bubble = row.querySelector('.bubble') || row;
-      bubble.classList.add('msg-flash');
-      setTimeout(()=> bubble.classList.remove('msg-flash'), 1600);
+function openTeaOrder() {
+  _teaDraft = { contactId:null, drinkIndex:null, method:'pickup', address: safeGetItem(TEA_ADDRESS_KEY, '') || '' };
+  document.getElementById('teaOrderForm').classList.remove('hidden');
+  document.getElementById('teaOrderTracking').classList.add('hidden');
+  document.getElementById('teaBottomBar').classList.remove('hidden');
+  document.getElementById('teaAddressInput').value = _teaDraft.address;
+  document.querySelectorAll('.tea-method-chip').forEach(c => c.classList.toggle('selected', c.dataset.method === 'pickup'));
+  document.getElementById('teaAddressWrap').classList.add('hidden');
+  const contactBox = document.getElementById('teaContactList');
+  contactBox.innerHTML = state.contacts.map(c => `<div class="tea-contact-item" data-cid="${c.id}"><span>${escapeHtml(c.name)}</span></div>`).join('') || '<div style="color:#999;font-size:13px;padding:10px;">还没有角色，请先添加角色</div>';
+  const menuBox = document.getElementById('teaMenuList');
+  menuBox.innerHTML = TEA_MENU.map((d,i) => `<div class="tea-menu-item" data-idx="${i}"><span class="tea-name">${d.name}</span><span class="tea-price">¥${d.price}</span></div>`).join('');
+  updateTeaTotal();
+  pushPage('page-teaorder');
+}
+function updateTeaTotal() {
+  let total = 0;
+  if (_teaDraft.drinkIndex !== null) total += TEA_MENU[_teaDraft.drinkIndex].price;
+  if (_teaDraft.method === 'delivery') total += 3;
+  document.getElementById('teaTotalAmount').textContent = `¥${total.toFixed(2)}`;
+  return total;
+}
+function bindTeaOrder() {
+  document.getElementById('backFromTeaOrder')?.addEventListener('click', () => popPage());
+  document.getElementById('teaContactList')?.addEventListener('click', e => {
+    const item = e.target.closest('[data-cid]'); if (!item) return;
+    _teaDraft.contactId = item.dataset.cid;
+    document.querySelectorAll('.tea-contact-item').forEach(x => x.classList.toggle('selected', x === item));
+  });
+  document.getElementById('teaMenuList')?.addEventListener('click', e => {
+    const item = e.target.closest('[data-idx]'); if (!item) return;
+    _teaDraft.drinkIndex = Number(item.dataset.idx);
+    document.querySelectorAll('.tea-menu-item').forEach(x => x.classList.toggle('selected', x === item));
+    updateTeaTotal();
+  });
+  document.getElementById('teaMethodRow')?.addEventListener('click', e => {
+    const chip = e.target.closest('[data-method]'); if (!chip) return;
+    _teaDraft.method = chip.dataset.method;
+    document.querySelectorAll('.tea-method-chip').forEach(c => c.classList.toggle('selected', c === chip));
+    document.getElementById('teaAddressWrap').classList.toggle('hidden', _teaDraft.method !== 'delivery');
+    updateTeaTotal();
+  });
+  document.getElementById('teaGoPayBtn')?.addEventListener('click', () => {
+    if (!_teaDraft.contactId) { alert('请选择送给谁'); return; }
+    if (_teaDraft.drinkIndex === null) { alert('请选择饮品'); return; }
+    if (_teaDraft.method === 'delivery') {
+      _teaDraft.address = document.getElementById('teaAddressInput').value.trim();
+      if (!_teaDraft.address) { alert('请填写配送地址'); return; }
+      safeSetItem(TEA_ADDRESS_KEY, _teaDraft.address);
     }
-  }, 150);
+    const total = updateTeaTotal();
+    document.getElementById('teaPayAmount').textContent = `¥${total.toFixed(2)}`;
+    document.getElementById('teaPayCurrentBalance').textContent = `¥${getWallet().balance.toFixed(2)}`;
+    pushPage('page-teapay');
+  });
+  document.getElementById('backFromTeaPay')?.addEventListener('click', () => popPage());
+  document.getElementById('teaConfirmPayBtn')?.addEventListener('click', () => {
+    const total = updateTeaTotal();
+    const w = getWallet();
+    if (w.balance < total) { alert('余额不足，请先充值'); return; }
+    runFaceIdSimulation(() => {
+      const w2 = getWallet();
+      w2.balance -= total;
+      const drinkName = TEA_MENU[_teaDraft.drinkIndex].name;
+      w2.transactions.push({ title: `奶茶订单-${drinkName}`, amount: -total, ts: Date.now() });
+      saveWallet(w2);
+      popPage();
+      startTeaTracking(drinkName);
+    });
+  });
+  document.getElementById('teaOrderAgainBtn')?.addEventListener('click', () => openTeaOrder());
 }
-function jumpToChatAndMessage(chatId, msgId) {
-  document.getElementById('page-search')?.classList.add('hidden');
-  navStack = ['page-chatlist'];
-  openChat(chatId);
-  if (msgId) jumpToMessageInCurrentChat(msgId);
-}
-function bindGlobalSearch() {
-  document.getElementById('btnGlobalSearch')?.addEventListener('click', () => {
-    document.getElementById('globalSearchInput').value = '';
-    document.getElementById('globalSearchContactResults').innerHTML = '';
-    document.getElementById('globalSearchMessageResults').innerHTML = '';
-    pushPage('page-search');
-    setTimeout(() => document.getElementById('globalSearchInput')?.focus(), 300);
-  });
-  document.getElementById('backFromSearch')?.addEventListener('click', () => popPage());
-  document.getElementById('globalSearchInput')?.addEventListener('input', e => {
-    const q = e.target.value;
-    const contactResults = searchContactsAndGroups(q);
-    const msgResults = q.trim() ? searchAllMessages(q) : [];
-    document.getElementById('globalSearchContactResults').innerHTML = contactResults.map(it => `
-      <div class="chat-item" data-jump-contact="${it.id}">${avatarHtml(it.avatar, it.name, 44)}<div class="info"><div class="name">${escapeHtml(it.name)}</div></div></div>
-    `).join('') || (q.trim() ? '<div style="padding:16px;color:#999;font-size:13px;">无匹配联系人</div>' : '');
-    document.getElementById('globalSearchMessageResults').innerHTML = msgResults.map(r => `
-      <div class="chat-item" data-jump-msg="${r.chatId}|${r.msgId}">
-        <div class="info" style="margin-left:0;">
-          <div class="row1"><span class="name">${escapeHtml(r.nameLabel)}</span><span class="time">${new Date(r.ts).toLocaleDateString()}</span></div>
-          <div class="last-msg">${escapeHtml(r.text)}</div>
-        </div></div>`).join('') || (q.trim() ? '<div style="padding:16px;color:#999;font-size:13px;">无匹配聊天记录</div>' : '');
-  });
-  document.getElementById('globalSearchResultsScroll')?.addEventListener('click', e => {
-    const c = e.target.closest('[data-jump-contact]'); if (c) { jumpToChatAndMessage(c.dataset.jumpContact, null); return; }
-    const m = e.target.closest('[data-jump-msg]'); if (m) { const [chatId,msgId] = m.dataset.jumpMsg.split('|'); jumpToChatAndMessage(chatId, msgId); }
-  });
-}
-function bindChatSearch() {
-  document.getElementById('btnChatSearch')?.addEventListener('click', () => {
-    document.getElementById('chatSearchInput').value='';
-    document.getElementById('chatSearchResults').innerHTML='';
-    document.getElementById('chatSearchSheet').classList.remove('hidden');
-  });
-  document.getElementById('chatSearchClose')?.addEventListener('click', () => document.getElementById('chatSearchSheet').classList.add('hidden'));
-  document.getElementById('chatSearchInput')?.addEventListener('input', e => {
-    const results = searchMessagesInChat(state.activeChatId, e.target.value);
-    document.getElementById('chatSearchResults').innerHTML = results.map(r => `
-      <div class="wc-item" data-jump-in-chat="${r.msgId}" style="cursor:pointer;"><span>${escapeHtml(String(r.text).slice(0,40))}</span><span style="color:#999;font-size:12px;">${new Date(r.ts).toLocaleTimeString().slice(0,5)}</span></div>
-    `).join('') || (e.target.value.trim() ? '<div style="padding:14px;color:#999;font-size:13px;">无匹配结果</div>' : '');
-  });
-  document.getElementById('chatSearchResults')?.addEventListener('click', e => {
-    const item = e.target.closest('[data-jump-in-chat]'); if (!item) return;
-    document.getElementById('chatSearchSheet').classList.add('hidden');
-    jumpToMessageInCurrentChat(item.dataset.jumpInChat);
-  });
+function startTeaTracking(drinkName) {
+  document.getElementById('teaOrderForm').classList.add('hidden');
+  document.getElementById('teaBottomBar').classList.add('hidden');
+  document.getElementById('teaOrderTracking').classList.remove('hidden');
+  const steps = ['已下单', '制作中', _teaDraft.method === 'delivery' ? '派送中' : '取餐中', '已完成'];
+  const stepsBox = document.getElementById('teaTrackSteps');
+  function renderSteps(activeIdx) {
+    stepsBox.innerHTML = steps.map((s,i) => `<div class="tea-track-step ${i<activeIdx?'done':''} ${i===activeIdx?'active':''}"><div class="tea-track-dot"></div><div class="tea-track-label">${s}</div></div>`).join('');
+  }
+  renderSteps(0);
+  _teaTrackTimers.forEach(t => clearTimeout(t));
+  _teaTrackTimers = [];
+  _teaTrackTimers.push(setTimeout(() => renderSteps(1), 2500));
+  _teaTrackTimers.push(setTimeout(() => renderSteps(2), 5000));
+  _teaTrackTimers.push(setTimeout(async () => {
+    renderSteps(3);
+    const contactId = _teaDraft.contactId;
+    const contact = getContactById(contactId);
+    if (contact) {
+      await replyWithTarot(String(contactId), String(contactId), `(我送的奶茶「${drinkName}」到了，请开心地表达感谢)`, contact.persona);
+    }
+  }, 8000));
 }
 
 /* ============ 导出 / 导入 ============ */
@@ -1892,22 +1795,6 @@ function bindCloudSync() {
     location.reload();
   });
 }
-function loadSTTSettingsForm() {
-  const cfg = getSTTConfig();
-  document.getElementById('cfgSttEnabled').checked = cfg.enabled;
-  document.getElementById('cfgSttEndpoint').value = cfg.endpoint;
-  document.getElementById('cfgSttApiKey').value = cfg.apiKey;
-  document.getElementById('cfgSttModel').value = cfg.model;
-}
-function saveCurrentSTTForm() {
-  const textCfg = getAIConfig();
-  saveSTTConfig({
-    enabled: document.getElementById('cfgSttEnabled').checked,
-    endpoint: document.getElementById('cfgSttEndpoint').value.trim(),
-    apiKey: document.getElementById('cfgSttApiKey').value.trim() || textCfg.apiKey,
-    model: document.getElementById('cfgSttModel').value.trim() || 'whisper-1'
-  });
-}
 function loadSettingsForm() {
   const cfg = getAIConfig();
   document.getElementById('cfgTextEnabled').checked = cfg.textEnabled;
@@ -1923,9 +1810,7 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
-  document.getElementById('cfgAutoCall').checked = !!cfg.autoCall;
   loadCloudSettingsForm();
-  loadSTTSettingsForm();
 }
 function bindSettingsSave() {
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
@@ -1942,71 +1827,14 @@ function bindSettingsSave() {
       autoMsg: document.getElementById('cfgAutoMsg').checked,
       autoMoment: document.getElementById('cfgAutoMoment').checked,
       autoAvatar: document.getElementById('cfgAutoAvatar').checked,
-      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked,
-      autoCall: document.getElementById('cfgAutoCall').checked
+      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
     });
     saveCurrentCloudForm();
-    saveCurrentSTTForm();
     alert('已保存');
   });
 }
 
-/* ============ 输入框 & 真实语音录制发送 ============ */
-let _voiceRecorder = null, _voiceChunks = [], _voiceRecordStart = 0, _voiceRecognizerLive = null, _voiceLiveTranscript = '';
-
-function pickRecorderMimeType() {
-  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/wav'];
-  for (const c of candidates) { if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c; }
-  return '';
-}
-async function startVoiceRecording() {
-  _voiceChunks = [];
-  _voiceLiveTranscript = '';
-  _voiceRecordStart = Date.now();
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mimeType = pickRecorderMimeType();
-    _voiceRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    _voiceRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) _voiceChunks.push(e.data); };
-    _voiceRecorder.start();
-  } catch(e) { console.error('麦克风获取失败', e); alert('无法访问麦克风，请检查权限设置'); return false; }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SR) {
-    _voiceRecognizerLive = new SR();
-    _voiceRecognizerLive.lang = 'zh-CN';
-    _voiceRecognizerLive.continuous = true;
-    _voiceRecognizerLive.interimResults = false;
-    _voiceRecognizerLive.onresult = ev => {
-      for (let i = ev.resultIndex; i < ev.results.length; i++) { _voiceLiveTranscript += ev.results[i][0].transcript; }
-    };
-    _voiceRecognizerLive.onerror = () => {};
-    try { _voiceRecognizerLive.start(); } catch(e) {}
-  }
-  return true;
-}
-function stopVoiceRecordingAndSend(chatId) {
-  if (_voiceRecognizerLive) { try { _voiceRecognizerLive.stop(); } catch(e){} }
-  if (!_voiceRecorder) return;
-  const duration = Math.max(1, Math.round((Date.now() - _voiceRecordStart)/1000));
-  const recorderRef = _voiceRecorder;
-  recorderRef.onstop = async () => {
-    if (_voiceChunks.length === 0) return;
-    const blob = new Blob(_voiceChunks, { type: recorderRef.mimeType || 'audio/webm' });
-    try { recorderRef.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
-    const dataUrl = await blobToDataUrlLocal(blob);
-    addMessage(chatId, 'me', '[语音]', { type:'voice', voiceData: dataUrl, voiceDuration: duration, isUserRecording: true, transcribedText: null });
-    const contextText = _voiceLiveTranscript.trim() || '(用户发送了一条语音消息)';
-    state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
-    state.pendingBatch[chatId].push(contextText);
-    clearTimeout(state.batchTimer[chatId]);
-    state.batchTimer[chatId] = setTimeout(() => {
-      if (isGroupChat(chatId)) processGroupBatch(chatId); else processSingleBatch(chatId);
-    }, 900);
-  };
-  try { recorderRef.stop(); } catch(e) {}
-  _voiceRecorder = null;
-}
-
+/* ============ 输入框 & 语音输入 ============ */
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
@@ -2028,15 +1856,16 @@ function bindInputBar() {
     if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
     else toggleSendBtn();
   });
-  let recordingActive = false;
-  holdBtn.addEventListener('pointerdown', async () => {
-    holdBtn.classList.add('active');
-    recordingActive = await startVoiceRecording();
-  });
-  const stopTalk = () => {
-    holdBtn.classList.remove('active');
-    if (recordingActive) { stopVoiceRecordingAndSend(state.activeChatId); recordingActive = false; }
-  };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognizer = null;
+  if (SR) {
+    recognizer = new SR(); recognizer.lang = 'zh-CN'; recognizer.continuous = false;
+    recognizer.onresult = ev => { const text = ev.results[0][0].transcript; if (text) handleSend(text); };
+    recognizer.onerror = () => holdBtn.classList.remove('active');
+    recognizer.onend = () => holdBtn.classList.remove('active');
+  }
+  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) { try { recognizer.start(); } catch(e){} } });
+  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) { try { recognizer.stop(); } catch(e){} } else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
   holdBtn.addEventListener('pointerup', stopTalk);
   holdBtn.addEventListener('pointerleave', stopTalk);
 }
@@ -2047,7 +1876,6 @@ async function safeStepAsync(name, fn) { try { await fn(); } catch (e) { console
 
 async function init() {
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
-  safeStep('ensureWalletMigrated', ensureWalletMigrated);
   safeStep('renderTabBars', renderTabBars);
   safeStep('renderMePage', renderMePage);
   safeStep('renderChatList', renderChatList);
@@ -2059,7 +1887,7 @@ async function init() {
   safeStep('bindMsgListDelegation', bindMsgListDelegation);
   safeStep('bindMomentsDelegation', bindMomentsDelegation);
   safeStep('bindMomentsProfile', bindMomentsProfile);
-  safeStep('bindProfilePage', bindProfilePage);
+  safeStep('bindMomentDetailPage', bindMomentDetailPage);
   safeStep('bindDiscoverPlaceholders', bindDiscoverPlaceholders);
   safeStep('bindSheetClose', bindSheetClose);
   safeStep('bindWordCardSheet', bindWordCardSheet);
@@ -2086,9 +1914,9 @@ async function init() {
   safeStep('bindCloudSync', bindCloudSync);
   safeStep('bindPostMoment', bindPostMoment);
   safeStep('bindWallet', bindWallet);
+  safeStep('bindMiniPrograms', bindMiniPrograms);
+  safeStep('bindTeaOrder', bindTeaOrder);
   safeStep('bindChatItemActionSheet', bindChatItemActionSheet);
-  safeStep('bindGlobalSearch', bindGlobalSearch);
-  safeStep('bindChatSearch', bindChatSearch);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
