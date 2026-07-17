@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>WeChat</title>
+<title>微信</title>
 <link rel="manifest" href="manifest.json">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none !important; -webkit-user-select:none !important; -webkit-touch-callout:none !important; }
+input, textarea { user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
 body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; background:#e5e5e5; }
 #app { max-width:480px; margin:0 auto; height:100vh; position:relative; overflow:hidden; background:#e5e5e5; box-shadow:0 0 40px rgba(0,0,0,0.08); }
 .page { position:absolute; inset:0; display:flex; flex-direction:column; background:#e5e5e5; will-change:transform; backface-visibility:hidden; }
@@ -19,6 +20,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .nav-title { font-size:17.5px; font-weight:600; color:#0a0a0a; letter-spacing:0.2px; }
 .icon-btn { width:25px !important; height:25px !important; cursor:pointer; flex-shrink:0; opacity:0.88; transition:opacity .15s; display:inline-block; touch-action:manipulation; }
 .icon-btn:active { opacity:0.5; }
+.nav-icon-group { display:flex; align-items:center; gap:14px; }
 
 .chat-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .chat-item, .contact-item { display:flex; align-items:center; padding:13px 16px; background:#fff; border-bottom:0.5px solid #ececec; transition:background .1s; touch-action:manipulation; }
@@ -26,6 +28,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .chat-item.pinned, .contact-item.pinned { background:#f7f7f7; }
 .avatar { display:flex; align-items:center; justify-content:center; color:#fff; font-size:19px; font-weight:600; border-radius:9px; flex-shrink:0; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.06); }
 .avatar.img { background-size:cover; background-position:center; }
+.avatar.clickable { cursor:pointer; touch-action:manipulation; }
 .chat-item .avatar, .contact-item .avatar { width:50px; height:50px; }
 .info { flex:1; margin-left:13px; overflow:hidden; }
 .row1 { display:flex; justify-content:space-between; align-items:baseline; }
@@ -59,6 +62,12 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .bubble.image::before { display:none; }
 .bubble.image img { max-width:220px; max-height:280px; border-radius:6px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
 
+.voice-msg-wrap { display:flex; flex-direction:column; gap:5px; max-width:78%; }
+.msg-row.me .voice-msg-wrap { align-items:flex-end; }
+.msg-row:not(.me) .voice-msg-wrap { align-items:flex-start; }
+.voice-transcribe-btn { font-size:12.5px; color:#576b95; cursor:pointer; touch-action:manipulation; padding:0 4px; }
+.voice-transcript-text { font-size:14px; color:#444; background:#f2f2f2; padding:7px 11px; border-radius:8px; max-width:100%; }
+
 .bubble.location { padding:0 !important; overflow:hidden; width:200px; cursor:pointer; }
 .msg-row.me .bubble.location, .msg-row:not(.me) .bubble.location { background:#fff !important; }
 .msg-row.me .bubble.location::before { border-left-color:#fff !important; }
@@ -74,7 +83,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .location-text { padding:8px 10px; font-size:13.5px; color:#333; border-top:1px solid #f0f0f0; }
 
 .input-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f7f7f7; border-top:0.5px solid #dcdcdc; padding-bottom:calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; }
-.input-bar input { flex:1; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.input-bar input { flex:1; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); }
 .hold-talk-btn { flex:1; height:40px; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; color:#333; touch-action:manipulation; }
 .hold-talk-btn.active { background:#e0e0e0; }
 .send-btn { background:#07c160; color:#fff; border:none; border-radius:6px; padding:0 18px; height:34px; font-size:15px; flex-shrink:0; font-weight:500; transition:opacity .1s; touch-action:manipulation; }
@@ -110,7 +119,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .comment-list { margin-top:9px; background:#f7f7f7; border-radius:6px; padding:8px 10px; font-size:13.5px; }
 .comment-line { padding:3px 0; line-height:1.5; }
 .comment-input-row { display:flex; gap:7px; margin-top:9px; }
-.comment-input-row input { flex:1; border:1px solid #e2e2e2; border-radius:6px; padding:6px 9px; font-size:13.5px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.comment-input-row input { flex:1; border:1px solid #e2e2e2; border-radius:6px; padding:6px 9px; font-size:13.5px; }
 .comment-input-row button { background:#07c160; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13.5px; }
 
 .mask { position:absolute; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:99; backdrop-filter:blur(2px); }
@@ -135,7 +144,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .wc-item { display:flex; justify-content:space-between; align-items:center; padding:10px 6px; border-bottom:1px solid #f2f2f2; font-size:14.5px; }
 .wc-del { color:#fa5151; text-decoration:none; font-size:13.5px; }
 .wordcard-add { display:flex; gap:8px; margin-top:12px; }
-.wordcard-add input { flex:1; border:1px solid #e2e2e2; border-radius:8px; padding:7px 8px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.wordcard-add input { flex:1; border:1px solid #e2e2e2; border-radius:8px; padding:7px 8px; }
 .wordcard-add button { background:#07c160; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:14.5px; }
 
 .list-block { margin-top:11px; border-radius:10px; overflow:hidden; margin-left:12px; margin-right:12px; box-shadow:0 1px 3px rgba(0,0,0,0.03); }
@@ -156,7 +165,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .form-row { display:flex; align-items:center; justify-content:space-between; background:#fff; padding:12px 14px; border-radius:8px; margin-bottom:8px; font-size:15.5px; box-shadow:0 1px 2px rgba(0,0,0,0.02); }
 .form-row.col { flex-direction:column; align-items:stretch; gap:7px; }
 .form-row label { color:#333; }
-.form-row input, .form-row select, .form-row textarea { border:1px solid #e5e5e5; border-radius:7px; padding:9px 10px; font-size:14.5px; width:100%; background:#fafafa; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.form-row input, .form-row select, .form-row textarea { border:1px solid #e5e5e5; border-radius:7px; padding:9px 10px; font-size:14.5px; width:100%; background:#fafafa; }
 .form-row input:focus, .form-row textarea:focus { outline:none; border-color:#07c160; background:#fff; }
 .switch { position:relative; width:46px !important; height:26px !important; flex-shrink:0; display:inline-block; touch-action:manipulation; }
 .switch input { opacity:0; width:0; height:0; position:absolute; }
@@ -170,7 +179,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .avatar-grid { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:grid; grid-template-columns:repeat(4,1fr); gap:11px; padding:16px; }
 .avatar-lib-item { position:relative; }
 .avatar-lib-item img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; display:block; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
-.avatar-lib-item input { width:100%; margin-top:5px; font-size:11.5px; border:1px solid #e5e5e5; border-radius:5px; padding:4px 6px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.avatar-lib-item input { width:100%; margin-top:5px; font-size:11.5px; border:1px solid #e5e5e5; border-radius:5px; padding:4px 6px; }
 .avatar-lib-item .del-x { position:absolute; top:3px; right:3px; width:20px; height:20px; background:rgba(0,0,0,.6); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; touch-action:manipulation; }
 
 .menu-row { padding:16px 4px; text-align:center; font-size:16.5px; border-bottom:1px solid #f2f2f2; color:#0a0a0a; touch-action:manipulation; cursor:pointer; }
@@ -193,7 +202,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .rp-note { font-size:15.5px; font-weight:500; }
 .rp-sub { font-size:11.5px; opacity:.85; }
 
-.redpacket-sheet input { text-align:center; font-size:16px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.redpacket-sheet input { text-align:center; font-size:16px; }
 .rp-confirm { background:#f7811f !important; }
 
 .rp-detail { width:82%; background:linear-gradient(180deg,#f2711f,#f9924a); border-radius:16px; padding:28px 22px; text-align:center; color:#fff; box-shadow:0 12px 40px rgba(0,0,0,0.3); }
@@ -244,7 +253,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .call-log-line.me { align-self:flex-end; background:rgba(7,193,96,.55); }
 
 .call-textchat { position:absolute; bottom:118px; left:12px; right:12px; display:flex; gap:8px; z-index:6; }
-.call-textchat input { flex:1; height:38px; border:none; border-radius:19px; padding:0 14px; font-size:14.5px; background:rgba(255,255,255,.92); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.call-textchat input { flex:1; height:38px; border:none; border-radius:19px; padding:0 14px; font-size:14.5px; background:rgba(255,255,255,.92); }
 .call-textchat button { background:#07c160; color:#fff; border:none; border-radius:19px; padding:0 14px; font-size:14px; }
 .call-actions-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; padding:16px 14px calc(20px + env(safe-area-inset-bottom)); flex-shrink:0; position:relative; z-index:20; }
 .call-ctrl-btn { display:flex; flex-direction:column; align-items:center; gap:6px; color:#ddd; font-size:10.5px; cursor:pointer; touch-action:manipulation; }
@@ -253,6 +262,13 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .call-ctrl-btn.active svg path, .call-ctrl-btn.active svg circle { stroke:#1c1c1e !important; }
 .call-ctrl-btn svg { width:22px !important; height:22px !important; }
 .call-ctrl-btn.hangup .circle { background:#fa5151; }
+
+.incoming-call-actions { display:flex; justify-content:center; gap:70px; padding:20px 14px calc(30px + env(safe-area-inset-bottom)); flex-shrink:0; }
+.incoming-call-col { display:flex; flex-direction:column; align-items:center; gap:8px; color:#ddd; font-size:12px; }
+.incoming-call-btn { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:manipulation; }
+.incoming-call-btn.decline { background:#fa5151; }
+.incoming-call-btn.accept { background:#07c160; }
+.incoming-call-btn svg { width:28px !important; height:28px !important; }
 
 .call-minipill { position:absolute; top:calc(env(safe-area-inset-top) + 8px); right:12px; z-index:150; background:#1c1c1e; color:#fff; border-radius:20px; padding:6px 12px 6px 6px; display:flex; align-items:center; gap:7px; font-size:12.5px; box-shadow:0 3px 10px rgba(0,0,0,.3); cursor:pointer; touch-action:manipulation; }
 .call-minipill-avatar { width:24px; height:24px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; }
@@ -265,12 +281,14 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .wallet-balance-amount { font-size:36px; font-weight:700; margin-top:8px; }
 .wallet-actions { display:flex; gap:10px; margin-top:18px; }
 .wallet-action-btn { flex:1; background:rgba(255,255,255,.2); border-radius:8px; padding:10px; text-align:center; font-size:14.5px; cursor:pointer; touch-action:manipulation; }
-.wallet-tx-list { margin:0 12px; }
-.wallet-tx-item { background:#fff; padding:12px 14px; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
-.wallet-tx-item .tx-info { display:flex; flex-direction:column; gap:2px; }
-.wallet-tx-item .tx-title { font-size:15px; color:#0a0a0a; }
-.wallet-tx-item .tx-time { font-size:12px; color:#999; }
-.wallet-tx-amount { font-size:16px; font-weight:600; color:#07c160; }
+.wallet-bill-entry { margin:0 12px 14px; }
+.bill-item { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:#fff; border-bottom:0.5px solid #f0f0f0; }
+.bill-item .bill-info { display:flex; flex-direction:column; gap:3px; }
+.bill-item .bill-title { font-size:15.5px; color:#0a0a0a; }
+.bill-item .bill-time { font-size:12.5px; color:#999; }
+.bill-item .bill-amount { font-size:16px; font-weight:600; }
+.bill-item .bill-amount.income { color:#07c160; }
+.bill-item .bill-amount.expense { color:#333; }
 
 .faceid-scan { display:flex; flex-direction:column; align-items:center; gap:16px; padding:20px 0; }
 .faceid-icon { width:80px; height:80px; border-radius:50%; background:#f2f2f2; display:flex; align-items:center; justify-content:center; }
@@ -278,6 +296,15 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .faceid-icon.scanning { animation:faceidPulse 1s infinite; background:#e6f9ee; }
 @keyframes faceidPulse { 0%,100% { box-shadow:0 0 0 0 rgba(7,193,96,.4); } 50% { box-shadow:0 0 0 12px rgba(7,193,96,0); } }
 .faceid-status-text { font-size:15px; color:#333; }
+
+.profile-mini-header { display:flex; flex-direction:column; align-items:center; gap:12px; padding:30px 20px; background:#fff; }
+.profile-mini-name { font-size:18px; font-weight:600; color:#0a0a0a; }
+
+.search-input-wrap { padding:10px 12px; background:#f7f7f7; flex-shrink:0; }
+.search-input-wrap input { width:100%; height:38px; border:none; border-radius:8px; background:#fff; padding:0 12px; font-size:15px; }
+
+@keyframes msgFlash { 0%,100% { background:transparent; } 30% { background:rgba(255,214,105,0.55); } }
+.msg-flash { animation: msgFlash 1.6s ease; border-radius:4px; }
 
 svg { max-width:100%; max-height:100%; }
 #debugErrorBanner { font-family:monospace; }
@@ -304,7 +331,7 @@ svg { max-width:100%; max-height:100%; }
   <!-- Tab1: 聊天列表 -->
   <div class="page" id="page-chatlist" data-tab="chat">
     <div class="nav-bar">
-      <span></span>
+      <svg class="icon-btn" id="btnGlobalSearch" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="1.8"/><line x1="15" y1="15" x2="20" y2="20" stroke="#000" stroke-width="1.8" stroke-linecap="round"/></svg>
       <span class="nav-title">微信</span>
       <svg class="icon-btn" id="btnAddMenu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
     </div>
@@ -401,7 +428,10 @@ svg { max-width:100%; max-height:100%; }
     <div class="nav-bar">
       <svg class="icon-btn nav-back" id="backFromChat" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="nav-title" id="chatPeerName">角色</span>
-      <svg class="icon-btn" id="btnChatSettings" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      <div class="nav-icon-group">
+        <svg class="icon-btn" id="btnChatSearch" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#000" stroke-width="1.8"/><line x1="15" y1="15" x2="20" y2="20" stroke="#000" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <svg class="icon-btn" id="btnChatSettings" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </div>
     </div>
     <div class="msg-list" id="msgList"></div>
     <div class="input-bar">
@@ -471,6 +501,37 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
+  <!-- 角色/我 的朋友圈主页 -->
+  <div class="page hidden" id="page-profile">
+    <div class="nav-bar">
+      <svg class="icon-btn nav-back" id="backFromProfile" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title" id="profilePageName">昵称</span><span></span>
+    </div>
+    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;">
+      <div class="profile-mini-header">
+        <div id="profilePageAvatar" class="avatar" style="width:72px;height:72px;border-radius:10px;"></div>
+        <div class="profile-mini-name" id="profilePageDisplayName"></div>
+      </div>
+      <div class="settings-group-title" style="margin-left:12px;">朋友圈动态</div>
+      <div id="profileMomentsList"></div>
+    </div>
+  </div>
+
+  <!-- 全局搜索 -->
+  <div class="page hidden" id="page-search">
+    <div class="nav-bar">
+      <svg class="icon-btn nav-back" id="backFromSearch" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title">搜索</span><span></span>
+    </div>
+    <div class="search-input-wrap"><input id="globalSearchInput" placeholder="搜索联系人或聊天记录"></div>
+    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;" id="globalSearchResultsScroll">
+      <div class="settings-group-title" style="margin-left:12px;">联系人</div>
+      <div id="globalSearchContactResults"></div>
+      <div class="settings-group-title" style="margin-left:12px;">聊天记录</div>
+      <div id="globalSearchMessageResults"></div>
+    </div>
+  </div>
+
   <!-- 设置 -->
   <div class="page hidden" id="page-settings">
     <div class="nav-bar">
@@ -504,11 +565,17 @@ svg { max-width:100%; max-height:100%; }
           <option value="onyx">onyx</option><option value="nova">nova</option><option value="shimmer">shimmer</option>
         </select>
       </div>
+      <div class="settings-group-title">语音转文字 (STT / MiniMax或其他)</div>
+      <div class="form-row"><label>启用语音转文字</label><label class="switch"><input type="checkbox" id="cfgSttEnabled"><span class="slider"></span></label></div>
+      <div class="form-row col"><label>STT Endpoint</label><input id="cfgSttEndpoint" placeholder="例如 MiniMax/OpenAI Whisper 兼容地址"></div>
+      <div class="form-row col"><label>STT API Key</label><input id="cfgSttApiKey" type="password" placeholder="留空则使用上方文本模型Key"></div>
+      <div class="form-row col"><label>STT 模型名称</label><input id="cfgSttModel" placeholder="例如 whisper-1 或 MiniMax给的模型名"></div>
       <div class="settings-group-title">行为开关</div>
       <div class="form-row"><label>允许AI主动发消息</label><label class="switch"><input type="checkbox" id="cfgAutoMsg"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI主动发朋友圈</label><label class="switch"><input type="checkbox" id="cfgAutoMoment"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI主动换头像</label><label class="switch"><input type="checkbox" id="cfgAutoAvatar"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI抽到幸运牌时发红包</label><label class="switch"><input type="checkbox" id="cfgAutoRedpacket"><span class="slider"></span></label></div>
+      <div class="form-row"><label>允许AI主动打电话</label><label class="switch"><input type="checkbox" id="cfgAutoCall"><span class="slider"></span></label></div>
       <div class="settings-group-title">云端同步（防止刷新丢数据）</div>
       <div class="form-row"><label>启用云端同步</label><label class="switch"><input type="checkbox" id="cfgCloudEnabled"><span class="slider"></span></label></div>
       <div class="form-row col"><label>同步房间ID（自己设一个，换设备填同一个即可同步）</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div>
@@ -531,7 +598,7 @@ svg { max-width:100%; max-height:100%; }
     <div class="avatar-grid" id="avatarLibGrid"></div>
   </div>
 
-  <!-- 钱包页面 -->
+  <!-- 钱包（余额页） -->
   <div class="page hidden" id="page-wallet">
     <div class="nav-bar">
       <svg class="icon-btn nav-back" id="backFromWallet" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -539,16 +606,29 @@ svg { max-width:100%; max-height:100%; }
     </div>
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
       <div class="wallet-balance-card">
-        <div class="wallet-balance-label">零钱余额（模拟，非真实货币）</div>
+        <div class="wallet-balance-label">零钱余额</div>
         <div class="wallet-balance-amount" id="walletBalanceAmount">¥0.00</div>
         <div class="wallet-actions">
           <div class="wallet-action-btn" id="btnRechargeOpen">充值</div>
           <div class="wallet-action-btn" id="btnWithdrawOpen">提现</div>
         </div>
       </div>
-      <div class="settings-group-title" style="margin-left:12px;">交易记录</div>
-      <div class="wallet-tx-list" id="walletTxList"></div>
+      <div class="wallet-bill-entry">
+        <div class="list-row" id="rowWalletBills" style="border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+          <span>查看账单明细</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <!-- 钱包账单明细页 -->
+  <div class="page hidden" id="page-wallet-bills">
+    <div class="nav-bar">
+      <svg class="icon-btn nav-back" id="backFromWalletBills" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-title">账单明细</span><span></span>
+    </div>
+    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;" id="walletBillsList"></div>
   </div>
 
   <!-- 长按：塔罗牌 + 保护罩 -->
@@ -753,10 +833,10 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 身份验证模拟 -->
+  <!-- 身份验证 -->
   <div class="mask hidden" id="faceidSheet">
     <div class="sheet">
-      <div class="sheet-title">身份验证（模拟效果）</div>
+      <div class="sheet-title">身份验证</div>
       <div class="faceid-scan">
         <div class="faceid-icon" id="faceidIconBox">
           <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="#07c160" stroke-width="1.6"/><circle cx="12" cy="10" r="2.6" fill="none" stroke="#07c160" stroke-width="1.6"/><path d="M8 17c1-2 2.5-3 4-3s3 1 4 3" fill="none" stroke="#07c160" stroke-width="1.6"/></svg>
@@ -767,13 +847,23 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 聊天项操作菜单：置顶/删除 -->
+  <!-- 聊天项操作菜单 -->
   <div class="mask hidden" id="chatItemActionSheet">
     <div class="sheet">
       <div class="sheet-title">聊天操作</div>
       <div class="menu-row" id="chatItemPinToggle">置顶该聊天</div>
       <div class="menu-row" id="chatItemDelete" style="color:#fa5151;">删除该聊天</div>
       <div class="sheet-close" id="chatItemActionCancel">取消</div>
+    </div>
+  </div>
+
+  <!-- 聊天内搜索 -->
+  <div class="mask hidden" id="chatSearchSheet">
+    <div class="sheet">
+      <div class="sheet-title">搜索聊天记录</div>
+      <div class="form-row col"><input id="chatSearchInput" placeholder="输入关键字"></div>
+      <div id="chatSearchResults" style="max-height:300px;overflow-y:auto;"></div>
+      <div class="sheet-close" id="chatSearchClose">关闭</div>
     </div>
   </div>
 
@@ -795,7 +885,17 @@ svg { max-width:100%; max-height:100%; }
       <input id="callTextInput" placeholder="输入消息...">
       <button id="callTextSendBtn">发送</button>
     </div>
-    <div class="call-actions-grid">
+    <div class="incoming-call-actions hidden" id="incomingCallActions">
+      <div class="incoming-call-col">
+        <div class="incoming-call-btn decline" id="callDeclineBtn"><svg viewBox="0 0 24 24"><path d="M4 15c4-4 12-4 16 0l-2 3c-1-1-3-2-6-2s-5 1-6 2z" fill="#fff"/></svg></div>
+        <span>拒绝</span>
+      </div>
+      <div class="incoming-call-col">
+        <div class="incoming-call-btn accept" id="callAcceptBtn"><svg viewBox="0 0 24 24"><path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="#fff"/></svg></div>
+        <span>接听</span>
+      </div>
+    </div>
+    <div class="call-actions-grid" id="callActionsGrid">
       <div class="call-ctrl-btn" id="callMuteBtn">
         <div class="circle"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div>
         <span>静音</span>
@@ -825,10 +925,10 @@ svg { max-width:100%; max-height:100%; }
   <input type="file" id="callInCallMediaFileInput" accept="image/*,video/*" class="hidden">
 
 </div>
-<script src="js/tarot.js?v=16" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=16" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=16" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=16" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=16" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=17" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=17" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=17" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=17" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=17" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
