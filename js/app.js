@@ -185,9 +185,46 @@ function avatarHtml(dataUrl, name, size = 40) {
   if (dataUrl) return `<div class="avatar img" style="width:${size}px;height:${size}px;background-image:url('${dataUrl}')"></div>`;
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${hashColor(name)}">${escapeHtml(name || '?').slice(0,1)}</div>`;
 }
+function resizeImageDataUrl(dataUrl, maxDim = 240, quality = 0.82) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      try { resolve(canvas.toDataURL('image/jpeg', quality)); }
+      catch (e) { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+function readImageFileCompressed(file, maxDim = 240, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = ev => resizeImageDataUrl(ev.target.result, maxDim, quality).then(resolve);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 function formatMomentDate(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function formatMomentFeedTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+  const d = new Date(ts), now = new Date();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if (d.toDateString() === yest.toDateString()) return `昨天 ${hm}`;
+  return d.getFullYear() === now.getFullYear() ? `${d.getMonth()+1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
 }
 
 /* ============ 灵动岛 Face ID 模拟动画 ============ */
@@ -291,7 +328,7 @@ function bindSwipeBack() {
 }
 
 const TAB_ITEMS = [
-  {tab:'chat', label:'微信', page:'page-chatlist', icon:'<path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'},
+  {tab:'chat', label:'WeChat', page:'page-chatlist', icon:'<path d="M4 4h16v12H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'},
   {tab:'contacts', label:'通讯录', page:'page-contacts', icon:'<circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6" fill="none" stroke="currentColor" stroke-width="1.6"/>'},
   {tab:'discover', label:'发现', page:'page-discover', icon:'<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 9l-2 6-6 2 2-6z" fill="currentColor"/>'},
   {tab:'me', label:'我', page:'page-me', icon:'<circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21c1.5-5 5-7 8-7s6.5 2 8 7" fill="none" stroke="currentColor" stroke-width="1.6"/>'}
@@ -387,7 +424,7 @@ function updateChatListNavTitle() {
   const el = document.getElementById('chatListNavTitle');
   if (!el) return;
   const total = totalUnreadCount();
-  el.textContent = total > 0 ? `微信 (${total > 99 ? '99+' : total})` : '微信';
+  el.textContent = total > 0 ? `WeChat (${total > 99 ? '99+' : total})` : 'WeChat';
 }
 
 /* ============ 聊天列表 / 通讯录（含置顶排序 + 未读徽标） ============ */
@@ -512,15 +549,34 @@ function openChat(chatId) {
   pushPage('page-chat');
 }
 
+function formatMsgDividerTime(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const time = `${hh}:${mm}`;
+  if (d.toDateString() === now.toDateString()) return time;
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return `昨天 ${time}`;
+  const dayStart = x => new Date(x).setHours(0, 0, 0, 0);
+  const daysDiff = Math.floor((dayStart(now) - dayStart(d)) / 86400000);
+  if (daysDiff >= 0 && daysDiff < 7) return `${['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]} ${time}`;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return sameYear ? `${d.getMonth() + 1}月${d.getDate()}日 ${time}` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+}
 function renderMessages() {
   const box = document.getElementById('msgList');
   if (!box) return;
   const chatId = state.activeChatId;
   const msgs = state.chats[chatId] || [];
   const group = isGroupChat(chatId);
+  let lastTs = null;
 
   box.innerHTML = msgs.map(m => {
-    if (m.systemNote) return `<div class="msg-system">${escapeHtml(m.text)}</div>`;
+    let dividerHtml = '';
+    if (lastTs === null || m.ts - lastTs > 5 * 60 * 1000) dividerHtml = `<div class="msg-time-divider">${formatMsgDividerTime(m.ts)}</div>`;
+    lastTs = m.ts;
+    if (m.systemNote) return dividerHtml + `<div class="msg-system">${escapeHtml(m.text)}</div>`;
     const isMe = m.from === 'me';
     const senderContact = !isMe ? getContactById(m.from) : null;
     const name = isMe ? (state.myName || '我') : (senderContact?.name || '角色');
@@ -553,7 +609,7 @@ function renderMessages() {
     }
 
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
-    return `<div class="msg-col ${isMe ? 'me' : ''}">
+    return dividerHtml + `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
       <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
     </div>`;
@@ -1126,16 +1182,14 @@ function renderMoments() {
   const sorted = [...state.moments].sort((a, b) => ((b.pinned?1:0) - (a.pinned?1:0)));
   box.innerHTML = sorted.map(m => `
     <div class="moment-item" data-id="${m.id}">
-      <div class="moment-header" data-detail="${m.id}">
-        ${avatarHtml(m.avatar, m.name, 44)}
-        <div class="moment-body">
+      ${avatarHtml(m.avatar, m.name, 44)}
+      <div class="moment-body">
+        <div class="moment-header" data-detail="${m.id}">
           <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
           ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
-          ${m.image ? `<img src="${m.image}" style="width:100%;max-width:220px;border-radius:8px;margin-top:6px;display:block;">` : ''}
+          ${m.image ? `<img src="${m.image}" class="moment-image">` : ''}
         </div>
-      </div>
-      <div class="moment-body" style="margin-left:55px;">
-        <div class="time-row"><span class="time">${new Date(m.ts).toLocaleString()}</span>
+        <div class="time-row"><span class="time">${formatMomentFeedTime(m.ts)}</span>
           <span>
             ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
             <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
@@ -1526,10 +1580,8 @@ function bindChatSettingsDelegation() {
     if (!chatSettingsTarget || chatSettingsTarget.type !== 'contact') return;
     if (e.target.id === 'directAvatarFileInput') {
       const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
-      reader.readAsDataURL(file);
       e.target.value = '';
+      readImageFileCompressed(file).then(dataUrl => { directSetContactAvatar(chatSettingsTarget.id, dataUrl); openChatSettings(); });
       return;
     }
     if (e.target.id === 'callMediaFileInput') {
@@ -1559,12 +1611,14 @@ function bindAvatarLib() {
   document.getElementById('backFromAvatarLib')?.addEventListener('click', () => popPage());
   document.getElementById('btnAddAvatarImg')?.addEventListener('click', () => document.getElementById('avatarLibFileInput').click());
   document.getElementById('avatarLibFileInput')?.addEventListener('change', e => {
-    [...e.target.files].forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => { state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result, tag: '' }); persist(); renderAvatarLibGrid(); };
-      reader.readAsDataURL(file);
-    });
+    const files = [...e.target.files];
     e.target.value = '';
+    files.forEach(file => {
+      readImageFileCompressed(file).then(dataUrl => {
+        state.avatarLibrary.push({ id: Date.now()+Math.random(), dataUrl, tag: '' });
+        persist(); renderAvatarLibGrid();
+      });
+    });
   });
   document.getElementById('avatarLibGrid')?.addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
@@ -1580,9 +1634,11 @@ function bindAvatarLib() {
 function bindMyAvatarUpload() {
   document.getElementById('myAvatarFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => { state.myAvatar = ev.target.result; persist(); renderMePage(); renderMessages(); renderMomentsProfile(); };
-    reader.readAsDataURL(file);
+    e.target.value = '';
+    readImageFileCompressed(file).then(dataUrl => {
+      state.myAvatar = dataUrl;
+      persist(); renderMePage(); renderMessages(); renderMomentsProfile();
+    });
   });
 }
 
@@ -1917,8 +1973,21 @@ function bindInputBar() {
 function safeStep(name, fn) { try { fn(); } catch (e) { console.error(`[初始化失败: ${name}]`, e); } }
 async function safeStepAsync(name, fn) { try { await fn(); } catch (e) { console.error(`[初始化失败: ${name}]`, e); } }
 
+async function migrateOversizedAvatars() {
+  const THRESHOLD = 60000; // large uncompressed photos crash mobile Safari once repeated across many message bubbles
+  let changed = false;
+  if (state.myAvatar && state.myAvatar.length > THRESHOLD) { state.myAvatar = await resizeImageDataUrl(state.myAvatar); changed = true; }
+  for (const c of state.contacts) {
+    if (c.avatar && c.avatar.length > THRESHOLD) { c.avatar = await resizeImageDataUrl(c.avatar); changed = true; }
+  }
+  for (const a of state.avatarLibrary) {
+    if (a.dataUrl && a.dataUrl.length > THRESHOLD) { a.dataUrl = await resizeImageDataUrl(a.dataUrl); changed = true; }
+  }
+  if (changed) persist();
+}
 async function init() {
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
+  await safeStepAsync('migrateOversizedAvatars', migrateOversizedAvatars);
   safeStep('renderTabBars', renderTabBars);
   safeStep('renderMePage', renderMePage);
   safeStep('renderChatList', renderChatList);

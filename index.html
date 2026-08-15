@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>微信</title>
+<title>WeChat</title>
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon/wechat-app-icon-192.png">
+<link rel="apple-touch-icon" href="icon/wechat-app-icon-180.png">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none !important; -webkit-user-select:none !important; -webkit-touch-callout:none !important; }
 body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; background:#e5e5e5; }
@@ -57,7 +59,8 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .bubble.voice svg, .bubble.call svg { width:19px !important; height:19px !important; flex-shrink:0; }
 .call-bubble-text { display:flex; flex-direction:column; gap:1px; }
 .call-bubble-duration { font-size:12px; opacity:.65; }
-.bubble.image { background:transparent; padding:0; box-shadow:none; }
+.msg-row.me .bubble.image, .msg-row:not(.me) .bubble.image { background:transparent !important; }
+.bubble.image { padding:0; box-shadow:none; }
 .bubble.image::before { display:none; }
 .bubble.image img { max-width:220px; max-height:280px; border-radius:6px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
 
@@ -101,17 +104,19 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .moments-my-name { color:#fff; font-size:16px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,0.5); }
 .moments-my-avatar { width:64px; height:64px; border-radius:9px; box-shadow:0 0 0 2px #fff, 0 2px 8px rgba(0,0,0,0.2); cursor:pointer; flex-shrink:0; touch-action:manipulation; }
 .moments-list { position:relative; z-index:1; background:#fff; padding-bottom:20px; }
-.moment-item { padding:16px 15px; border-bottom:0.5px solid #f0f0f0; display:flex; gap:11px; }
-.moment-header { display:flex; gap:11px; cursor:pointer; touch-action:manipulation; flex:1; }
-.moment-item .avatar { width:44px; height:44px; font-size:17px; border-radius:8px; }
-.moment-body { flex:1; }
+.moment-item { padding:16px 15px; border-bottom:0.5px solid #f0f0f0; display:flex; gap:11px; align-items:flex-start; }
+.moment-header { cursor:pointer; touch-action:manipulation; }
+.moment-item .avatar { width:44px; height:44px; font-size:17px; border-radius:8px; flex-shrink:0; }
+.moment-body { flex:1; min-width:0; }
 .moment-item .mname { color:#576b95; font-size:15.5px; font-weight:600; }
-.moment-item .content { font-size:15.5px; margin-top:5px; color:#0a0a0a; line-height:1.5; }
+.moment-item .content { font-size:15.5px; margin-top:5px; color:#0a0a0a; line-height:1.5; word-break:break-word; }
+.moment-image { width:100%; max-width:220px; border-radius:6px; margin-top:8px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
 .moment-item .time-row { display:flex; justify-content:space-between; align-items:center; margin-top:9px; }
 .moment-item .time { font-size:12.5px; color:#b0b0b0; }
-.comment-btn { font-size:12.5px; color:#576b95; background:#f0f0f0; padding:4px 11px; border-radius:4px; }
+.comment-btn { font-size:12.5px; color:#576b95; background:#f0f0f0; padding:4px 11px; border-radius:4px; cursor:pointer; touch-action:manipulation; }
 .comment-list { margin-top:9px; background:#f7f7f7; border-radius:6px; padding:8px 10px; font-size:13.5px; }
 .comment-line { padding:3px 0; line-height:1.5; }
+.comment-line b { color:#576b95; font-weight:500; }
 .comment-input-row { display:flex; gap:7px; margin-top:9px; }
 .comment-input-row input { flex:1; border:1px solid #e2e2e2; border-radius:6px; padding:6px 9px; font-size:13.5px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
 .comment-input-row button { background:#07c160; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13.5px; }
@@ -187,8 +192,10 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .msg-col.me { align-items:flex-end; }
 
 .msg-system { text-align:center; font-size:12.5px; color:#9a9a9a; margin:4px 0; }
+.msg-time-divider { text-align:center; font-size:12px; color:#a8a8a8; margin:2px 0 4px; }
 
-.bubble.redpacket { background:linear-gradient(160deg,#fcaa5a,#f7811f); color:#fff; display:flex; align-items:center; gap:11px; padding:14px 18px; min-width:190px; border-radius:8px; cursor:pointer; box-shadow:0 3px 10px rgba(247,129,31,0.3); }
+.bubble.redpacket { display:flex; align-items:center; gap:11px; padding:14px 18px; min-width:190px; border-radius:8px; cursor:pointer; box-shadow:0 3px 10px rgba(247,129,31,0.3); }
+.msg-row.me .bubble.redpacket, .msg-row:not(.me) .bubble.redpacket { background:linear-gradient(160deg,#fcaa5a,#f7811f) !important; color:#fff; }
 .bubble.redpacket.claimed { opacity:.7; }
 .bubble.redpacket::before { border-right-color:#fcaa5a !important; border-left-color:#fcaa5a !important; }
 .rp-icon { width:32px !important; height:32px !important; flex-shrink:0; }
@@ -364,7 +371,7 @@ svg { max-width:100%; max-height:100%; }
   <div class="page" id="page-chatlist" data-tab="chat">
     <div class="nav-bar">
       <span></span>
-      <span class="nav-title" id="chatListNavTitle">微信</span>
+      <span class="nav-title" id="chatListNavTitle">WeChat</span>
       <svg class="icon-btn" id="btnAddMenu" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
     </div>
     <div class="chat-list" id="chatListItems"></div>
