@@ -81,10 +81,12 @@ const WordCards = {
   },
 
   getForContact(contact) {
+    const global = this.getAll();
     if (contact && contact.wordCardMode === 'custom') {
       const custom = this.getContactList(contact.id);
-      return custom.length ? custom : this.getAll();
+      if (!custom.length) return global;
+      return Array.from(new Set([...custom, ...global]));
     }
-    return this.getAll();
+    return global;
   }
 };

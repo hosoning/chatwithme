@@ -78,7 +78,11 @@ const TEA_ADDRESS_KEY = 'tarot_tea_address_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
 function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
-function getWallet() { return safeLoadJSON(WALLET_KEY, { balance: 9999, transactions: [], rechargeToday: { date:'', amount:0 } }); }
+function getWallet() {
+  const w = safeLoadJSON(WALLET_KEY, { balance: 9999, transactions: [], rechargeToday: { date:'', amount:0 } });
+  if (!(w.balance >= 0)) { w.balance = 0; saveWallet(w); }
+  return w;
+}
 function saveWallet(w) { safeSaveJSON(WALLET_KEY, w); }
 function getPinnedChats() { return safeLoadJSON(PINNED_CHATS_KEY, []); }
 function savePinnedChats(list) { safeSaveJSON(PINNED_CHATS_KEY, list); }
@@ -680,23 +684,44 @@ function handleSend(text) {
   }, 900);
 }
 
+function showTypingIndicator(chatId, contact) {
+  if (chatId !== state.activeChatId) return;
+  const box = document.getElementById('msgList');
+  if (!box || document.getElementById('typingIndicatorRow')) return;
+  const row = document.createElement('div');
+  row.id = 'typingIndicatorRow';
+  row.className = 'msg-col';
+  row.innerHTML = `<div class="msg-row">${avatarHtml(contact?.avatar, contact?.name, 40)}<div class="bubble typing-bubble"><span></span><span></span><span></span></div></div>`;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+function hideTypingIndicator() {
+  document.getElementById('typingIndicatorRow')?.remove();
+}
 async function replyWithTarot(chatId, fromId, text, persona) {
   const cards = drawCards(3);
   const shieldCards = drawCards(3);
   const shield = calcShield(shieldCards);
-  const pool = WordCards.getForContact(getContactById(fromId));
+  const contact = getContactById(fromId);
+  const pool = WordCards.getForContact(contact);
 
-  if (shouldSendRedPacket(cards)) {
-    const amount = randomRedPacketAmount();
-    const note = pool[secureRandomInt(pool.length)] || '恭喜发财';
-    addMessage(chatId, fromId, note, { type:'redpacket', cards, shieldCards, shield, redpacket:{ amount, note, status:'unclaimed', claimedBy:null } });
-    return;
-  }
-  const picks = await interpretAndReply(text, cards, pool, persona);
-  for (let i = 0; i < picks.length; i++) {
-    await new Promise(r => setTimeout(r, 450));
-    const voiceUrl = await synthesizeVoice(picks[i]);
-    addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
+  showTypingIndicator(chatId, contact);
+  try {
+    if (shouldSendRedPacket(cards)) {
+      const amount = randomRedPacketAmount();
+      const note = pool[secureRandomInt(pool.length)] || '恭喜发财';
+      addMessage(chatId, fromId, note, { type:'redpacket', cards, shieldCards, shield, redpacket:{ amount, note, status:'unclaimed', claimedBy:null } });
+      return;
+    }
+    const picks = await interpretAndReply(text, cards, pool, persona);
+    for (let i = 0; i < picks.length; i++) {
+      await new Promise(r => setTimeout(r, 450));
+      const voiceUrl = await synthesizeVoice(picks[i]);
+      addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
+      if (i < picks.length - 1) showTypingIndicator(chatId, contact);
+    }
+  } finally {
+    hideTypingIndicator();
   }
 }
 async function processSingleBatch(contactId) {
@@ -1265,6 +1290,7 @@ function openRedPacketDetail(msgId) {
     midBox.classList.remove('hidden'); resultBox.classList.add('hidden');
     midBox.onclick = () => {
       if (msg.from === 'me') { alert('自己发的红包不能自己领取哦'); return; }
+      if (msg.redpacket.status === 'claimed') return;
       msg.redpacket.status = 'claimed'; msg.redpacket.claimedBy = 'me';
       const w = getWallet();
       const amt = parseFloat(msg.redpacket.amount) || 0;
@@ -1446,7 +1472,7 @@ function openChatSettings() {
       <div class="settings-group-title">角色设定</div>
       <textarea id="editPersona" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;">${escapeHtml(c.persona || '')}</textarea>
       <div class="settings-group-title">字卡来源</div>
-      <div class="form-row"><label>使用专属字卡（而非全局）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
+      <div class="form-row"><label>叠加专属字卡（在全局字卡基础上）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
       <div class="menu-row" id="editContactCustomCards">编辑专属字卡</div>
       <button class="save-btn" id="savePersonaBtn">保存</button>`;
   }
@@ -1496,25 +1522,30 @@ function bindChatSettingsDelegation() {
       return;
     }
   });
-  document.getElementById('directAvatarFileInput')?.addEventListener('change', e => {
-    const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
-    const reader = new FileReader();
-    reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  });
-  document.getElementById('callMediaFileInput')?.addEventListener('change', e => {
-    const file = e.target.files[0]; if (!file || !chatSettingsTarget) return;
-    const isVideo = file.type.startsWith('video/');
-    if (file.size > 8 * 1024 * 1024) { if (!confirm('文件较大，可能导致存储空间超限，是否继续？')) { e.target.value=''; return; } }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const c = getContactById(chatSettingsTarget.id);
-      if (c) { c.callMedia = ev.target.result; c.callMediaType = isVideo ? 'video' : 'image'; persist(); }
-      openChatSettings();
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+  body.addEventListener('change', e => {
+    if (!chatSettingsTarget || chatSettingsTarget.type !== 'contact') return;
+    if (e.target.id === 'directAvatarFileInput') {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => { directSetContactAvatar(chatSettingsTarget.id, ev.target.result); openChatSettings(); };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+      return;
+    }
+    if (e.target.id === 'callMediaFileInput') {
+      const file = e.target.files[0]; if (!file) return;
+      const isVideo = file.type.startsWith('video/');
+      if (file.size > 8 * 1024 * 1024) { if (!confirm('文件较大，可能导致存储空间超限，是否继续？')) { e.target.value=''; return; } }
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const c = getContactById(chatSettingsTarget.id);
+        if (c) { c.callMedia = ev.target.result; c.callMediaType = isVideo ? 'video' : 'image'; persist(); }
+        openChatSettings();
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+      return;
+    }
   });
 }
 
@@ -1569,6 +1600,7 @@ function renderWalletPage() {
       <div class="wallet-tx-amount">${t.amount >= 0 ? '+' : ''}¥${t.amount.toFixed(2)}</div>
     </div>`).join('') || '<div style="padding:30px;text-align:center;color:#999;font-size:14px;">暂无交易记录</div>';
 }
+let _walletActionBusy = false;
 function bindWallet() {
   document.getElementById('rowWallet')?.addEventListener('click', () => { renderWalletPage(); pushPage('page-wallet'); });
   document.getElementById('backFromWallet')?.addEventListener('click', () => popPage());
@@ -1578,6 +1610,7 @@ function bindWallet() {
   });
   document.getElementById('rechargeCancel')?.addEventListener('click', () => document.getElementById('rechargeSheet').classList.add('hidden'));
   document.getElementById('rechargeNext')?.addEventListener('click', () => {
+    if (_walletActionBusy) return;
     const amount = parseFloat(document.getElementById('rechargeAmountInput').value);
     if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
     const today = new Date().toISOString().slice(0,10);
@@ -1587,6 +1620,7 @@ function bindWallet() {
       alert(`今日充值额度剩余 ¥${(1000 - w.rechargeToday.amount).toFixed(2)}，超出每日1000元限额`);
       return;
     }
+    _walletActionBusy = true;
     document.getElementById('rechargeSheet').classList.add('hidden');
     runFaceIdSimulation(() => {
       const w2 = getWallet();
@@ -1597,16 +1631,21 @@ function bindWallet() {
       saveWallet(w2);
       renderWalletPage();
       alert('充值成功（模拟效果）');
+      _walletActionBusy = false;
     });
   });
   document.getElementById('btnWithdrawOpen')?.addEventListener('click', () => {
+    if (_walletActionBusy) return;
     const w = getWallet();
     if (w.balance <= 0) { alert('余额不足'); return; }
+    _walletActionBusy = true;
     runFaceIdSimulation(() => {
-      w.transactions.push({ title: '提现（模拟）', amount: -w.balance, ts: Date.now() });
-      w.balance = 0;
-      saveWallet(w);
+      const w2 = getWallet();
+      w2.transactions.push({ title: '提现（模拟）', amount: -w2.balance, ts: Date.now() });
+      w2.balance = 0;
+      saveWallet(w2);
       renderWalletPage();
+      _walletActionBusy = false;
       alert('提现成功（模拟效果）');
     });
   });
@@ -1682,15 +1721,19 @@ function bindTeaOrder() {
   });
   document.getElementById('backFromTeaPay')?.addEventListener('click', () => popPage());
   document.getElementById('teaConfirmPayBtn')?.addEventListener('click', () => {
+    if (_walletActionBusy) return;
     const total = updateTeaTotal();
     const w = getWallet();
     if (w.balance < total) { alert('余额不足，请先充值'); return; }
+    _walletActionBusy = true;
     runFaceIdSimulation(() => {
       const w2 = getWallet();
+      if (w2.balance < total) { _walletActionBusy = false; alert('余额不足，请先充值'); popPage(); return; }
       w2.balance -= total;
       const drinkName = TEA_MENU[_teaDraft.drinkIndex].name;
       w2.transactions.push({ title: `奶茶订单-${drinkName}`, amount: -total, ts: Date.now() });
       saveWallet(w2);
+      _walletActionBusy = false;
       popPage();
       startTeaTracking(drinkName);
     });
