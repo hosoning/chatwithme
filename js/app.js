@@ -1479,6 +1479,11 @@ function bindWordCardSheet() {
 function bindPlusPanel() {
   const panel = document.getElementById('plusPanelInline');
   document.getElementById('btnMore')?.addEventListener('click', () => panel?.classList.toggle('hidden'));
+  const pagesEl = document.getElementById('plusPanelGrid');
+  pagesEl?.addEventListener('scroll', () => {
+    const idx = Math.round(pagesEl.scrollLeft / pagesEl.clientWidth);
+    document.querySelectorAll('#plusPanelDots .plus-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+  });
   document.getElementById('plusPanelGrid')?.addEventListener('click', e => {
     const item = e.target.closest('[data-action]'); if (!item) return;
     const action = item.dataset.action;
@@ -2018,10 +2023,13 @@ function bindSettingsSave() {
 }
 
 /* ============ 输入框 & 语音输入 ============ */
+const MIC_TOGGLE_ICON = '<circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 7a2.2 2.2 0 0 1 2.2 2.2v3.6a2.2 2.2 0 0 1-4.4 0V9.2A2.2 2.2 0 0 1 12 7z" fill="#666"/><path d="M8.5 12.5a3.5 3.5 0 0 0 7 0" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/>';
+const KEYBOARD_TOGGLE_ICON = '<circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><rect x="6.5" y="9" width="11" height="7" rx="1.3" fill="none" stroke="#666" stroke-width="1.4"/><circle cx="9" cy="12.2" r=".6" fill="#666"/><circle cx="12" cy="12.2" r=".6" fill="#666"/><circle cx="15" cy="12.2" r=".6" fill="#666"/><rect x="8.3" y="13.6" width="7.4" height="1" rx=".5" fill="#666"/>';
 function bindInputBar() {
   const msgInput = document.getElementById('msgInput');
   const holdBtn = document.getElementById('holdTalkBtn');
   const micBtn = document.getElementById('micBtn');
+  const emojiBtn = document.getElementById('btnEmoji');
   const moreBtn = document.getElementById('btnMore');
   const sendBtn = document.getElementById('btnSend');
   if (!msgInput || !holdBtn || !micBtn || !moreBtn || !sendBtn) return;
@@ -2031,12 +2039,18 @@ function bindInputBar() {
   msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
   msgInput.addEventListener('focus', () => document.getElementById('plusPanelInline')?.classList.add('hidden'));
   sendBtn.addEventListener('click', doSend);
+  emojiBtn?.addEventListener('click', () => {
+    document.getElementById('plusPanelInline')?.classList.add('hidden');
+    renderStickerGrid();
+    document.getElementById('stickerPickerSheet')?.classList.remove('hidden');
+  });
   micBtn.addEventListener('click', () => {
     const enteringVoiceMode = !msgInput.classList.contains('hidden');
     msgInput.classList.toggle('hidden', enteringVoiceMode);
     holdBtn.classList.toggle('hidden', !enteringVoiceMode);
     document.getElementById('plusPanelInline')?.classList.add('hidden');
-    if (enteringVoiceMode) { moreBtn.classList.add('hidden'); sendBtn.classList.add('hidden'); }
+    micBtn.innerHTML = enteringVoiceMode ? KEYBOARD_TOGGLE_ICON : MIC_TOGGLE_ICON;
+    if (enteringVoiceMode) sendBtn.classList.add('hidden');
     else toggleSendBtn();
   });
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;

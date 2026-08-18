@@ -85,11 +85,16 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .send-btn { background:#07c160; color:#fff; border:none; border-radius:6px; padding:0 18px; height:34px; font-size:15px; flex-shrink:0; font-weight:500; transition:opacity .1s; touch-action:manipulation; }
 .send-btn:active { opacity:0.7; }
 
-.plus-panel { background:#f0f0f0; border-top:0.5px solid #dcdcdc; padding:20px 14px calc(20px + env(safe-area-inset-bottom)); flex-shrink:0; }
-.plus-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:24px 8px; }
-.plus-item { display:flex; flex-direction:column; align-items:center; gap:8px; font-size:12.5px; color:#8a8a8a; cursor:pointer; touch-action:manipulation; }
-.plus-icon-circle { width:56px; height:56px; border-radius:11px; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); }
-.plus-icon-circle svg { width:29px !important; height:29px !important; }
+.plus-panel { background:#f0f0f0; border-top:0.5px solid #dcdcdc; padding:22px 0 calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; }
+.plus-pages { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.plus-pages::-webkit-scrollbar { display:none; }
+.plus-page { flex:0 0 100%; scroll-snap-align:start; display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(2,1fr); row-gap:26px; padding:0 18px; }
+.plus-item { display:flex; flex-direction:column; align-items:center; gap:9px; font-size:12.5px; color:#8a8a8a; cursor:pointer; touch-action:manipulation; }
+.plus-icon-circle { width:64px; height:64px; border-radius:14px; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:none; }
+.plus-icon-circle svg { width:32px !important; height:32px !important; }
+.plus-dots { display:flex; justify-content:center; gap:6px; margin-top:16px; }
+.plus-dot { width:6px; height:6px; border-radius:50%; background:#d3d3d3; transition:background .15s; }
+.plus-dot.active { background:#8a8a8a; }
 .plus-item:active .plus-icon-circle { background:#ececec; }
 
 .discover-scroll { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-top:8px; }
@@ -495,51 +500,57 @@ svg { max-width:100%; max-height:100%; }
     </div>
     <div class="msg-list" id="msgList"></div>
     <div class="input-bar">
-      <svg class="icon-btn" id="micBtn" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" fill="none" stroke="#666" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v3" fill="none" stroke="#666" stroke-width="1.6"/></svg>
+      <svg class="icon-btn" id="micBtn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 7a2.2 2.2 0 0 1 2.2 2.2v3.6a2.2 2.2 0 0 1-4.4 0V9.2A2.2 2.2 0 0 1 12 7z" fill="#666"/><path d="M8.5 12.5a3.5 3.5 0 0 0 7 0" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/></svg>
       <input type="text" id="msgInput" placeholder="发消息...">
       <div class="hold-talk-btn hidden" id="holdTalkBtn">按住 说话</div>
+      <svg class="icon-btn" id="btnEmoji" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="#666"/><circle cx="15" cy="10.5" r="1.1" fill="#666"/><path d="M8.3 14c1 1.3 2.3 1.9 3.7 1.9s2.7-.6 3.7-1.9" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/></svg>
       <svg class="icon-btn" id="btnMore" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
       <button class="send-btn hidden" id="btnSend">发送</button>
     </div>
     <div class="plus-panel hidden" id="plusPanelInline">
-      <div class="plus-grid" id="plusPanelGrid">
-        <div class="plus-item" data-action="photo">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2" fill="none" stroke="#4a4a4a" stroke-width="1.8"/><circle cx="8" cy="9.3" r="1.6" fill="#4a4a4a"/><path d="M3.5 17.5l5.2-5.8 3.8 3.6 3-2.8 4.5 4.3v.2a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1z" fill="#4a4a4a"/></svg></div>
-          <span>相片</span>
+      <div class="plus-pages" id="plusPanelGrid">
+        <div class="plus-page">
+          <div class="plus-item" data-action="photo">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="15" rx="2" fill="none" stroke="#4a4a4a" stroke-width="1.8"/><circle cx="8" cy="9.3" r="1.6" fill="#4a4a4a"/><path d="M3.5 17.5l5.2-5.8 3.8 3.6 3-2.8 4.5 4.3v.2a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1z" fill="#4a4a4a"/></svg></div>
+            <span>相片</span>
+          </div>
+          <div class="plus-item" data-action="camera">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M8.6 5.2L7.3 7.8H3.8a1 1 0 0 0-1 1v9.7a1 1 0 0 0 1 1h16.4a1 1 0 0 0 1-1V8.8a1 1 0 0 0-1-1h-3.5L15.4 5.2a1 1 0 0 0-.9-.6H9.5a1 1 0 0 0-.9.6z" fill="#4a4a4a"/><circle cx="12" cy="13.5" r="3.6" fill="#fff"/><circle cx="12" cy="13.5" r="2.2" fill="#4a4a4a"/></svg></div>
+            <span>拍摄</span>
+          </div>
+          <div class="plus-item" data-action="videocall">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><rect x="2" y="6.5" width="13" height="11" rx="2.5" fill="#4a4a4a"/><path d="M16.5 10.3l4.6-3a.8.8 0 0 1 1.2.7v9l-4.6-3-1.2-.8z" fill="#4a4a4a"/></svg></div>
+            <span>视频通话</span>
+          </div>
+          <div class="plus-item" data-action="voicecall">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M6.6 3.6c.6-.4 1.4-.2 1.8.4l1.7 2.5c.4.5.3 1.3-.2 1.7L8.6 9.4c.9 2.3 2.6 4 4.9 4.9l1.2-1.3c.4-.5 1.2-.6 1.7-.2l2.5 1.7c.6.4.8 1.2.4 1.8l-1.1 1.7c-.4.6-1 .9-1.7.8C9.7 18.1 5.9 14.3 5.2 7.5c-.1-.7.2-1.4.8-1.9z" fill="#4a4a4a"/></svg></div>
+            <span>语音通话</span>
+          </div>
+          <div class="plus-item" data-action="location">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M12 22s7.2-6.9 7.2-12.3S16.5 1.5 12 1.5 4.8 4.3 4.8 9.7 12 22 12 22z" fill="#4a4a4a"/><circle cx="12" cy="9.4" r="2.7" fill="#fff"/></svg></div>
+            <span>位置</span>
+          </div>
+          <div class="plus-item" data-action="redpacket">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M4.5 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="#4a4a4a"/><path d="M4.5 7l7.5 5.5L19.5 7z" fill="#6b6b6b"/><circle cx="12" cy="7.3" r="1.5" fill="#fff"/></svg></div>
+            <span>红包</span>
+          </div>
+          <div class="plus-item" data-action="sticker">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#4a4a4a"/><circle cx="8.7" cy="10" r="1.4" fill="#fff"/><circle cx="15.3" cy="10" r="1.4" fill="#fff"/><path d="M7.8 14.3c1.1 1.6 2.7 2.4 4.2 2.4s3.1-.8 4.2-2.4" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg></div>
+            <span>表情包</span>
+          </div>
+          <div class="plus-item" data-action="file">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M3 6.5a1 1 0 0 1 1-1h5.2l1.6 1.8H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#4a4a4a"/></svg></div>
+            <span>文件</span>
+          </div>
         </div>
-        <div class="plus-item" data-action="camera">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M8.6 5.2L7.3 7.8H3.8a1 1 0 0 0-1 1v9.7a1 1 0 0 0 1 1h16.4a1 1 0 0 0 1-1V8.8a1 1 0 0 0-1-1h-3.5L15.4 5.2a1 1 0 0 0-.9-.6H9.5a1 1 0 0 0-.9.6z" fill="#4a4a4a"/><circle cx="12" cy="13.5" r="3.6" fill="#fff"/><circle cx="12" cy="13.5" r="2.2" fill="#4a4a4a"/></svg></div>
-          <span>拍摄</span>
-        </div>
-        <div class="plus-item" data-action="videocall">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><rect x="2" y="6.5" width="13" height="11" rx="2.5" fill="#4a4a4a"/><path d="M16.5 10.3l4.6-3a.8.8 0 0 1 1.2.7v9l-4.6-3-1.2-.8z" fill="#4a4a4a"/></svg></div>
-          <span>视频通话</span>
-        </div>
-        <div class="plus-item" data-action="voicecall">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M6.6 3.6c.6-.4 1.4-.2 1.8.4l1.7 2.5c.4.5.3 1.3-.2 1.7L8.6 9.4c.9 2.3 2.6 4 4.9 4.9l1.2-1.3c.4-.5 1.2-.6 1.7-.2l2.5 1.7c.6.4.8 1.2.4 1.8l-1.1 1.7c-.4.6-1 .9-1.7.8C9.7 18.1 5.9 14.3 5.2 7.5c-.1-.7.2-1.4.8-1.9z" fill="#4a4a4a"/></svg></div>
-          <span>语音通话</span>
-        </div>
-        <div class="plus-item" data-action="location">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M12 22s7.2-6.9 7.2-12.3S16.5 1.5 12 1.5 4.8 4.3 4.8 9.7 12 22 12 22z" fill="#4a4a4a"/><circle cx="12" cy="9.4" r="2.7" fill="#fff"/></svg></div>
-          <span>位置</span>
-        </div>
-        <div class="plus-item" data-action="redpacket">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M4.5 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" fill="#4a4a4a"/><path d="M4.5 7l7.5 5.5L19.5 7z" fill="#6b6b6b"/><circle cx="12" cy="7.3" r="1.5" fill="#fff"/></svg></div>
-          <span>红包</span>
-        </div>
-        <div class="plus-item" data-action="sticker">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#4a4a4a"/><circle cx="8.7" cy="10" r="1.4" fill="#fff"/><circle cx="15.3" cy="10" r="1.4" fill="#fff"/><path d="M7.8 14.3c1.1 1.6 2.7 2.4 4.2 2.4s3.1-.8 4.2-2.4" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg></div>
-          <span>表情包</span>
-        </div>
-        <div class="plus-item" data-action="file">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><path d="M3 6.5a1 1 0 0 1 1-1h5.2l1.6 1.8H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#4a4a4a"/></svg></div>
-          <span>文件</span>
-        </div>
-        <div class="plus-item" data-action="options">
-          <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="6" width="10" height="2" rx="1" fill="#4a4a4a"/><circle cx="6" cy="14" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="13" width="10" height="2" rx="1" fill="#4a4a4a"/><circle cx="6" cy="21" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="20" width="10" height="2" rx="1" fill="#4a4a4a"/></svg></div>
-          <span>选项</span>
+        <div class="plus-page">
+          <div class="plus-item" data-action="options">
+            <div class="plus-icon-circle"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="6" width="10" height="2" rx="1" fill="#4a4a4a"/><circle cx="6" cy="14" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="13" width="10" height="2" rx="1" fill="#4a4a4a"/><circle cx="6" cy="21" r="2.1" fill="#4a4a4a"/><rect x="10.5" y="20" width="10" height="2" rx="1" fill="#4a4a4a"/></svg></div>
+            <span>选项</span>
+          </div>
         </div>
       </div>
+      <div class="plus-dots" id="plusPanelDots"><span class="plus-dot active"></span><span class="plus-dot"></span></div>
     </div>
     <input type="file" id="sendPhotoFileInput" accept="image/*" class="hidden">
     <input type="file" id="sendCameraFileInput" accept="image/*" capture="environment" class="hidden">
@@ -1031,10 +1042,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=21" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=21" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=21" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=21" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=21" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=22" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=22" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=22" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=22" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=22" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
