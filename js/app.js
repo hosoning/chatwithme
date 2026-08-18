@@ -73,7 +73,6 @@ const STORE = {
 const STICKER_KEY = 'tarot_stickers_v1';
 const WALLET_KEY = 'tarot_wallet_v1';
 const PINNED_CHATS_KEY = 'tarot_pinned_chats_v1';
-const AD_DAILY_KEY = 'tarot_ad_daily_v1';
 const TEA_ADDRESS_KEY = 'tarot_tea_address_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
@@ -94,9 +93,6 @@ function toggleChatPinned(chatId) {
   else list.unshift(String(chatId));
   savePinnedChats(list);
 }
-function getAdDailyState() { return safeLoadJSON(AD_DAILY_KEY, { date:'', count:0 }); }
-function saveAdDailyState(s) { safeSaveJSON(AD_DAILY_KEY, s); }
-
 const state = {
   contacts: safeLoadJSON(STORE.contacts, []),
   groups: safeLoadJSON(STORE.groups, []),
@@ -246,9 +242,8 @@ function runFaceIdSimulation(onSuccess) {
   }, 1400);
 }
 
-/* ============ 朋友圈/广告消息：纯AI自由文本生成（不使用字卡） ============ */
+/* ============ 朋友圈：纯AI自由文本生成（不使用字卡） ============ */
 const MOMENT_FALLBACK_PHRASES = ["今天心情不错～","想找人聊聊","忙里偷闲的一天","有点想你们了","日子过得很快呀","今天也要加油","晴朗的一天，心情也跟着好起来","有些事想不明白，但也不纠结了","偶尔emo一下，很快就好","生活总有惊喜"];
-const AD_FALLBACK_TEMPLATES = ["限时惊喜，戳我了解详情～","新品上架，要不要一起试试？","今天有个小活动，别错过啦","突然想起有个好东西要推荐给你"];
 
 async function generateFreeformMomentText(cards, persona, context) {
   const cardDesc = (cards || []).map(c => `${c.name}(${c.reversed?'逆位':'正位'}):${c.meaning}`).join('; ');
@@ -715,20 +710,7 @@ const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你
 function handleSend(text) {
   const chatId = state.activeChatId;
   if (!chatId || !text || !text.trim()) return;
-  const priorLast = lastMessageOf(chatId);
   addMessage(chatId, 'me', text.trim());
-
-  // 广告消息对话：如果最近一条是广告消息，用纯AI回，不走塔罗字卡
-  if (priorLast && priorLast.isAd && !isGroupChat(chatId)) {
-    const contact = getContactById(priorLast.from);
-    if (contact) {
-      setTimeout(async () => {
-        const replyText = await generateFreeformMomentText(drawCards(1), contact.persona, `延续这条广告消息的话题随意回应对方，语气自然口语化，不超过30字。之前的消息是：「${priorLast.text}」，对方刚说：「${text.trim()}」`);
-        addMessage(chatId, contact.id, replyText, { isAd:true });
-      }, 900);
-    }
-    return;
-  }
 
   if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
     if (isGroupChat(chatId)) {
@@ -1131,25 +1113,9 @@ async function aiAutoChangeAvatar() {
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
-async function maybeSendDailyAdMessage() {
-  if (!state.contacts.length) return;
-  const today = new Date().toISOString().slice(0,10);
-  let ad = getAdDailyState();
-  if (ad.date !== today) ad = { date: today, count: 0 };
-  if (ad.count >= 2) { saveAdDailyState(ad); return; }
-  if (secureRandomInt(100) >= 6) { saveAdDailyState(ad); return; }
-  const contact = state.contacts[secureRandomInt(state.contacts.length)];
-  const cards = drawCards(1);
-  let text = await generateFreeformMomentText(cards, contact.persona, '生成一条像正规商业广告/推广文案一样的消息，语气自然俏皮，不超过30字，不要出现塔罗/占卜相关字眼');
-  if (!text) text = AD_FALLBACK_TEMPLATES[secureRandomInt(AD_FALLBACK_TEMPLATES.length)];
-  addMessage(String(contact.id), contact.id, text, { isAd:true });
-  ad.count++;
-  saveAdDailyState(ad);
-}
 setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
-setInterval(() => { try { maybeSendDailyAdMessage(); } catch(e){ console.error(e); } }, 90000);
 
 /* ============ 朋友圈评论逻辑（纯AI） ============ */
 function pickReplyingContactForMoment(moment) {
