@@ -130,3 +130,225 @@ async function pickAvatarFromCards(cards, library, persona) {
   if (idx === null || idx < 0 || idx >= library.length) idx = secureRandomInt(library.length);
   return library[idx];
 }
+
+/* ===== Reply delay + options patch ===== */
+(function installReplyOptionsPatch() {
+  const GLOBAL_DELAY_KEY = 'tarot_reply_delay_ms_v1';
+  let nextDelayMs = null;
+  const pendingDelayByChat = Object.create(null);
+  const replyContextByChat = Object.create(null);
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Number(ms) || 0))); }
+  function getGlobalDelay() {
+    const n = Number(localStorage.getItem(GLOBAL_DELAY_KEY));
+    return Number.isFinite(n) && n >= 0 ? n : 1000;
+  }
+  function setGlobalDelay(ms) { localStorage.setItem(GLOBAL_DELAY_KEY, String(Math.max(0, Number(ms) || 0))); }
+  function formatDelay(ms) {
+    ms = Number(ms) || 0;
+    if (ms === 0) return '立即';
+    if (ms < 1000) return `${ms}ms`;
+    return `${ms / 1000}秒`;
+  }
+  function getReplyDelay(chatId) {
+    if (replyContextByChat[chatId] != null) return replyContextByChat[chatId];
+    return getGlobalDelay();
+  }
+
+  window.addEventListener('load', () => setTimeout(() => {
+    if (typeof window.handleSend !== 'function' || typeof window.replyWithTarot !== 'function') return;
+
+    const originalHandleSend = window.handleSend;
+    const originalProcessSingleBatch = window.processSingleBatch;
+    const originalProcessGroupBatch = window.processGroupBatch;
+    const originalRenderMessages = window.renderMessages;
+
+    window.handleSend = function(text) {
+      const chatId = window.state?.activeChatId;
+      if (chatId && nextDelayMs != null) {
+        pendingDelayByChat[chatId] = nextDelayMs;
+        nextDelayMs = null;
+        updateDelayButton();
+      }
+      return originalHandleSend(text);
+    };
+
+    window.processSingleBatch = async function(contactId) {
+      replyContextByChat[contactId] = pendingDelayByChat[contactId] != null ? pendingDelayByChat[contactId] : getGlobalDelay();
+      delete pendingDelayByChat[contactId];
+      try { return await originalProcessSingleBatch(contactId); }
+      finally { delete replyContextByChat[contactId]; }
+    };
+
+    window.processGroupBatch = async function(groupId) {
+      replyContextByChat[groupId] = pendingDelayByChat[groupId] != null ? pendingDelayByChat[groupId] : getGlobalDelay();
+      delete pendingDelayByChat[groupId];
+      try { return await originalProcessGroupBatch(groupId); }
+      finally { delete replyContextByChat[groupId]; }
+    };
+
+    window.replyWithTarot = async function(chatId, fromId, text, persona) {
+      const cards = drawCards(3);
+      const shieldCards = drawCards(3);
+      const shield = calcShield(shieldCards);
+      const contact = getContactById(fromId);
+      const pool = WordCards.getForContact(contact);
+      const delayMs = getReplyDelay(chatId);
+
+      showTypingIndicator(chatId, contact);
+      try {
+        await sleep(delayMs);
+        if (shouldSendRedPacket(cards)) {
+          const amount = randomRedPacketAmount();
+          const note = pool[secureRandomInt(pool.length)] || '恭喜发财';
+          addMessage(chatId, fromId, note, { type:'redpacket', cards, shieldCards, shield, redpacket:{ amount, note, status:'unclaimed', claimedBy:null } });
+          return;
+        }
+        const picks = await interpretAndReply(text, cards, pool, persona);
+        const safePicks = Array.isArray(picks) && picks.length ? picks : [(pool && pool.length ? pool[secureRandomInt(pool.length)] : '嗯')];
+        for (let i = 0; i < safePicks.length; i++) {
+          if (i > 0) {
+            showTypingIndicator(chatId, contact);
+            await sleep(delayMs);
+          }
+          const voiceUrl = await synthesizeVoice(safePicks[i]);
+          addMessage(chatId, fromId, safePicks[i], { cards, shieldCards, shield, voiceUrl });
+        }
+      } finally { hideTypingIndicator(); }
+    };
+
+    window.sendOptionsMessage = function(chatId, options) {
+      const qInput = document.getElementById('optionsQuestionInput');
+      const question = (qInput?.value || '').trim();
+      addMessage(chatId, 'me', question || '[选项]', { type:'options', options, question });
+      let responder = chatId;
+      if (isGroupChat(chatId)) {
+        const g = getGroupById(chatId.slice(2));
+        if (!g?.memberIds?.length) return;
+        responder = g.memberIds[secureRandomInt(g.memberIds.length)];
+      }
+      if (!responder) return;
+      replyContextByChat[chatId] = nextDelayMs != null ? nextDelayMs : getGlobalDelay();
+      nextDelayMs = null;
+      updateDelayButton();
+      window.replyToOptions(chatId, responder, options, getContactById(responder)?.persona, question)
+        .finally(() => { delete replyContextByChat[chatId]; });
+    };
+
+    window.replyToOptions = async function(chatId, fromId, options, persona, question = '') {
+      const contact = getContactById(fromId);
+      showTypingIndicator(chatId, contact);
+      try {
+        await sleep(getReplyDelay(chatId));
+        const idx = secureRandomInt(options.length + 1);
+        if (idx === options.length) {
+          hideTypingIndicator();
+          await window.replyWithTarot(chatId, fromId, `${question ? `问题：${question}；` : ''}可选项：${options.join('、')}；选择其他并自然回应`, persona);
+          return;
+        }
+        const cards = drawCards(3);
+        const shieldCards = drawCards(3);
+        const shield = calcShield(shieldCards);
+        const answer = options[idx];
+        const voiceUrl = await synthesizeVoice(answer);
+        addMessage(chatId, fromId, answer, { cards, shieldCards, shield, voiceUrl, optionAnswerTo: question || null });
+      } finally { hideTypingIndicator(); }
+    };
+
+    window.renderMessages = function() {
+      const out = originalRenderMessages.apply(this, arguments);
+      const chatId = window.state?.activeChatId;
+      const msgs = window.state?.chats?.[chatId] || [];
+      const optionMsgs = msgs.filter(m => m.type === 'options');
+      const rows = document.querySelectorAll('#msgList .bubble.options');
+      rows.forEach((bubble, i) => {
+        const msg = optionMsgs[i];
+        if (!msg) return;
+        const title = bubble.querySelector('.options-title');
+        if (title) title.textContent = msg.question || '请选择';
+      });
+      return out;
+    };
+
+    const optionsSheet = document.getElementById('sendOptionsSheet');
+    const optionsList = document.getElementById('optionsInputList');
+    if (optionsSheet && optionsList && !document.getElementById('optionsQuestionInput')) {
+      const wrap = document.createElement('div');
+      wrap.className = 'form-row col';
+      wrap.style.marginBottom = '12px';
+      wrap.innerHTML = '<label>问题</label><input id="optionsQuestionInput" maxlength="60" placeholder="例如：今晚想吃什么？">';
+      optionsList.parentNode.insertBefore(wrap, optionsList);
+    }
+
+    const originalOpenSendOptions = window.openSendOptions;
+    window.openSendOptions = function() {
+      const r = originalOpenSendOptions.apply(this, arguments);
+      const q = document.getElementById('optionsQuestionInput');
+      if (q) q.value = '';
+      return r;
+    };
+
+    injectGlobalDelaySetting();
+    injectSingleMessageDelayControl();
+    window.renderMessages();
+  }, 0));
+
+  function injectGlobalDelaySetting() {
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    if (!saveBtn || document.getElementById('replyGlobalDelaySelect')) return;
+    const title = document.createElement('div');
+    title.className = 'settings-group-title';
+    title.textContent = '回复速度';
+    const row = document.createElement('div');
+    row.className = 'form-row col';
+    row.innerHTML = '<label>整体回复间隔</label><select id="replyGlobalDelaySelect">\
+      <option value="0">立即</option><option value="500">0.5 秒</option><option value="1000">1 秒</option>\
+      <option value="2000">2 秒</option><option value="3000">3 秒</option><option value="5000">5 秒</option>\
+      <option value="10000">10 秒</option><option value="15000">15 秒</option><option value="30000">30 秒</option>\
+    </select>';
+    saveBtn.parentNode.insertBefore(title, saveBtn);
+    saveBtn.parentNode.insertBefore(row, saveBtn);
+    const select = document.getElementById('replyGlobalDelaySelect');
+    select.value = String(getGlobalDelay());
+    select.addEventListener('change', () => setGlobalDelay(select.value));
+  }
+
+  function injectSingleMessageDelayControl() {
+    const inputBar = document.querySelector('#page-chat .input-bar');
+    const moreBtn = document.getElementById('btnMore');
+    if (!inputBar || !moreBtn || document.getElementById('singleReplyDelayBtn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'singleReplyDelayBtn';
+    btn.type = 'button';
+    btn.style.cssText = 'width:30px;height:30px;border:0;background:transparent;padding:3px;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;';
+    btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:22px;height:22px"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 7.5V12l3 2" fill="none" stroke="#666" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle id="singleReplyDelayDot" cx="19" cy="5" r="2.2" fill="transparent"/></svg>';
+    inputBar.insertBefore(btn, moreBtn);
+
+    const mask = document.createElement('div');
+    mask.id = 'singleReplyDelaySheet';
+    mask.className = 'mask hidden';
+    mask.innerHTML = '<div class="sheet"><div class="sheet-title">下一条消息回复间隔</div><div id="singleReplyDelayChoices"></div><div class="sheet-close" id="singleReplyDelayCancel">取消</div></div>';
+    document.getElementById('app')?.appendChild(mask);
+    const choices = [null,0,500,1000,2000,3000,5000,10000,15000,30000];
+    document.getElementById('singleReplyDelayChoices').innerHTML = choices.map(v => `<div class="menu-row" data-delay="${v === null ? 'inherit' : v}">${v === null ? '使用整体设置' : formatDelay(v)}</div>`).join('');
+    btn.addEventListener('click', () => mask.classList.remove('hidden'));
+    document.getElementById('singleReplyDelayCancel').addEventListener('click', () => mask.classList.add('hidden'));
+    document.getElementById('singleReplyDelayChoices').addEventListener('click', e => {
+      const row = e.target.closest('[data-delay]'); if (!row) return;
+      nextDelayMs = row.dataset.delay === 'inherit' ? null : Number(row.dataset.delay);
+      mask.classList.add('hidden');
+      updateDelayButton();
+    });
+    updateDelayButton();
+  }
+
+  function updateDelayButton() {
+    const btn = document.getElementById('singleReplyDelayBtn');
+    const dot = document.getElementById('singleReplyDelayDot');
+    if (!btn || !dot) return;
+    const active = nextDelayMs != null;
+    dot.setAttribute('fill', active ? '#07c160' : 'transparent');
+    btn.title = active ? `下一条消息：${formatDelay(nextDelayMs)}` : `使用整体设置：${formatDelay(getGlobalDelay())}`;
+  }
+})();
