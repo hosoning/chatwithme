@@ -1447,19 +1447,26 @@ function bindSheetClose() { document.getElementById('sheetClose')?.addEventListe
 function renderWordCardList(contactId) {
   const list = contactId ? WordCards.getContactList(contactId) : WordCards.getAll();
   const box = document.getElementById('wordCardList');
-  if (box) box.innerHTML = list.map(t => `<div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" class="wc-del" data-t="${escapeHtml(t)}">删除</a></div>`).join('');
+  if (!box) return;
+  const query = (document.getElementById('wordCardSearch')?.value || '').trim();
+  const filtered = query ? list.filter(t => t.includes(query)) : list;
+  box.innerHTML = filtered.map(t => `<div class="wc-item"><span>${escapeHtml(t)}</span><a href="#" class="wc-del" data-t="${escapeHtml(t)}">×</a></div>`).join('')
+    || `<div style="padding:24px 4px;text-align:center;color:#999;font-size:13.5px;">${query ? '没有匹配的字卡' : '还没有字卡'}</div>`;
 }
 let currentWordCardContactId = null;
 function openWordCardSheet(contactId = null) {
   currentWordCardContactId = contactId;
   const title = document.getElementById('wordCardSheetTitle');
   if (title) title.textContent = contactId ? `字卡管理（${getContactById(contactId)?.name || ''} 专属）` : '字卡管理（全局）';
+  const search = document.getElementById('wordCardSearch');
+  if (search) search.value = '';
   renderWordCardList(contactId);
   document.getElementById('wordCardSheet')?.classList.remove('hidden');
 }
 function bindWordCardSheet() {
   document.getElementById('rowWordCards')?.addEventListener('click', () => openWordCardSheet(null));
   document.getElementById('wordCardClose')?.addEventListener('click', () => document.getElementById('wordCardSheet').classList.add('hidden'));
+  document.getElementById('wordCardSearch')?.addEventListener('input', () => renderWordCardList(currentWordCardContactId));
   document.getElementById('addWordCardBtn')?.addEventListener('click', () => {
     const input = document.getElementById('newWordCard');
     if (!input.value.trim()) return;
@@ -1590,33 +1597,41 @@ function openChatSettings() {
     chatSettingsTarget = { type: 'group', id: chatId.slice(2) };
     const g = getGroupById(chatSettingsTarget.id);
     document.getElementById('chatSettingsTitle').textContent = '群聊设置';
-    body.innerHTML = `<div class="settings-group-title">群成员</div>` + g.memberIds.map(id => {
+    body.innerHTML = `<div class="settings-card"><div class="settings-card-title">群成员</div>` + g.memberIds.map(id => {
       const c = getContactById(id); if (!c) return '';
       return `<div class="chat-item" style="border-radius:6px;">${avatarHtml(c.avatar, c.name, 40)}<div class="info"><div class="name">${escapeHtml(c.name)}</div></div></div>`;
-    }).join('') + `<div class="sheet-btn cancel" id="deleteGroupBtn" style="margin-top:14px;">解散群聊</div>`;
+    }).join('') + `</div><div class="sheet-btn cancel" id="deleteGroupBtn">解散群聊</div>`;
   } else {
     chatSettingsTarget = { type: 'contact', id: chatId };
     const c = getContactById(chatId);
     if (!c) return;
     document.getElementById('chatSettingsTitle').textContent = '角色设置';
     body.innerHTML = `
-      <div class="settings-group-title">直接设置头像（最稳定，一步到位）</div>
-      <div class="direct-avatar-preview">${avatarHtml(c.avatar, c.name, 56)}<div class="menu-row" id="directSetAvatarBtn" style="border-bottom:none;flex:1;text-align:left;padding-left:4px;">点击选择照片直接设为头像</div></div>
-      <input type="file" id="directAvatarFileInput" accept="image/*" class="hidden">
-      <div class="settings-group-title">或从头像库自动挑选（点击指定）</div>
-      <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;">
-        ${state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('') || '<div style="grid-column:1/-1;color:#999;font-size:13px;">头像库为空，请到 我→头像库管理 上传</div>'}
+      <div class="settings-card">
+        <div class="settings-card-title">头像</div>
+        <div class="direct-avatar-preview">${avatarHtml(c.avatar, c.name, 56)}<div class="menu-row no-border" id="directSetAvatarBtn" style="flex:1;text-align:left;padding-left:4px;">点击选择照片直接设为头像</div></div>
+        <input type="file" id="directAvatarFileInput" accept="image/*" class="hidden">
+        ${state.avatarLibrary.length ? `<div class="settings-card-subtitle">或从头像库选择</div>
+        <div class="avatar-grid" id="assignAvatarGrid" style="padding:0;">
+          ${state.avatarLibrary.map(a => `<div class="avatar-lib-item" data-avatar-id="${a.id}"><img src="${a.dataUrl}"></div>`).join('')}
+        </div>` : ''}
       </div>
-      <div class="settings-group-title">视频通话形象（图片或视频，可选）</div>
-      <div id="callMediaPreview" style="margin-bottom:8px;">${c.callMedia ? (c.callMediaType==='video' ? `<video src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;" muted loop autoplay playsinline></video>` : `<img src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;">`) : '<div style="color:#999;font-size:13px;">未设置，通话时将显示头像</div>'}</div>
-      <input type="file" id="callMediaFileInput" accept="image/*,video/*" class="hidden">
-      <div class="menu-row" id="uploadCallMediaBtn">上传通话形象</div>
-      ${c.callMedia ? '<div class="menu-row" id="removeCallMediaBtn" style="color:#fa5151;">移除通话形象</div>' : ''}
-      <div class="settings-group-title">角色设定</div>
-      <textarea id="editPersona" rows="3" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px;">${escapeHtml(c.persona || '')}</textarea>
-      <div class="settings-group-title">字卡来源</div>
-      <div class="form-row"><label>叠加专属字卡（在全局字卡基础上）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
-      <div class="menu-row" id="editContactCustomCards">编辑专属字卡</div>
+      <div class="settings-card">
+        <div class="settings-card-title">视频通话形象（图片或视频，可选）</div>
+        <div id="callMediaPreview" style="margin-bottom:10px;">${c.callMedia ? (c.callMediaType==='video' ? `<video src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;" muted loop autoplay playsinline></video>` : `<img src="${c.callMedia}" style="width:100px;height:130px;object-fit:cover;border-radius:8px;">`) : '<div style="color:#999;font-size:13px;">未设置，通话时将显示头像</div>'}</div>
+        <input type="file" id="callMediaFileInput" accept="image/*,video/*" class="hidden">
+        <div class="menu-row" id="uploadCallMediaBtn">上传通话形象</div>
+        ${c.callMedia ? '<div class="menu-row" id="removeCallMediaBtn" style="color:#fa5151;">移除通话形象</div>' : ''}
+      </div>
+      <div class="settings-card">
+        <div class="settings-card-title">角色设定</div>
+        <textarea id="editPersona" rows="3">${escapeHtml(c.persona || '')}</textarea>
+      </div>
+      <div class="settings-card">
+        <div class="settings-card-title">字卡来源</div>
+        <div class="form-row"><label>叠加专属字卡（在全局字卡基础上）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
+        <div class="menu-row" id="editContactCustomCards" style="margin-top:2px;">编辑专属字卡</div>
+      </div>
       <button class="save-btn" id="savePersonaBtn">保存</button>`;
   }
   document.getElementById('chatSettingsSheet').classList.remove('hidden');

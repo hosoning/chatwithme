@@ -144,10 +144,15 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .sheet-btn.cancel { background:#f2f2f2; color:#333; }
 .sheet-btn.confirm { background:#07c160; color:#fff; }
 
-.wordcard-list { max-height:300px; overflow-y:auto; }
-.wc-item { display:flex; justify-content:space-between; align-items:center; padding:10px 6px; border-bottom:1px solid #f2f2f2; font-size:14.5px; }
-.wc-del { color:#fa5151; text-decoration:none; font-size:13.5px; }
-.wordcard-add { display:flex; gap:8px; margin-top:12px; }
+.wordcard-sheet-modal { display:flex; flex-direction:column; max-height:78%; }
+.wordcard-search { border:1px solid #e5e5e5; border-radius:8px; padding:9px 11px; font-size:14px; margin-bottom:10px; background:#f7f7f7; flex-shrink:0; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.wordcard-list { flex:1; min-height:60px; overflow-y:auto; background:#f7f7f7; border-radius:8px; padding:2px 12px; }
+.wc-item { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid #ececec; font-size:14.5px; }
+.wc-item:last-child { border-bottom:none; }
+.wc-item span { word-break:break-word; }
+.wc-del { width:20px; height:20px; border-radius:50%; background:#e6e6e6; color:#888; display:flex; align-items:center; justify-content:center; font-size:13px; line-height:1; text-decoration:none; flex-shrink:0; touch-action:manipulation; }
+.wc-del:active { background:#d8d8d8; }
+.wordcard-add { display:flex; gap:8px; margin-top:12px; flex-shrink:0; }
 .wordcard-add input { flex:1; border:1px solid #e2e2e2; border-radius:8px; padding:7px 8px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
 .wordcard-add button { background:#07c160; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:14.5px; }
 
@@ -203,9 +208,20 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 
 .menu-row { padding:16px 4px; text-align:center; font-size:16.5px; border-bottom:1px solid #f2f2f2; color:#0a0a0a; touch-action:manipulation; cursor:pointer; }
 .menu-row:active { background:#f7f7f7; }
+.menu-row.no-border { border-bottom:none; }
 
-.direct-avatar-preview { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.direct-avatar-preview { display:flex; align-items:center; gap:12px; }
 .direct-avatar-preview .avatar { width:56px; height:56px; }
+
+.settings-sheet-modal { background:#f0f0f0; }
+.settings-card { background:#fff; border-radius:10px; padding:14px; margin-bottom:12px; }
+.settings-card-title { font-size:13px; color:#999; margin-bottom:11px; font-weight:500; }
+.settings-card-subtitle { font-size:12.5px; color:#999; margin:14px 0 9px; }
+.settings-card textarea { width:100%; border:1px solid #e5e5e5; border-radius:8px; padding:10px; font-size:14.5px; background:#fafafa; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.settings-card textarea:focus { outline:none; border-color:#07c160; background:#fff; }
+.settings-card .form-row { margin-bottom:0; box-shadow:none; padding:0; }
+.settings-card .menu-row:first-child { padding-top:0; }
+.settings-card .menu-row:last-child { border-bottom:none; padding-bottom:0; }
 
 .sender-label { font-size:12.5px; color:#9a9a9a; margin-bottom:3px; margin-left:49px; }
 .msg-col { display:flex; flex-direction:column; }
@@ -773,8 +789,9 @@ svg { max-width:100%; max-height:100%; }
 
   <!-- 字卡管理 -->
   <div class="mask hidden" id="wordCardSheet">
-    <div class="sheet">
+    <div class="sheet wordcard-sheet-modal">
       <div class="sheet-title" id="wordCardSheetTitle">字卡管理（全局）</div>
+      <input class="wordcard-search" id="wordCardSearch" placeholder="搜索字卡...">
       <div class="wordcard-list" id="wordCardList"></div>
       <div class="wordcard-add">
         <input id="newWordCard" placeholder="输入新字卡内容">
@@ -822,7 +839,7 @@ svg { max-width:100%; max-height:100%; }
 
   <!-- 聊天设置 -->
   <div class="mask hidden" id="chatSettingsSheet">
-    <div class="sheet">
+    <div class="sheet settings-sheet-modal">
       <div class="sheet-title" id="chatSettingsTitle">聊天设置</div>
       <div id="chatSettingsBody"></div>
       <div class="sheet-close" id="chatSettingsClose">关闭</div>
@@ -1042,10 +1059,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=22" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=22" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=22" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=22" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=22" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=23" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=23" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=23" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=23" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=23" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
