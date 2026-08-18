@@ -450,6 +450,7 @@ function renderChatList() {
     let lastText = '开始一段对话...';
     if (last) {
       if (last.type === 'redpacket') lastText = '[红包]';
+      else if (last.type === 'options') lastText = '[选项]';
       else if (last.type === 'image') lastText = '[图片]';
       else if (last.type === 'location') lastText = '[位置]';
       else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
@@ -587,6 +588,14 @@ function renderMessages() {
       bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}">
         <svg class="rp-icon" viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.4" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
         <div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-sub">${m.redpacket.status === 'claimed' ? '已领取' : '微信红包'}</div></div>
+      </div>`;
+    } else if (m.type === 'options') {
+      bubbleHtml = `<div class="bubble options">
+        <div class="options-title">请选择</div>
+        <div class="options-list">
+          ${m.options.map((o, i) => `<div class="option-row"><span class="opt-num">${i + 1}</span>${escapeHtml(o)}</div>`).join('')}
+          <div class="option-row option-other"><span class="opt-num">其他</span>不在选项中</div>
+        </div>
       </div>`;
     } else if (m.type === 'image') {
       bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
@@ -1297,6 +1306,80 @@ function bindPostMoment() {
   });
 }
 
+/* ============ 发送选项（2~8个 + 其他，其他会走字卡回复） ============ */
+let _optionsDraft = [];
+function renderOptionsInputList() {
+  const box = document.getElementById('optionsInputList');
+  if (!box) return;
+  box.innerHTML = _optionsDraft.map((v, i) => `
+    <div class="option-input-row">
+      <input type="text" data-opt-index="${i}" placeholder="选项 ${i + 1}" maxlength="20" value="${escapeHtml(v)}">
+      ${_optionsDraft.length > 2 ? `<span class="option-del" data-opt-del="${i}">×</span>` : ''}
+    </div>`).join('');
+  const addBtn = document.getElementById('optionsAddBtn');
+  if (addBtn) addBtn.style.display = _optionsDraft.length >= 8 ? 'none' : '';
+}
+function openSendOptions() {
+  _optionsDraft = ['', ''];
+  renderOptionsInputList();
+  document.getElementById('sendOptionsSheet')?.classList.remove('hidden');
+}
+function bindSendOptions() {
+  document.getElementById('optionsCancel')?.addEventListener('click', () => document.getElementById('sendOptionsSheet').classList.add('hidden'));
+  document.getElementById('optionsAddBtn')?.addEventListener('click', () => {
+    if (_optionsDraft.length >= 8) return;
+    _optionsDraft.push('');
+    renderOptionsInputList();
+  });
+  document.getElementById('optionsInputList')?.addEventListener('input', e => {
+    const inp = e.target.closest('[data-opt-index]'); if (!inp) return;
+    _optionsDraft[Number(inp.dataset.optIndex)] = inp.value;
+  });
+  document.getElementById('optionsInputList')?.addEventListener('click', e => {
+    const del = e.target.closest('[data-opt-del]'); if (!del) return;
+    if (_optionsDraft.length <= 2) return;
+    _optionsDraft.splice(Number(del.dataset.optDel), 1);
+    renderOptionsInputList();
+  });
+  document.getElementById('optionsConfirm')?.addEventListener('click', () => {
+    const chatId = state.activeChatId;
+    if (!chatId) { alert('请先进入一个聊天'); return; }
+    const options = _optionsDraft.map(s => s.trim()).filter(Boolean).slice(0, 8);
+    if (options.length < 2) { alert('至少填写 2 个选项'); return; }
+    document.getElementById('sendOptionsSheet').classList.add('hidden');
+    sendOptionsMessage(chatId, options);
+  });
+}
+function sendOptionsMessage(chatId, options) {
+  addMessage(chatId, 'me', '[选项]', { type: 'options', options });
+  let responder = chatId;
+  if (isGroupChat(chatId)) {
+    const g = getGroupById(chatId.slice(2));
+    responder = g?.memberIds?.[secureRandomInt(g.memberIds.length)];
+  }
+  if (!responder) return;
+  replyToOptions(chatId, responder, options, getContactById(responder)?.persona);
+}
+async function replyToOptions(chatId, fromId, options, persona) {
+  const idx = secureRandomInt(options.length + 1); // last slot = 其他
+  if (idx === options.length) {
+    await replyWithTarot(chatId, fromId, `(对方给出了选项：${options.join('、')}；我选择"其他"，用自己的话回应)`, persona);
+    return;
+  }
+  const contact = getContactById(fromId);
+  showTypingIndicator(chatId, contact);
+  try {
+    await new Promise(r => setTimeout(r, 500 + secureRandomInt(700)));
+    const cards = drawCards(3);
+    const shieldCards = drawCards(3);
+    const shield = calcShield(shieldCards);
+    const voiceUrl = await synthesizeVoice(options[idx]);
+    addMessage(chatId, fromId, options[idx], { cards, shieldCards, shield, voiceUrl });
+  } finally {
+    hideTypingIndicator();
+  }
+}
+
 /* ============ 红包（含领取即入账钱包） ============ */
 function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
 function bindRedPacket() {
@@ -1403,6 +1486,7 @@ function bindPlusPanel() {
     if (action === 'photo') document.getElementById('sendPhotoFileInput').click();
     else if (action === 'camera') document.getElementById('sendCameraFileInput').click();
     else if (action === 'redpacket') openSendRedPacket();
+    else if (action === 'options') openSendOptions();
     else if (action === 'sticker') { renderStickerGrid(); document.getElementById('stickerPickerSheet').classList.remove('hidden'); }
     else if (action === 'location') openLocationPicker();
     else if (action === 'videocall' || action === 'voicecall') {
@@ -2016,6 +2100,7 @@ async function init() {
   safeStep('bindSettingsSave', bindSettingsSave);
   safeStep('bindInputBar', bindInputBar);
   safeStep('bindRedPacket', bindRedPacket);
+  safeStep('bindSendOptions', bindSendOptions);
   safeStep('bindAvatarLib', bindAvatarLib);
   safeStep('bindMyAvatarUpload', bindMyAvatarUpload);
   safeStep('bindExportImport', bindExportImport);
