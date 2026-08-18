@@ -544,10 +544,10 @@ function openChat(chatId) {
   if (nameEl) nameEl.textContent = name;
   if (!state.chats[chatId]) state.chats[chatId] = [];
   document.getElementById('plusPanelInline')?.classList.add('hidden');
+  pushPage('page-chat');
   renderMessages();
   renderChatList();
   applyChatBackground();
-  pushPage('page-chat');
 }
 
 function formatMsgDividerTime(ts) {
