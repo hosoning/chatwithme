@@ -157,6 +157,7 @@ async function pickAvatarFromCards(cards, library, persona) {
 
   window.addEventListener('load', () => setTimeout(() => {
     if (typeof window.handleSend !== 'function' || typeof window.replyWithTarot !== 'function') return;
+    window.state = state;
 
     const originalHandleSend = window.handleSend;
     const originalProcessSingleBatch = window.processSingleBatch;
