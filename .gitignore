@@ -1,0 +1,21 @@
+# Runtime files
+.keepalive
+*.pyc
+__pycache__/
+
+# OS files
+.DS_Store
+.env
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+venv/
+.venv/
+env/
