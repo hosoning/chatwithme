@@ -1,0 +1,69 @@
+name: Claude Wallet Telegram Notify
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily keepalive at 19:00 UTC+8 (11:00 UTC)
+    - cron: '0 11 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BRIDGE_URL: ${{ secrets.SUPABASE_WALLET_TELEGRAM_BRIDGE_URL }}
+      PROGRESS_SECRET: ${{ secrets.CLAUDE_WALLET_PROGRESS_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Run daily keepalive
+        if: ${{ env.BRIDGE_URL != '' && env.PROGRESS_SECRET != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd wallet
+          python3 keepalive.py --notify
+
+      - name: Send Telegram notification
+        if: ${{ env.BRIDGE_URL != '' && env.PROGRESS_SECRET != '' && success() }}
+        env:
+          PAYLOAD: ${{ steps.keepalive.outputs.telegram_payload }}
+        run: |
+          if [ -n "$PAYLOAD" ]; then
+            curl --fail --silent --show-error \
+              --request POST "$BRIDGE_URL" \
+              --header "content-type: application/json" \
+              --header "x-claude-wallet-progress-secret: $PROGRESS_SECRET" \
+              --data "$PAYLOAD"
+          fi
+
+  manual-notify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      BRIDGE_URL: ${{ secrets.SUPABASE_WALLET_TELEGRAM_BRIDGE_URL }}
+      PROGRESS_SECRET: ${{ secrets.CLAUDE_WALLET_PROGRESS_SECRET }}
+    steps:
+      - name: Send manual status check
+        if: ${{ env.BRIDGE_URL != '' && env.PROGRESS_SECRET != '' }}
+        run: |
+          payload="$(jq -n \
+            --arg phase "Manual Status Check" \
+            --arg summary "Claude Wallet status check triggered manually" \
+            --arg status "success" \
+            '{phase:$phase,summary:$summary,status:$status}')"
+          curl --fail --silent --show-error \
+            --request POST "$BRIDGE_URL" \
+            --header "content-type: application/json" \
+            --header "x-claude-wallet-progress-secret: $PROGRESS_SECRET" \
+            --data "$payload"
