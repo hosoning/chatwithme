@@ -336,10 +336,11 @@
         let currentTab = 'wallet';
         let walletData = null;
 
-        // 解析 wallet.md
+        // 解析 wallet.md - 使用缓存破坏避免 Service Worker 缓存过期数据
         async function loadWallet() {
             try {
-                const response = await fetch('wallet.md');
+                // 添加时间戳防止 Service Worker 缓存过期数据
+                const response = await fetch('wallet.md?t=' + Date.now(), { cache: 'no-store' });
                 const text = await response.text();
                 return parseWalletMarkdown(text);
             } catch (error) {
