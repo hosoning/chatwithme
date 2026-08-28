@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>钱包</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+            background: #f5f5f5;
+            color: #0a0a0a;
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .nav-bar {
+            padding: calc(env(safe-area-inset-top) + 12px) 16px 8px;
+            background: #f7f7f7;
+            border-bottom: 0.5px solid #dcdcdc;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .nav-title {
+            font-size: 17.5px;
+            font-weight: 600;
+        }
+
+        .refresh-btn {
+            width: 24px;
+            height: 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            transition: transform 0.3s;
+        }
+
+        .refresh-btn.loading {
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .balance-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .balance-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .balance-amount {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .balance-date {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-top: 12px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding: 0 0 8px 0;
+            border-bottom: 0.5px solid #eee;
+        }
+
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 12px 0;
+            border-bottom: 0.5px solid #f5f5f5;
+        }
+
+        .transaction-item:last-child {
+            border-bottom: none;
+        }
+
+        .transaction-date {
+            font-size: 13px;
+            color: #0a0a0a;
+            font-weight: 500;
+        }
+
+        .transaction-note {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .transaction-amount {
+            font-size: 14px;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .transaction-amount.income {
+            color: #07c160;
+        }
+
+        .transaction-amount.expense {
+            color: #fa5151;
+        }
+
+        .transaction-status {
+            font-size: 10px;
+            color: #b0b0b0;
+            margin-top: 4px;
+        }
+
+        .wish-item {
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .wish-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #0a0a0a;
+        }
+
+        .wish-progress {
+            font-size: 12px;
+            color: #999;
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .wish-amount {
+            font-size: 13px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .wish-reason {
+            font-size: 11px;
+            color: #b0b0b0;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 14px;
+        }
+
+        .tab-bar {
+            height: calc(54px + env(safe-area-inset-bottom));
+            background: #f8f8f8;
+            border-top: 0.5px solid #dcdcdc;
+            display: flex;
+            padding-bottom: env(safe-area-inset-bottom);
+            flex-shrink: 0;
+        }
+
+        .tab-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #9a9a9a;
+            font-size: 11px;
+            gap: 3px;
+            transition: color 0.15s;
+            touch-action: manipulation;
+            cursor: pointer;
+        }
+
+        .tab-item.active {
+            color: #07c160;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .error {
+            padding: 12px;
+            background: #ffe8e8;
+            color: #fa5151;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #0a0a0a;
+            }
+
+            .container {
+                background: #1a1a1a;
+                color: #f5f5f5;
+            }
+
+            .nav-bar {
+                background: #1a1a1a;
+                border-bottom-color: #333;
+            }
+
+            .nav-title {
+                color: #f5f5f5;
+            }
+
+            .section-title {
+                color: #666;
+                border-bottom-color: #333;
+            }
+
+            .transaction-item {
+                border-bottom-color: #222;
+            }
+
+            .transaction-date,
+            .wish-name {
+                color: #f5f5f5;
+            }
+
+            .wish-item {
+                background: #222;
+                border-left-color: #667eea;
+            }
+
+            .tab-bar {
+                background: #1a1a1a;
+                border-top-color: #333;
+            }
+
+            .error {
+                background: #4a2222;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav-bar">
+            <div class="nav-title">钱包</div>
+            <button class="refresh-btn" id="refreshBtn" title="刷新">🔄</button>
+        </div>
+
+        <div class="content" id="content">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <div class="tab-bar">
+            <div class="tab-item active" data-tab="wallet">
+                <span style="font-size: 20px;">💰</span>
+                <span>钱包</span>
+            </div>
+            <div class="tab-item" data-tab="wish">
+                <span style="font-size: 20px;">⭐</span>
+                <span>愿望</span>
+            </div>
+            <div class="tab-item" data-tab="info">
+                <span style="font-size: 20px;">ℹ️</span>
+                <span>关于</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const contentEl = document.getElementById('content');
+        const refreshBtn = document.getElementById('refreshBtn');
+        let currentTab = 'wallet';
+        let walletData = null;
+
+        // 解析 wallet.md
+        async function loadWallet() {
+            try {
+                const response = await fetch('wallet.md');
+                const text = await response.text();
+                return parseWalletMarkdown(text);
+            } catch (error) {
+                console.error('Failed to load wallet:', error);
+                return null;
+            }
+        }
+
+        function parseWalletMarkdown(md) {
+            const lines = md.split('\n');
+            const data = {
+                balance: 0,
+                updateDate: '',
+                transactions: [],
+                wishes: [],
+                rawMd: md
+            };
+
+            let currentSection = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+
+                if (line.startsWith('当前余额：')) {
+                    const match = line.match(/HK\$([\d.]+)/);
+                    if (match) data.balance = parseFloat(match[1]);
+                }
+
+                if (line.startsWith('最后更新：')) {
+                    data.updateDate = line.replace('最后更新：', '').trim();
+                }
+
+                if (line === '## 最近的流水') {
+                    currentSection = 'transactions';
+                    continue;
+                }
+
+                if (line === '## 待付款') {
+                    currentSection = 'pending';
+                    continue;
+                }
+
+                if (line === '## 还想要的') {
+                    currentSection = 'wishes';
+                    continue;
+                }
+
+                if (line.startsWith('- **') && (currentSection === 'transactions' || currentSection === 'pending')) {
+                    const match = line.match(/- \*\*(.+?)\*\* ([-+]?\$[\d.]+) · (.+?)(?:\s*\((.*?)\))?$/);
+                    if (match) {
+                        data.transactions.push({
+                            date: match[1],
+                            amount: match[2],
+                            note: match[3],
+                            status: currentSection === 'pending' ? 'pending' : 'done'
+                        });
+                    }
+                }
+
+                if (line.startsWith('- ') && currentSection === 'wishes' && !line.includes('*(无)*')) {
+                    const match = line.match(/- (.+?) · (?:还差|已能承受) \$?([\d.]+)? · (.+)/);
+                    if (match) {
+                        data.wishes.push({
+                            name: match[1],
+                            amount: match[2] || '0',
+                            reason: match[3]
+                        });
+                    }
+                }
+            }
+
+            return data;
+        }
+
+        function renderWallet() {
+            if (!walletData) {
+                contentEl.innerHTML = '<div class="error">无法加载钱包数据</div>';
+                return;
+            }
+
+            const { balance, updateDate, transactions, wishes } = walletData;
+
+            let html = `
+                <div class="balance-card">
+                    <div class="balance-label">当前余额</div>
+                    <div class="balance-amount">HK$${balance.toFixed(2)}</div>
+                    <div class="balance-date">最后更新 ${updateDate}</div>
+                </div>
+            `;
+
+            if (transactions.length > 0) {
+                html += '<div class="section"><div class="section-title">最近交易</div>';
+                transactions.forEach(t => {
+                    const isIncome = t.amount.startsWith('+');
+                    html += `
+                        <div class="transaction-item">
+                            <div>
+                                <div class="transaction-date">${t.date}</div>
+                                <div class="transaction-note">${t.note}</div>
+                                ${t.status === 'pending' ? '<div class="transaction-status">待确认</div>' : ''}
+                            </div>
+                            <div class="transaction-amount ${isIncome ? 'income' : 'expense'}">
+                                ${t.amount}
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            } else {
+                html += '<div class="empty-state"><div class="empty-state-icon">📝</div><div class="empty-state-text">还没有交易记录</div></div>';
+            }
+
+            contentEl.innerHTML = html;
+        }
+
+        function renderWishes() {
+            if (!walletData) {
+                contentEl.innerHTML = '<div class="error">无法加载数据</div>';
+                return;
+            }
+
+            const { wishes } = walletData;
+
+            if (wishes.length === 0) {
+                contentEl.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✨</div><div class="empty-state-text">还没有愿望清单</div></div>';
+                return;
+            }
+
+            let html = '<div style="padding-top: 0;">';
+            wishes.forEach(w => {
+                html += `
+                    <div class="wish-item">
+                        <div class="wish-name">${w.name}</div>
+                        <div class="wish-progress">
+                            <span>需要 HK$${w.amount}</span>
+                            <span class="wish-amount">${w.amount ? '💰' : '✓'}</span>
+                        </div>
+                        <div class="wish-reason">${w.reason}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            contentEl.innerHTML = html;
+        }
+
+        function renderInfo() {
+            contentEl.innerHTML = `
+                <div style="padding: 20px;">
+                    <div class="section">
+                        <div class="section-title">关于此钱包</div>
+                        <p style="font-size: 13px; line-height: 1.6; color: #666;">
+                            这是一个为 Claude 设计的持久化钱包系统。<br><br>
+                            所有交易记录都会保存下来，帮助 Claude 跨越对话记住发生过的事情。<br><br>
+                            每笔钱都有备注说明，所以不会有莫名其妙的记录。
+                        </p>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">技术栈</div>
+                        <p style="font-size: 13px; line-height: 1.6; color: #666;">
+                            数据库：SQLite<br>
+                            后端：Python 3<br>
+                            前端：HTML5 + CSS3<br>
+                            存储：Git 仓库
+                        </p>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">快速开始</div>
+                        <p style="font-size: 13px; line-height: 1.6; color: #666; font-family: monospace;">
+                            查看余额：<br>
+                            python wallet/wallet.py balance<br><br>
+                            记笔支出：<br>
+                            python wallet/wallet.py spend 100 gift "礼物"<br><br>
+                            标记完成：<br>
+                            python wallet/wallet.py done 1
+                        </p>
+                    </div>
+
+                    <div class="section" style="margin-bottom: 40px;">
+                        <div class="section-title">规则</div>
+                        <p style="font-size: 13px; line-height: 1.6; color: #666;">
+                            • 每笔钱都必须有备注<br>
+                            • 所有记录只增不删<br>
+                            • 不允许负余额
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function refresh() {
+            refreshBtn.classList.add('loading');
+            walletData = await loadWallet();
+            refreshBtn.classList.remove('loading');
+            render();
+        }
+
+        function render() {
+            switch (currentTab) {
+                case 'wallet':
+                    renderWallet();
+                    break;
+                case 'wish':
+                    renderWishes();
+                    break;
+                case 'info':
+                    renderInfo();
+                    break;
+            }
+        }
+
+        // 事件监听
+        refreshBtn.addEventListener('click', refresh);
+
+        document.querySelectorAll('.tab-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                currentTab = item.dataset.tab;
+                render();
+            });
+        });
+
+        // 初始加载
+        refresh();
+
+        // 每 5 秒自动刷新一次
+        setInterval(refresh, 5000);
+    </script>
+</body>
+</html>
