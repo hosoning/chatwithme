@@ -67,7 +67,7 @@ async function latestStatus(): Promise<string> {
   if (!data) return "Claude 的錢包還沒有任何交易記錄。";
 
   const icon = data.status === "success" ? "✅" : data.status === "pending" ? "⏳" : "❌";
-  const balance = data.balance ? `\n余額：HK$${Number(data.balance).toFixed(2)}` : "";
+  const balance = data.balance ? `\n餘額：HK$${Number(data.balance).toFixed(2)}` : "";
   const txId = data.transaction_id ? `\n交易 #${data.transaction_id}` : "";
 
   return `${icon} ${data.phase}\n${data.summary}${balance}${txId}`;
@@ -84,7 +84,7 @@ async function handleTelegram(message: TelegramMessage) {
   if (!text) return;
 
   if (text === "/start") {
-    await sendMessage(message.chat.id, "Claude 錢包機器人已連線。\n\n/status 查看最新進度\n/balance 查看當前余額\n直接輸入文字即可提交反饋意見。");
+    await sendMessage(message.chat.id, "Claude 錢包機器人已連線。\n\n/status 查看最新進度\n/balance 查看當前餘額\n直接輸入文字即可提交反饋意見。");
     return;
   }
 
@@ -100,7 +100,7 @@ async function handleTelegram(message: TelegramMessage) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const balance = data?.balance ? `余額：HK$${Number(data.balance).toFixed(2)}` : "還沒有余額記錄。";
+    const balance = data?.balance ? `餘額：HK$${Number(data.balance).toFixed(2)}` : "還沒有餘額記錄。";
     await sendMessage(message.chat.id, balance);
     return;
   }
