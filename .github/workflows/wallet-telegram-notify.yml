@@ -1,0 +1,53 @@
+name: Claude Wallet Telegram Notify
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Phase / operation name (e.g. Expense, Topup, Tarot)'
+        required: true
+        default: 'Wallet update'
+      summary:
+        description: 'Human-readable summary to send to Telegram'
+        required: true
+      status:
+        description: 'pending | success | cancelled | failure'
+        required: false
+        default: 'success'
+      balance:
+        description: 'Current balance (optional)'
+        required: false
+        default: ''
+      transaction_id:
+        description: 'Transaction ID (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      BRIDGE_URL: ${{ secrets.SUPABASE_WALLET_TELEGRAM_BRIDGE_URL }}
+      PROGRESS_SECRET: ${{ secrets.CLAUDE_WALLET_PROGRESS_SECRET }}
+    steps:
+      - name: Send Telegram notification
+        if: ${{ env.BRIDGE_URL != '' && env.PROGRESS_SECRET != '' }}
+        run: |
+          payload="$(jq -n \
+            --arg phase "${{ inputs.phase }}" \
+            --arg summary "${{ inputs.summary }}" \
+            --arg status "${{ inputs.status }}" \
+            --arg balance "${{ inputs.balance }}" \
+            --arg transaction_id "${{ inputs.transaction_id }}" \
+            '{phase:$phase,summary:$summary,status:$status} +
+             (if $balance != "" then {balance:($balance|tonumber)} else {} end) +
+             (if $transaction_id != "" then {transaction_id:($transaction_id|tonumber)} else {} end)')"
+          curl --fail --silent --show-error \
+            --request POST "$BRIDGE_URL" \
+            --header "content-type: application/json" \
+            --header "x-claude-wallet-progress-secret: $PROGRESS_SECRET" \
+            --data "$payload"
