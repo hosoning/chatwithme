@@ -75,6 +75,17 @@ def show_balance():
     balance = get_balance()
     print(f"Current Balance: HK${balance:.2f}")
 
+def reset_wallet():
+    """Clear all transactions/wishes and zero the balance."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM transactions')
+    c.execute('DELETE FROM wishlist')
+    c.execute('UPDATE balance SET amount = 0, updated_at = ?', (datetime.now().isoformat(),))
+    conn.commit()
+    conn.close()
+    export_wallet()
+
 def add_transaction(amount, category, note, status='pending'):
     """Add a transaction record."""
     if not note or not note.strip():
@@ -416,6 +427,10 @@ def main():
         elif cmd == 'export':
             export_wallet()
             print("Exported to wallet.md")
+
+        elif cmd == 'reset':
+            reset_wallet()
+            print("Wallet reset to HK$0.00")
 
         else:
             print(f"Unknown command: {cmd}", file=sys.stderr)
