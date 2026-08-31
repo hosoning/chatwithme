@@ -23,6 +23,25 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8" },
   });
 
+async function setWebhook() {
+  if (!botToken || !telegramWebhookSecret) return;
+  try {
+    const functionUrl = Deno.env.get("SUPABASE_FUNCTION_URL") ??
+      `https://${new URL(supabaseUrl).hostname}/functions/v1/wallet-telegram-bridge`;
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        url: functionUrl,
+        secret_token: telegramWebhookSecret,
+      }).toString(),
+    });
+    if (response.ok) console.log("Telegram webhook set successfully");
+  } catch (error) {
+    console.error("Failed to set webhook:", error);
+  }
+}
+
 async function sendMessage(chatId: number | string, text: string) {
   if (!botToken) throw new Error("TELEGRAM_BOT_TOKEN is missing");
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -120,7 +139,10 @@ async function handleProgress(payload: Record<string, unknown>) {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "GET") return json({ ok: true, service: "claude-wallet-telegram-bridge" });
+  if (request.method === "GET") {
+    await setWebhook();
+    return json({ ok: true, service: "claude-wallet-telegram-bridge" });
+  }
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   try {
