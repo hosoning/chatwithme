@@ -93,6 +93,18 @@ async function handleTelegram(message: TelegramMessage) {
     return;
   }
 
+  if (text === "/balance") {
+    const { data } = await db
+      .from("wallet_progress")
+      .select("balance")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const balance = data?.balance ? `余額：HK$${Number(data.balance).toFixed(2)}` : "還沒有余額記錄。";
+    await sendMessage(message.chat.id, balance);
+    return;
+  }
+
   // Store feedback
   const { error } = await db.from("wallet_feedback").upsert({
     telegram_chat_id: message.chat.id,
