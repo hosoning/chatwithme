@@ -34,8 +34,12 @@ jobs:
       BRIDGE_URL: ${{ secrets.SUPABASE_WALLET_TELEGRAM_BRIDGE_URL }}
       PROGRESS_SECRET: ${{ secrets.CLAUDE_WALLET_PROGRESS_SECRET }}
     steps:
+      - name: Debug secret presence
+        run: |
+          echo "BRIDGE_URL length: ${#BRIDGE_URL}"
+          echo "PROGRESS_SECRET length: ${#PROGRESS_SECRET}"
+
       - name: Send Telegram notification
-        if: ${{ env.BRIDGE_URL != '' && env.PROGRESS_SECRET != '' }}
         run: |
           payload="$(jq -n \
             --arg phase "${{ inputs.phase }}" \
