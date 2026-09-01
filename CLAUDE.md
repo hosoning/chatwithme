@@ -55,3 +55,4 @@ Claude / GitHub Actions → Supabase Edge Function (wallet-telegram-bridge) → 
 - 用户不在意后台技术细节，只要能用、结果清楚即可
 - 不要在本机（这是共享电脑，非用户私人电脑）留下任何文件或凭据；所有部署操作走云端（Supabase / GitHub Actions），需要人操作的步骤要讲清楚"在哪里点、点什么"
 - 凭据（token、service role key）用后不留存、不上传
+- 遇到"能不能做到 X"类问题，先去实际搜索/查证最新信息，再下结论；不要凭旧认知或规则条文直接说"不行"——AI 和相关工具天天在更新，用户对此类敷衍非常反感
