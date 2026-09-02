@@ -85,7 +85,7 @@ async function groupMessages(messages) {
 }
 
 async function interpretAndReply(userText, cards, wordCardPool, persona) {
-  if (!wordCardPool || !wordCardPool.length) wordCardPool = WordCards._defaults();
+  if (!wordCardPool || !wordCardPool.length) return [];
   const cardDesc = cards.map(c => `${c.name}(${c.reversed ? '逆位' : '正位'}): ${c.meaning}`).join('; ');
   const sys = `你正在扮演角色："${persona || '一个通过塔罗牌理解世界的人'}"。
 你只能使用给定字卡词库中的词句拼接回复，禁止编造新词。
