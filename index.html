@@ -643,17 +643,21 @@ svg { max-width:100%; max-height:100%; }
       </div>
       <div class="settings-group-title">语音回复模型 (TTS)</div>
       <div class="form-row"><label>启用语音回复</label><label class="switch"><input type="checkbox" id="cfgVoiceEnabled"><span class="slider"></span></label></div>
-      <div class="form-row col"><label>TTS Endpoint</label><input id="cfgVoiceEndpoint" placeholder="https://api.openai.com/v1/audio/speech"></div>
+      <div class="form-row col"><label>服务商</label>
+        <select id="cfgVoiceProvider">
+          <option value="openai">OpenAI 兼容</option>
+          <option value="minimax">MiniMax（支持声音克隆）</option>
+        </select>
+      </div>
+      <div class="form-row col" id="cfgVoiceEndpointRow"><label>TTS Endpoint</label><input id="cfgVoiceEndpoint" placeholder="https://api.openai.com/v1/audio/speech"></div>
+      <div class="form-row col hidden" id="cfgVoiceGroupIdRow"><label>MiniMax Group ID</label><input id="cfgVoiceGroupId" placeholder="MiniMax 控制台账户信息里能找到"></div>
       <div class="form-row col"><label>TTS API Key</label><input id="cfgVoiceApiKey" type="password" placeholder="留空则使用上方Key"></div>
       <div class="form-row col"><label>TTS 模型</label>
         <input id="cfgVoiceModel" list="ttsPresets" placeholder="tts-1">
-        <datalist id="ttsPresets"><option value="tts-1"></option><option value="tts-1-hd"></option></datalist>
+        <datalist id="ttsPresets"><option value="tts-1"></option><option value="tts-1-hd"></option><option value="speech-02-hd"></option><option value="speech-02-turbo"></option><option value="speech-01-turbo"></option></datalist>
       </div>
-      <div class="form-row col"><label>音色</label>
-        <select id="cfgVoiceName">
-          <option value="alloy">alloy</option><option value="echo">echo</option><option value="fable">fable</option>
-          <option value="onyx">onyx</option><option value="nova">nova</option><option value="shimmer">shimmer</option>
-        </select>
+      <div class="form-row col"><label id="cfgVoiceNameLabel">音色</label><input id="cfgVoiceName" list="voicePresets" placeholder="alloy / echo / nova...">
+        <datalist id="voicePresets"><option value="alloy"></option><option value="echo"></option><option value="fable"></option><option value="onyx"></option><option value="nova"></option><option value="shimmer"></option></datalist>
       </div>
       <div class="settings-group-title">行为开关</div>
       <div class="form-row"><label>允许AI主动发消息</label><label class="switch"><input type="checkbox" id="cfgAutoMsg"><span class="slider"></span></label></div>
@@ -1059,10 +1063,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=24" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=24" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=24" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=24" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=24" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=25" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=25" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=25" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=25" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=25" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>

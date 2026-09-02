@@ -607,7 +607,7 @@ function renderMessages() {
         <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
     } else if (m.voiceUrl) {
-      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
+      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${m.durationSec || Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
@@ -724,6 +724,18 @@ function handleSend(text) {
 
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
   state.pendingBatch[chatId].push(text.trim());
+  clearTimeout(state.batchTimer[chatId]);
+  state.batchTimer[chatId] = setTimeout(() => {
+    if (isGroupChat(chatId)) processGroupBatch(chatId);
+    else processSingleBatch(chatId);
+  }, 900);
+}
+function sendVoiceMessage(dataUrl, durationSec) {
+  const chatId = state.activeChatId;
+  if (!chatId) return;
+  addMessage(chatId, 'me', '[语音]', { voiceUrl: dataUrl, durationSec });
+  state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
+  state.pendingBatch[chatId].push('(发来一条语音消息)');
   clearTimeout(state.batchTimer[chatId]);
   state.batchTimer[chatId] = setTimeout(() => {
     if (isGroupChat(chatId)) processGroupBatch(chatId);
@@ -1971,17 +1983,32 @@ function loadSettingsForm() {
   document.getElementById('cfgApiKey').value = cfg.apiKey;
   document.getElementById('cfgModel').value = cfg.model;
   document.getElementById('cfgVoiceEnabled').checked = cfg.voiceEnabled;
+  document.getElementById('cfgVoiceProvider').value = cfg.voiceProvider || 'openai';
   document.getElementById('cfgVoiceEndpoint').value = cfg.voiceEndpoint;
+  document.getElementById('cfgVoiceGroupId').value = cfg.voiceGroupId || '';
   document.getElementById('cfgVoiceApiKey').value = cfg.voiceApiKey;
   document.getElementById('cfgVoiceModel').value = cfg.voiceModel;
   document.getElementById('cfgVoiceName').value = cfg.voiceName;
+  updateVoiceProviderFields();
   document.getElementById('cfgAutoMsg').checked = cfg.autoMsg;
   document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
   loadCloudSettingsForm();
 }
+function updateVoiceProviderFields() {
+  const provider = document.getElementById('cfgVoiceProvider')?.value;
+  const isMiniMax = provider === 'minimax';
+  document.getElementById('cfgVoiceGroupIdRow')?.classList.toggle('hidden', !isMiniMax);
+  const nameLabel = document.getElementById('cfgVoiceNameLabel');
+  if (nameLabel) nameLabel.textContent = isMiniMax ? '声音 Voice ID（克隆声音的ID）' : '音色';
+  const nameInput = document.getElementById('cfgVoiceName');
+  if (nameInput) nameInput.placeholder = isMiniMax ? '在 MiniMax 克隆好声音后拿到的 voice_id' : 'alloy / echo / nova...';
+  const endpointInput = document.getElementById('cfgVoiceEndpoint');
+  if (endpointInput) endpointInput.placeholder = isMiniMax ? 'https://api.minimax.chat/v1/t2a_v2（留空则自动使用）' : 'https://api.openai.com/v1/audio/speech';
+}
 function bindSettingsSave() {
+  document.getElementById('cfgVoiceProvider')?.addEventListener('change', updateVoiceProviderFields);
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
     saveAIConfig({
       textEnabled: document.getElementById('cfgTextEnabled').checked,
@@ -1989,7 +2016,9 @@ function bindSettingsSave() {
       apiKey: document.getElementById('cfgApiKey').value.trim(),
       model: document.getElementById('cfgModel').value.trim(),
       voiceEnabled: document.getElementById('cfgVoiceEnabled').checked,
+      voiceProvider: document.getElementById('cfgVoiceProvider').value,
       voiceEndpoint: document.getElementById('cfgVoiceEndpoint').value.trim(),
+      voiceGroupId: document.getElementById('cfgVoiceGroupId').value.trim(),
       voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
       voiceModel: document.getElementById('cfgVoiceModel').value.trim(),
       voiceName: document.getElementById('cfgVoiceName').value,
@@ -2034,16 +2063,66 @@ function bindInputBar() {
     if (enteringVoiceMode) sendBtn.classList.add('hidden');
     else toggleSendBtn();
   });
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let recognizer = null;
-  if (SR) {
-    recognizer = new SR(); recognizer.lang = 'zh-CN'; recognizer.continuous = false;
-    recognizer.onresult = ev => { const text = ev.results[0][0].transcript; if (text) handleSend(text); };
-    recognizer.onerror = () => holdBtn.classList.remove('active');
-    recognizer.onend = () => holdBtn.classList.remove('active');
+  bindHoldToRecord(holdBtn);
+}
+function getSupportedAudioMimeType() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+  return candidates.find(c => MediaRecorder.isTypeSupported(c)) || '';
+}
+function bindHoldToRecord(holdBtn) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    holdBtn.addEventListener('pointerdown', () => alert('当前浏览器不支持录音，请切换回文字输入'));
+    return;
   }
-  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); if (recognizer) { try { recognizer.start(); } catch(e){} } });
-  const stopTalk = () => { holdBtn.classList.remove('active'); if (recognizer) { try { recognizer.stop(); } catch(e){} } else alert('当前浏览器不支持语音识别，请切换回文字输入'); };
+  let mediaRecorder = null, recordedChunks = [], mediaStream = null, recordStartTs = 0, recording = false, starting = false;
+  function cleanupStream() { mediaStream?.getTracks().forEach(t => t.stop()); mediaStream = null; }
+  async function startRecording() {
+    if (recording || starting) return;
+    starting = true;
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      alert('无法访问麦克风，请检查系统/浏览器的麦克风权限设置');
+      holdBtn.classList.remove('active');
+      starting = false;
+      return;
+    }
+    recordedChunks = [];
+    const mimeType = getSupportedAudioMimeType();
+    try { mediaRecorder = mimeType ? new MediaRecorder(mediaStream, { mimeType }) : new MediaRecorder(mediaStream); }
+    catch (e) { alert('录音初始化失败：' + (e?.message || '未知错误')); cleanupStream(); starting = false; return; }
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    recordStartTs = Date.now();
+    mediaRecorder.start();
+    recording = true;
+    starting = false;
+  }
+  function stopRecording() {
+    return new Promise(resolve => {
+      if (!recording || !mediaRecorder) { resolve(null); return; }
+      recording = false;
+      const durationSec = Math.round((Date.now() - recordStartTs) / 1000 * 10) / 10;
+      mediaRecorder.onstop = () => {
+        cleanupStream();
+        if (durationSec < 1) { resolve(null); return; }
+        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        if (!blob.size) { resolve(null); return; }
+        const reader = new FileReader();
+        reader.onload = () => resolve({ dataUrl: reader.result, durationSec: Math.max(1, Math.round(durationSec)) });
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      };
+      try { mediaRecorder.stop(); } catch (e) { cleanupStream(); resolve(null); }
+    });
+  }
+  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); startRecording(); });
+  const stopTalk = async () => {
+    if (!holdBtn.classList.contains('active')) return;
+    holdBtn.classList.remove('active');
+    const result = await stopRecording();
+    if (result) sendVoiceMessage(result.dataUrl, result.durationSec);
+  };
   holdBtn.addEventListener('pointerup', stopTalk);
   holdBtn.addEventListener('pointerleave', stopTalk);
 }

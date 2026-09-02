@@ -3,7 +3,7 @@ const AI_CFG_KEY = 'tarot_ai_config_v1';
 function getAIConfig() {
   const def = {
     textEnabled: false, endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini',
-    voiceEnabled: false, voiceEndpoint: 'https://api.openai.com/v1/audio/speech', voiceApiKey: '', voiceModel: 'tts-1', voiceName: 'alloy',
+    voiceEnabled: false, voiceProvider: 'openai', voiceEndpoint: 'https://api.openai.com/v1/audio/speech', voiceGroupId: '', voiceApiKey: '', voiceModel: 'tts-1', voiceName: 'alloy',
     autoMsg: false, autoMoment: false, autoAvatar: false, autoRedpacket: true
   };
   try {
@@ -37,20 +37,55 @@ async function callLLM(systemPrompt, userPrompt) {
   } catch (e) { console.warn('LLM调用失败，使用本地兜底逻辑', e); return null; }
 }
 
+async function synthesizeVoiceOpenAI(text, cfg, key) {
+  const res = await fetch(cfg.voiceEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({ model: cfg.voiceModel, voice: cfg.voiceName, input: text })
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+// MiniMax's T2A v2 API — request/response shape per MiniMax's docs as of this writing.
+// If MiniMax changes their contract, this is the one place to adjust: the endpoint,
+// the voice_setting/audio_setting body shape, or how the audio comes back (currently
+// a hex string at data.audio) may need updating to match their current API version.
+async function synthesizeVoiceMiniMax(text, cfg, key) {
+  const endpoint = (cfg.voiceEndpoint && cfg.voiceEndpoint.includes('minimax'))
+    ? cfg.voiceEndpoint
+    : `https://api.minimax.chat/v1/t2a_v2?GroupId=${encodeURIComponent(cfg.voiceGroupId || '')}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({
+      model: cfg.voiceModel || 'speech-02-turbo',
+      text,
+      stream: false,
+      voice_setting: { voice_id: cfg.voiceName, speed: 1, vol: 1, pitch: 0 },
+      audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
+    })
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (data?.base_resp?.status_code && data.base_resp.status_code !== 0) {
+    throw new Error(`MiniMax ${data.base_resp.status_code}: ${data.base_resp.status_msg || ''}`);
+  }
+  const hex = data?.data?.audio;
+  if (!hex) throw new Error('MiniMax 响应里没有找到音频数据');
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return URL.createObjectURL(new Blob([bytes], { type: 'audio/mp3' }));
+}
 async function synthesizeVoice(text) {
   const cfg = getAIConfig();
   if (!cfg.voiceEnabled) return null;
   const key = cfg.voiceApiKey || cfg.apiKey;
   if (!key) return null;
   try {
-    const res = await fetch(cfg.voiceEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model: cfg.voiceModel, voice: cfg.voiceName, input: text })
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
+    return cfg.voiceProvider === 'minimax'
+      ? await synthesizeVoiceMiniMax(text, cfg, key)
+      : await synthesizeVoiceOpenAI(text, cfg, key);
   } catch (e) { console.warn('语音合成失败', e); return null; }
 }
 
