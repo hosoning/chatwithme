@@ -264,7 +264,7 @@ async function pickAvatarFromCards(cards, library, persona) {
     if (!msg || msg.type !== 'options') return;
     ensureOptionViewer();
     document.getElementById('optionViewerQuestion').textContent = msg.question || msg.text || '选项';
-    document.getElementById('optionViewerList').innerHTML = (msg.options || []).map((o, i) => `<div class="option-view-row"><span style="color:#aaa;width:24px;flex-shrink:0;">${i + 1}</span><span>${escapeHtml(o)}</span></div>`).join('') + '<div class="option-view-row" style="color:#999;"><span style="width:24px;flex-shrink:0;">—</span><span>其他</span></div>';
+    document.getElementById('optionViewerList').innerHTML = (msg.options || []).map((o, i) => `<div class="option-view-row"><span style="color:#aaa;width:24px;flex-shrink:0;">${i + 1}</span><span>${escapeHtml(o)}</span></div>`).join('');
     document.getElementById('optionViewerV2').classList.remove('hidden');
   }
 
@@ -528,8 +528,7 @@ async function pickAvatarFromCards(cards, library, persona) {
     window.replyToOptions = async function(chatId, fromId, options, persona, question='') {
       const contact=getContactById(fromId); showTypingIndicator(chatId,contact);
       try{
-        await sleep(getReplyDelay(chatId)); const idx=secureRandomInt(options.length+1);
-        if(idx===options.length){ hideTypingIndicator(); await window.replyWithTarot(chatId,fromId,`${question?`问题：${question}；`:''}可选项：${options.join('、')}；选择其他并自然回应`,persona); return; }
+        await sleep(getReplyDelay(chatId)); const idx=secureRandomInt(options.length);
         const cards=drawCards(3),shieldCards=drawCards(3),shield=calcShield(shieldCards),answer=options[idx],voiceUrl=await synthesizeVoice(answer);
         addMessage(chatId,fromId,answer,{cards,shieldCards,shield,voiceUrl,optionAnswerTo:question||null});
       }finally{hideTypingIndicator();}

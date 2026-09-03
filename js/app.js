@@ -560,6 +560,49 @@ function formatMsgDividerTime(ts) {
   const sameYear = d.getFullYear() === new Date().getFullYear();
   return sameYear ? `${d.getMonth() + 1}月${d.getDate()}日 ${time}` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
 }
+const LAST_GPS_KEY = 'tarot_last_gps_v1';
+
+function getLastGps() {
+  const gps = safeLoadJSON(LAST_GPS_KEY, null);
+  return gps && Number.isFinite(Number(gps.lat)) && Number.isFinite(Number(gps.lng)) ? gps : null;
+}
+function saveLastGps(coords) {
+  const gps = { lat: Number(coords.latitude), lng: Number(coords.longitude), accuracy: Number(coords.accuracy || 0), ts: Date.now() };
+  safeSaveJSON(LAST_GPS_KEY, gps);
+  return gps;
+}
+function requestCurrentGps() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('此设备不支持 GPS 定位')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(saveLastGps(pos.coords)),
+      err => reject(new Error(err.code === 1 ? '定位权限未开启，请在浏览器设置中允许定位' : '暂时无法取得位置，请稍后再试')),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+    );
+  });
+}
+function nearbyGps(base) {
+  const distanceKm = 0.4 + secureRandomInt(2600) / 1000;
+  const angle = secureRandomInt(360) * Math.PI / 180;
+  const lat = Number(base.lat) + (distanceKm / 111) * Math.cos(angle);
+  const lngScale = Math.max(0.2, Math.cos(Number(base.lat) * Math.PI / 180));
+  const lng = Number(base.lng) + (distanceKm / (111 * lngScale)) * Math.sin(angle);
+  return { lat, lng, accuracy: 30 + secureRandomInt(90), ts: Date.now() };
+}
+function mapEmbedUrl(lat, lng) {
+  lat = Number(lat); lng = Number(lng);
+  const dLat = 0.0055, dLng = 0.0075;
+  const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].map(n => n.toFixed(6)).join(',');
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`;
+}
+function externalMapUrl(lat, lng, label) {
+  return `https://maps.apple.com/?ll=${encodeURIComponent(Number(lat).toFixed(6) + ',' + Number(lng).toFixed(6))}&q=${encodeURIComponent(label || '位置')}`;
+}
+function locationPreviewHtml(lat, lng) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return '<div class="location-map-fallback">旧版位置</div>';
+  return `<iframe class="location-map-frame" src="${mapEmbedUrl(lat, lng)}" loading="lazy" referrerpolicy="no-referrer" tabindex="-1" aria-hidden="true"></iframe><div class="location-map-shield"></div>`;
+}
+
 function renderMessages() {
   const box = document.getElementById('msgList');
   if (!box) return;
@@ -573,6 +616,10 @@ function renderMessages() {
     if (lastTs === null || m.ts - lastTs > 5 * 60 * 1000) dividerHtml = `<div class="msg-time-divider">${formatMsgDividerTime(m.ts)}</div>`;
     lastTs = m.ts;
     if (m.systemNote) return dividerHtml + `<div class="msg-system">${escapeHtml(m.text)}</div>`;
+    if (m.recalled) {
+      const recalledBy = m.from === 'me' ? '你' : (getContactById(m.from)?.name || '对方');
+      return dividerHtml + `<div class="msg-system">${escapeHtml(recalledBy)}撤回了一条消息</div>`;
+    }
     const isMe = m.from === 'me';
     const senderContact = !isMe ? getContactById(m.from) : null;
     const name = isMe ? (state.myName || '我') : (senderContact?.name || '角色');
@@ -589,15 +636,14 @@ function renderMessages() {
         <div class="options-title">请选择</div>
         <div class="options-list">
           ${m.options.map((o, i) => `<div class="option-row"><span class="opt-num">${i + 1}</span>${escapeHtml(o)}</div>`).join('')}
-          <div class="option-row option-other"><span class="opt-num">其他</span>不在选项中</div>
         </div>
       </div>`;
     } else if (m.type === 'image') {
       bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
     } else if (m.type === 'location') {
       bubbleHtml = `<div class="bubble location" data-location="${m.id}">
-        <div class="mini-map"><div class="map-pin" style="left:${m.locX}%;top:${m.locY}%;"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></div></div>
-        <div class="location-text">${escapeHtml(m.text || '位置')}</div>
+        <div class="mini-map">${locationPreviewHtml(m.latitude, m.longitude)}</div>
+        <div class="location-text"><strong>${escapeHtml(m.text || '位置')}</strong>${Number.isFinite(Number(m.latitude)) ? `<small>${Number(m.latitude).toFixed(5)}, ${Number(m.longitude).toFixed(5)}</small>` : ''}</div>
       </div>`;
     } else if (m.type === 'call') {
       const isVideo = m.callType === 'video';
@@ -667,7 +713,9 @@ function bindMsgListDelegation() {
   });
 }
 
+let activeMessageActionId = null;
 function openTarotSheet(msgId) {
+  activeMessageActionId = String(msgId);
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
   const cardsView = document.getElementById('tarotCardsView');
@@ -679,7 +727,23 @@ function openTarotSheet(msgId) {
   const numEl = document.getElementById('shieldNum');
   if (fillEl) fillEl.style.width = shield + '%';
   if (numEl) numEl.textContent = shield;
+  const recallBtn = document.getElementById('messageRecallBtn');
+  if (recallBtn) recallBtn.style.display = msg.recalled ? 'none' : '';
   document.getElementById('tarotSheet')?.classList.remove('hidden');
+}
+function recallActiveMessage() {
+  const chatId = state.activeChatId;
+  const msg = (state.chats[chatId] || []).find(m => String(m.id) === String(activeMessageActionId));
+  if (!msg || msg.recalled) return;
+  msg.recalled = true;
+  msg.recalledAt = Date.now();
+  persist();
+  document.getElementById('tarotSheet')?.classList.add('hidden');
+  renderMessages();
+  renderChatList();
+}
+function bindMessageRecall() {
+  document.getElementById('messageRecallBtn')?.addEventListener('click', recallActiveMessage);
 }
 
 /* ============ 发消息 & 塔罗回复 ============ */
@@ -842,72 +906,88 @@ function directSetContactAvatar(contactId, dataUrl) {
   if (String(state.activeChatId) === String(contactId)) renderMessages();
 }
 
-/* ============ 位置分享 ============ */
-const PRESET_LOCATIONS = [
-  {name:'市中心广场', x:50, y:45}, {name:'滨海大道', x:78, y:70}, {name:'老城区', x:22, y:30},
-  {name:'科技产业园', x:65, y:20}, {name:'大学城', x:30, y:75}, {name:'国际机场', x:88, y:15},
-  {name:'中央车站', x:45, y:85}, {name:'中央公园', x:55, y:55}
-];
-function sendLocationMessageManual(name, x, y) {
-  const chatId = state.activeChatId; if (!chatId) return;
-  addMessage(chatId, 'me', name || '我的位置', { type: 'location', locX: x, locY: y });
+/* ============ GPS 位置分享 ============ */
+function sendLocationMessageManual(name, gps) {
+  const chatId = state.activeChatId;
+  if (!chatId || !gps) return;
+  addMessage(chatId, 'me', name || '我的位置', {
+    type: 'location', latitude: Number(gps.lat), longitude: Number(gps.lng), accuracy: Number(gps.accuracy || 0)
+  });
 }
 async function contactShareLocation(contactId, chatId) {
   const contact = getContactById(contactId);
   if (!contact) return;
-  const loc = PRESET_LOCATIONS[secureRandomInt(PRESET_LOCATIONS.length)];
-  addMessage(chatId, contactId, loc.name, { type: 'location', locX: loc.x, locY: loc.y });
+  let base = getLastGps();
+  if (!base) {
+    try { base = await requestCurrentGps(); }
+    catch (_) { base = { lat: 22.3193, lng: 114.1694, accuracy: 100, ts: Date.now() }; }
+  }
+  const gps = nearbyGps(base);
+  addMessage(chatId, contactId, `${contact.name || '对方'}的位置`, {
+    type: 'location', latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy
+  });
+}
+function updateLocationPicker(gps) {
+  const sheet = document.getElementById('locationPickerSheet');
+  const status = document.getElementById('locationGpsStatus');
+  const frame = document.getElementById('locationPickerMap');
+  if (!sheet || !gps) return;
+  sheet.dataset.lat = String(gps.lat);
+  sheet.dataset.lng = String(gps.lng);
+  sheet.dataset.accuracy = String(gps.accuracy || 0);
+  if (frame) frame.src = mapEmbedUrl(gps.lat, gps.lng);
+  if (status) status.textContent = gps.accuracy ? `已定位 · 误差约 ${Math.round(gps.accuracy)} 米` : '已定位';
+}
+async function locateForPicker() {
+  const status = document.getElementById('locationGpsStatus');
+  const btn = document.getElementById('locationGpsBtn');
+  if (status) status.textContent = '正在取得 GPS 位置…';
+  if (btn) btn.classList.add('disabled');
+  try { updateLocationPicker(await requestCurrentGps()); }
+  catch (err) { if (status) status.textContent = err.message || '无法取得位置'; }
+  finally { if (btn) btn.classList.remove('disabled'); }
 }
 function openLocationPicker() {
-  const pin = document.getElementById('mapPickerPin');
-  pin.classList.add('hidden');
-  document.getElementById('locationNameInput').value = '';
-  const chips = document.getElementById('presetChips');
-  chips.innerHTML = PRESET_LOCATIONS.map((l,i) => `<div class="preset-chip" data-idx="${i}">${escapeHtml(l.name)}</div>`).join('');
-  document.getElementById('locationPickerSheet').dataset.x = '';
-  document.getElementById('locationPickerSheet').dataset.y = '';
-  document.getElementById('locationPickerSheet').classList.remove('hidden');
+  const sheet = document.getElementById('locationPickerSheet');
+  if (!sheet) return;
+  sheet.dataset.lat = ''; sheet.dataset.lng = ''; sheet.dataset.accuracy = '';
+  document.getElementById('locationNameInput').value = '我的位置';
+  document.getElementById('locationGpsStatus').textContent = '准备定位…';
+  document.getElementById('locationPickerMap').removeAttribute('src');
+  sheet.classList.remove('hidden');
+  locateForPicker();
 }
 function bindLocationPicker() {
-  const canvas = document.getElementById('mapPickerCanvas');
-  const pin = document.getElementById('mapPickerPin');
   const sheet = document.getElementById('locationPickerSheet');
-  canvas.addEventListener('click', e => {
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(4, Math.min(96, ((e.clientY - rect.top) / rect.height) * 100));
-    pin.style.left = x + '%'; pin.style.top = y + '%'; pin.classList.remove('hidden');
-    sheet.dataset.x = x.toFixed(1); sheet.dataset.y = y.toFixed(1);
-    document.getElementById('locationNameInput').value = '自定义位置';
-    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
-  });
-  document.getElementById('presetChips').addEventListener('click', e => {
-    const chip = e.target.closest('[data-idx]'); if (!chip) return;
-    const loc = PRESET_LOCATIONS[Number(chip.dataset.idx)];
-    pin.style.left = loc.x + '%'; pin.style.top = loc.y + '%'; pin.classList.remove('hidden');
-    sheet.dataset.x = loc.x; sheet.dataset.y = loc.y;
-    document.getElementById('locationNameInput').value = loc.name;
-    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-  });
-  document.getElementById('locationPickerCancel')?.addEventListener('click', () => sheet.classList.add('hidden'));
+  document.getElementById('locationGpsBtn')?.addEventListener('click', locateForPicker);
+  document.getElementById('locationPickerCancel')?.addEventListener('click', () => sheet?.classList.add('hidden'));
   document.getElementById('locationPickerConfirm')?.addEventListener('click', () => {
-    const x = sheet.dataset.x, y = sheet.dataset.y;
-    if (!x || !y) { alert('请先在地图上点选一个位置'); return; }
+    const latRaw = sheet?.dataset.lat, lngRaw = sheet?.dataset.lng;
+    if (!latRaw || !lngRaw) { alert('请先允许 GPS 定位'); return; }
+    const lat = Number(latRaw), lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { alert('定位坐标无效，请重新定位'); return; }
     const name = document.getElementById('locationNameInput').value.trim() || '我的位置';
-    sendLocationMessageManual(name, parseFloat(x), parseFloat(y));
+    sendLocationMessageManual(name, { lat, lng, accuracy: Number(sheet.dataset.accuracy || 0) });
     sheet.classList.add('hidden');
   });
 }
 function openViewLocation(msgId) {
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
   if (!msg) return;
+  const lat = Number(msg.latitude), lng = Number(msg.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) { alert('这是一条旧版位置消息，没有 GPS 坐标'); return; }
   document.getElementById('viewLocationTitle').textContent = msg.text || '位置';
-  const pin = document.getElementById('viewLocationPin');
-  pin.style.left = msg.locX + '%'; pin.style.top = msg.locY + '%';
+  document.getElementById('viewLocationMap').src = mapEmbedUrl(lat, lng);
+  const openBtn = document.getElementById('viewLocationOpenMaps');
+  openBtn.dataset.url = externalMapUrl(lat, lng, msg.text || '位置');
+  document.getElementById('viewLocationCoords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   document.getElementById('viewLocationSheet').classList.remove('hidden');
 }
 function bindViewLocation() {
+  document.getElementById('viewLocationOpenMaps')?.addEventListener('click', e => {
+    const url = e.currentTarget.dataset.url;
+    if (url) window.open(url, '_blank', 'noopener');
+  });
   document.getElementById('viewLocationClose')?.addEventListener('click', () => document.getElementById('viewLocationSheet').classList.add('hidden'));
 }
 
@@ -1284,7 +1364,7 @@ function bindPostMoment() {
   });
 }
 
-/* ============ 发送选项（2~8个 + 其他，其他会走字卡回复） ============ */
+/* ============ 发送选项（2~8个，只会从用户提供的选项中作答） ============ */
 let _optionsDraft = [];
 function renderOptionsInputList() {
   const box = document.getElementById('optionsInputList');
@@ -1339,11 +1419,7 @@ function sendOptionsMessage(chatId, options) {
   replyToOptions(chatId, responder, options, getContactById(responder)?.persona);
 }
 async function replyToOptions(chatId, fromId, options, persona) {
-  const idx = secureRandomInt(options.length + 1); // last slot = 其他
-  if (idx === options.length) {
-    await replyWithTarot(chatId, fromId, `(对方给出了选项：${options.join('、')}；我选择"其他"，用自己的话回应)`, persona);
-    return;
-  }
+  const idx = secureRandomInt(options.length);
   const contact = getContactById(fromId);
   showTypingIndicator(chatId, contact);
   try {
@@ -2155,6 +2231,7 @@ async function init() {
   safeStep('bindListDelegation-chat', () => bindListDelegation('chatListItems'));
   safeStep('bindListDelegation-contacts', () => bindListDelegation('contactListItems'));
   safeStep('bindMsgListDelegation', bindMsgListDelegation);
+  safeStep('bindMessageRecall', bindMessageRecall);
   safeStep('bindMomentsDelegation', bindMomentsDelegation);
   safeStep('bindMomentsProfile', bindMomentsProfile);
   safeStep('bindMomentDetailPage', bindMomentDetailPage);

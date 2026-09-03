@@ -64,19 +64,23 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .bubble.image::before { display:none; }
 .bubble.image img { max-width:220px; max-height:280px; border-radius:6px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
 
-.bubble.location { padding:0 !important; overflow:hidden; width:200px; cursor:pointer; }
+.bubble.location { padding:0 !important; overflow:hidden; width:230px; cursor:pointer; }
 .msg-row.me .bubble.location, .msg-row:not(.me) .bubble.location { background:#fff !important; }
 .msg-row.me .bubble.location::before { border-left-color:#fff !important; }
 .msg-row:not(.me) .bubble.location::before { border-right-color:#fff !important; }
-.mini-map { height:100px; position:relative; overflow:hidden; background:#cfe3d4; background-image:
-  linear-gradient(0deg, rgba(255,255,255,.5) 1px, transparent 1px),
-  linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
-  background-size:20px 20px; }
-.mini-map::before { content:''; position:absolute; left:10%; top:15%; width:35%; height:22%; background:#a9d1b0; border-radius:6px; }
-.mini-map::after { content:''; position:absolute; right:8%; bottom:10%; width:40%; height:30%; background:#b7c9de; border-radius:6px; }
-.map-pin { position:absolute; width:18px; height:18px; transform:translate(-50%,-100%); pointer-events:none; }
-.map-pin svg { width:18px !important; height:18px !important; }
-.location-text { padding:8px 10px; font-size:13.5px; color:#333; border-top:1px solid #f0f0f0; }
+.mini-map { height:128px; position:relative; overflow:hidden; background:#e8ecef; }
+.location-map-frame { width:100%; height:100%; border:0; display:block; pointer-events:none; }
+.location-map-shield { position:absolute; inset:0; z-index:2; }
+.location-map-fallback { height:100%; display:flex; align-items:center; justify-content:center; color:#999; font-size:13px; }
+.location-text { padding:9px 11px; font-size:13.5px; color:#222; border-top:1px solid #f0f0f0; }
+.location-text strong { display:block; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.location-text small { display:block; margin-top:3px; color:#999; font-size:10.5px; font-variant-numeric:tabular-nums; }
+.gps-map-wrap { height:220px; border-radius:10px; overflow:hidden; background:#e8ecef; margin-bottom:10px; }
+.gps-map-wrap iframe { width:100%; height:100%; border:0; display:block; }
+.gps-status { color:#888; font-size:13px; padding:2px 2px 10px; }
+.gps-btn { background:#fff; color:#576b95; border-radius:10px; min-height:46px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; cursor:pointer; }
+.gps-btn.disabled { opacity:.55; pointer-events:none; }
+.location-coords { color:#999; font-size:12px; text-align:center; padding:9px 0; font-variant-numeric:tabular-nums; }
 
 .input-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f7f7f7; border-top:0.5px solid #dcdcdc; padding-bottom:calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; }
 .input-bar input { flex:1; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
@@ -787,6 +791,7 @@ svg { max-width:100%; max-height:100%; }
         <div class="shield-num" id="shieldNum">0</div>
         <div class="shield-cards" id="shieldCardsView"></div>
       </div>
+      <div class="menu-row" id="messageRecallBtn" style="color:#fa5151;margin-top:12px;">撤回消息</div>
       <div class="sheet-close" id="sheetClose">关闭</div>
     </div>
   </div>
@@ -938,18 +943,14 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 地图选点：发送位置 -->
+  <!-- GPS：发送位置 -->
   <div class="mask hidden" id="locationPickerSheet">
     <div class="sheet">
       <div class="sheet-title">发送位置</div>
-      <div class="map-picker-canvas" id="mapPickerCanvas">
-        <div class="block-a"></div><div class="block-b"></div><div class="block-c"></div>
-        <div class="map-picker-pin hidden" id="mapPickerPin">
-          <svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>
-        </div>
-      </div>
-      <div class="preset-chips" id="presetChips"></div>
-      <div class="form-row col" style="margin-top:12px;"><label>位置名称</label><input id="locationNameInput" placeholder="点击地图或选择上方地点"></div>
+      <div class="gps-map-wrap"><iframe id="locationPickerMap" referrerpolicy="no-referrer" title="GPS 地图"></iframe></div>
+      <div class="gps-status" id="locationGpsStatus">准备定位…</div>
+      <div class="gps-btn" id="locationGpsBtn">重新定位</div>
+      <div class="form-row col"><label>位置名称</label><input id="locationNameInput" placeholder="我的位置"></div>
       <div class="sheet-actions">
         <div class="sheet-btn cancel" id="locationPickerCancel">取消</div>
         <div class="sheet-btn confirm" id="locationPickerConfirm">发送位置</div>
@@ -957,16 +958,13 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 查看位置 -->
+  <!-- 查看 GPS 位置 -->
   <div class="mask hidden" id="viewLocationSheet">
     <div class="sheet">
       <div class="sheet-title" id="viewLocationTitle">位置</div>
-      <div class="map-picker-canvas" id="viewLocationCanvas" style="cursor:default;">
-        <div class="block-a"></div><div class="block-b"></div><div class="block-c"></div>
-        <div class="map-picker-pin" id="viewLocationPin">
-          <svg viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" fill="#fa5151" stroke="#fff" stroke-width="1"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>
-        </div>
-      </div>
+      <div class="gps-map-wrap"><iframe id="viewLocationMap" referrerpolicy="no-referrer" title="位置地图"></iframe></div>
+      <div class="location-coords" id="viewLocationCoords"></div>
+      <div class="menu-row" id="viewLocationOpenMaps" style="color:#576b95;">在地图 App 中打开</div>
       <div class="sheet-close" id="viewLocationClose">关闭</div>
     </div>
   </div>
@@ -1063,10 +1061,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=25" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=25" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=25" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=25" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=25" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=26" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=26" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=26" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=26" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=26" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
