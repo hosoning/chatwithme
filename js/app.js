@@ -243,7 +243,7 @@ function runFaceIdSimulation(onSuccess) {
 }
 
 /* ============ 朋友圈：纯AI自由文本生成（不使用字卡） ============ */
-const MOMENT_FALLBACK_PHRASES = ["今天心情不错～","想找人聊聊","忙里偷闲的一天","有点想你们了","日子过得很快呀","今天也要加油","晴朗的一天，心情也跟着好起来","有些事想不明白，但也不纠结了","偶尔emo一下，很快就好","生活总有惊喜"];
+const MOMENT_FALLBACK_PHRASES = ["开完会才发现咖啡一口没动。","今天的晚霞只出现了几分钟。","绕了点路，意外买到刚出炉的面包。","把拖了很久的事做完了，舒服。","外面风很大，回家再说。","这个时间的街上居然还挺热闹。","最近在循环同一首歌。","冰块化得比我喝得快。","晚饭随便吃一点。","难得准时下班。"];
 
 async function generateFreeformMomentText(cards, persona, context) {
   const cardDesc = (cards || []).map(c => `${c.name}(${c.reversed?'逆位':'正位'}):${c.meaning}`).join('; ');
@@ -728,13 +728,13 @@ function openTarotSheet(msgId) {
   if (fillEl) fillEl.style.width = shield + '%';
   if (numEl) numEl.textContent = shield;
   const recallBtn = document.getElementById('messageRecallBtn');
-  if (recallBtn) recallBtn.style.display = msg.recalled ? 'none' : '';
+  if (recallBtn) recallBtn.style.display = (!msg.recalled && msg.from === 'me') ? '' : 'none';
   document.getElementById('tarotSheet')?.classList.remove('hidden');
 }
 function recallActiveMessage() {
   const chatId = state.activeChatId;
   const msg = (state.chats[chatId] || []).find(m => String(m.id) === String(activeMessageActionId));
-  if (!msg || msg.recalled) return;
+  if (!msg || msg.recalled || msg.from !== 'me') return;
   msg.recalled = true;
   msg.recalledAt = Date.now();
   persist();
@@ -1195,8 +1195,10 @@ async function aiAutoPostMoment() {
   if (!cfg.autoMoment || !state.contacts.length) return;
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   const cards = drawCards(3);
-  const content = await generateFreeformMomentText(cards, contact.persona, '发一条真实自然的朋友圈动态');
-  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content, image: null, cards, ts: Date.now(), comments: [] });
+  const momentScenes = ['刚结束一天的工作，记录一个很小的瞬间','路上看到或遇到了一件具体的小事','分享刚吃过或正在喝的东西','晚上随手发一句不刻意煽情的话','周末的真实生活碎片'];
+  const momentPlaces = ['', '', '', '公司', '回家路上', '附近'];
+  const content = await generateFreeformMomentText(cards, contact.persona, momentScenes[secureRandomInt(momentScenes.length)] + '；不要鸡汤、不要问候大家、不要使用“今天也要加油”一类模板句');
+  state.moments.unshift({ id: Date.now(), contactId: contact.id, name: contact.name, avatar: contact.avatar, content, image: null, cards, location: momentPlaces[secureRandomInt(momentPlaces.length)], likes: [], ts: Date.now(), comments: [] });
   persist(); renderMoments();
 }
 async function aiAutoChangeAvatar() {
@@ -1237,58 +1239,105 @@ async function aiCommentOnUserMoment(momentId, contactId) {
   const cards = drawCards(3);
   const text = await generateFreeformMomentText(cards, contact.persona, `看到我发的朋友圈内容是："${moment.content}"，请给出一句简短真实的评论`);
   moment.comments = moment.comments || [];
+  moment.likes = moment.likes || [];
+  if (secureRandomInt(100) < 70 && !moment.likes.includes(String(contact.id))) moment.likes.push(String(contact.id));
   moment.comments.push({ from: contact.name, text, cards, contactId: contact.id });
   persist();
   renderMoments();
 }
 
-/* ============ 朋友圈展示/发布（含置顶 + 详情页跳转） ============ */
+/* ============ 朋友圈展示：微信式点赞 / 评论操作 ============ */
+function momentLikeName(id) {
+  if (String(id) === 'me') return state.myName || '我';
+  return getContactById(id)?.name || '';
+}
+function toggleMomentLike(momentId) {
+  const m = state.moments.find(x => x.id === momentId);
+  if (!m) return;
+  m.likes = m.likes || [];
+  const i = m.likes.map(String).indexOf('me');
+  if (i >= 0) m.likes.splice(i, 1); else m.likes.push('me');
+  persist(); renderMoments();
+}
+function deleteOwnMoment(momentId) {
+  const m = state.moments.find(x => x.id === momentId);
+  if (!m || m.contactId !== 'me') return;
+  if (!confirm('删除这条朋友圈？')) return;
+  state.moments = state.moments.filter(x => x.id !== momentId);
+  persist(); renderMoments();
+}
+function renderMomentSocial(m) {
+  const likes = (m.likes || []).map(momentLikeName).filter(Boolean);
+  const comments = m.comments || [];
+  if (!likes.length && !comments.length) return '';
+  return `<div class="moment-social">
+    ${likes.length ? `<div class="moment-likes"><span class="moment-heart">♡</span>${likes.map(escapeHtml).join('，')}</div>` : ''}
+    ${comments.length ? `<div class="comment-list">${comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName || '我') : c.from)}</b><span>：${escapeHtml(c.text)}</span></div>`).join('')}</div>` : ''}
+  </div>`;
+}
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
-  const sorted = [...state.moments].sort((a, b) => ((b.pinned?1:0) - (a.pinned?1:0)));
-  box.innerHTML = sorted.map(m => `
-    <div class="moment-item" data-id="${m.id}">
+  const sorted = [...state.moments].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || b.ts-a.ts);
+  box.innerHTML = sorted.map(m => {
+    const liked = (m.likes || []).map(String).includes('me');
+    return `<div class="moment-item" data-id="${m.id}">
       ${avatarHtml(m.avatar, m.name, 44)}
       <div class="moment-body">
         <div class="moment-header" data-detail="${m.id}">
-          <div class="mname">${escapeHtml(m.name)} ${m.pinned ? '<span class="pin-badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z" fill="#999"/></svg>置顶</span>' : ''}</div>
+          <div class="mname">${escapeHtml(m.name)}</div>
           ${m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : ''}
-          ${m.image ? `<img src="${m.image}" class="moment-image">` : ''}
+          ${m.image ? `<img src="${m.image}" class="moment-image" loading="lazy">` : ''}
         </div>
-        <div class="time-row"><span class="time">${formatMomentFeedTime(m.ts)}</span>
-          <span>
-            ${m.contactId === 'me' ? `<span class="comment-btn" data-toggle-pin="${m.id}" style="margin-right:6px;">${m.pinned ? '取消置顶' : '置顶'}</span>` : ''}
-            <span class="comment-btn" data-toggle-comment="${m.id}">评论</span>
-          </span>
+        ${m.location ? `<div class="moment-location">${escapeHtml(m.location)}</div>` : ''}
+        <div class="time-row">
+          <span class="time">${formatMomentFeedTime(m.ts)}${m.contactId === 'me' ? `<button class="moment-delete" data-delete-moment="${m.id}">删除</button>` : ''}</span>
+          <div class="moment-action-wrap">
+            <button class="moment-action-trigger" data-moment-menu="${m.id}" aria-label="朋友圈操作">··</button>
+            <div class="moment-action-menu hidden" data-moment-actions="${m.id}">
+              <button data-like-moment="${m.id}"><span>♡</span>${liked ? '取消' : '赞'}</button>
+              <button data-comment-moment="${m.id}"><span>◯</span>评论</button>
+            </div>
+          </div>
         </div>
-        ${(m.comments?.length) ? `<div class="comment-list">${m.comments.map(c => `<div class="comment-line"><b>${escapeHtml(c.from === 'me' ? (state.myName||'我') : c.from)}：</b>${escapeHtml(c.text)}</div>`).join('')}</div>` : ''}
-        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论一下..." data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
+        ${renderMomentSocial(m)}
+        <div class="comment-input-row hidden" data-comment-row="${m.id}"><input placeholder="评论" data-comment-input="${m.id}"><button data-comment-submit="${m.id}">发送</button></div>
       </div>
-    </div>`).join('') || `<div style="padding:40px;text-align:center;color:#999;">还没有朋友圈动态</div>`;
+    </div>`;
+  }).join('') || '<div class="moments-empty">还没有动态</div>';
 }
 function bindMomentsDelegation() {
   const box = document.getElementById('momentsList');
   if (!box) return;
   box.addEventListener('click', e => {
-    const detailEl = e.target.closest('[data-detail]');
-    if (detailEl) { openMomentDetail(Number(detailEl.dataset.detail)); return; }
-    const pinToggle = e.target.closest('[data-toggle-pin]');
-    if (pinToggle) {
-      const id = Number(pinToggle.dataset.togglePin);
-      const m = state.moments.find(x => x.id === id);
-      if (m) { m.pinned = !m.pinned; persist(); renderMoments(); }
+    const menuBtn=e.target.closest('[data-moment-menu]');
+    if(menuBtn){
+      e.stopPropagation();
+      const id=menuBtn.dataset.momentMenu;
+      box.querySelectorAll('[data-moment-actions]').forEach(x=>x.classList.toggle('hidden',x.dataset.momentActions!==id||!x.classList.contains('hidden')));
       return;
     }
-    const toggle = e.target.closest('[data-toggle-comment]');
-    if (toggle) { box.querySelector(`[data-comment-row="${toggle.dataset.toggleComment}"]`)?.classList.toggle('hidden'); return; }
-    const submit = e.target.closest('[data-comment-submit]');
-    if (submit) {
-      const id = Number(submit.dataset.commentSubmit);
-      const input = box.querySelector(`[data-comment-input="${id}"]`);
-      if (input?.value.trim()) { aiReplyToMoment(id, input.value.trim()); input.value = ''; }
+    const like=e.target.closest('[data-like-moment]');
+    if(like){toggleMomentLike(Number(like.dataset.likeMoment));return;}
+    const comment=e.target.closest('[data-comment-moment]');
+    if(comment){
+      const row=box.querySelector(`[data-comment-row="${comment.dataset.commentMoment}"]`);
+      row?.classList.remove('hidden'); row?.querySelector('input')?.focus();
+      box.querySelectorAll('[data-moment-actions]').forEach(x=>x.classList.add('hidden'));
+      return;
     }
+    const del=e.target.closest('[data-delete-moment]');
+    if(del){deleteOwnMoment(Number(del.dataset.deleteMoment));return;}
+    const submit=e.target.closest('[data-comment-submit]');
+    if(submit){
+      const id=Number(submit.dataset.commentSubmit), input=box.querySelector(`[data-comment-input="${id}"]`);
+      if(input?.value.trim()){aiReplyToMoment(id,input.value.trim());input.value='';}
+      return;
+    }
+    const detail=e.target.closest('[data-detail]');
+    if(detail) openMomentDetail(Number(detail.dataset.detail));
   });
+  document.addEventListener('click',e=>{if(!e.target.closest('.moment-action-wrap'))box.querySelectorAll('[data-moment-actions]').forEach(x=>x.classList.add('hidden'));});
 }
 
 /* ============ 朋友圈详情页（含封面+日期） ============ */
@@ -1350,7 +1399,7 @@ function bindPostMoment() {
   document.getElementById('postMomentConfirm')?.addEventListener('click', () => {
     const text = document.getElementById('postMomentText').value.trim();
     if (!text && !_postMomentImage) { alert('写点什么或加张图吧'); return; }
-    const moment = { id: Date.now(), contactId: 'me', name: state.myName || '我', avatar: state.myAvatar, content: text, image: _postMomentImage, ts: Date.now(), comments: [] };
+    const moment = { id: Date.now(), contactId: 'me', name: state.myName || '我', avatar: state.myAvatar, content: text, image: _postMomentImage, location: '', likes: [], ts: Date.now(), comments: [] };
     state.moments.unshift(moment);
     persist(); renderMoments();
     document.getElementById('postMomentSheet').classList.add('hidden');
@@ -1865,117 +1914,118 @@ function bindWallet() {
   });
 }
 
-/* ============ 小程式：角色奶茶点单 ============ */
+/* ============ 小程式：沐茶 MUTEA 点单 ============ */
 const TEA_MENU = [
-  {name:'珍珠奶茶', price:15}, {name:'四季春奶绿', price:12}, {name:'芋泥啵啵', price:18},
-  {name:'烤黑糖鲜奶', price:16}, {name:'茉莉花茶', price:10}
+  {id:'grape',category:'人气推荐',name:'多肉葡萄',desc:'巨峰葡萄果肉 · 清爽绿妍茶底',price:29,sold:823,img:'https://images.unsplash.com/photo-1572490122747-3968b75cc699?auto=format&fit=crop&w=320&q=80'},
+  {id:'brown',category:'人气推荐',name:'黑糖波波牛乳',desc:'黑糖珍珠 · 鲜牛乳 · 不含茶',price:24,sold:615,img:'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=320&q=80'},
+  {id:'jasmine',category:'轻乳茶',name:'茉莉轻乳茶',desc:'茉莉绿茶 · 云顶轻乳',price:19,sold:492,img:'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=320&q=80'},
+  {id:'oolong',category:'轻乳茶',name:'桂花乌龙轻乳茶',desc:'桂花乌龙 · 鲜奶 · 微咸奶盖',price:22,sold:381,img:'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=320&q=80'},
+  {id:'lemon',category:'清爽果茶',name:'手打柠檬茶',desc:'香水柠檬 · 原叶红茶',price:18,sold:704,img:'https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&w=320&q=80'},
+  {id:'peach',category:'清爽果茶',name:'白桃茉莉',desc:'白桃果肉 · 茉莉绿茶',price:21,sold:336,img:'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?auto=format&fit=crop&w=320&q=80'}
 ];
-let _teaDraft = { contactId:null, drinkIndex:null, method:'pickup', address:'' };
-let _teaTrackTimers = [];
+let _teaDraft={contactId:null,cart:{},method:'delivery',address:'',sugar:'少糖',ice:'少冰',note:''};
+let _teaTrackTimers=[];
 
-function bindMiniPrograms() {
-  document.getElementById('rowMiniPrograms')?.addEventListener('click', () => pushPage('page-miniprograms'));
-  document.getElementById('backFromMiniPrograms')?.addEventListener('click', () => popPage());
-  document.getElementById('miniAppTea')?.addEventListener('click', () => openTeaOrder());
+function bindMiniPrograms(){
+  document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>pushPage('page-miniprograms'));
+  document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());
+  document.getElementById('miniAppTea')?.addEventListener('click',openTeaOrder);
 }
-function openTeaOrder() {
-  _teaDraft = { contactId:null, drinkIndex:null, method:'pickup', address: safeGetItem(TEA_ADDRESS_KEY, '') || '' };
+function teaCartCount(){return Object.values(_teaDraft.cart).reduce((a,b)=>a+b,0);}
+function teaSubtotal(){return TEA_MENU.reduce((sum,p)=>sum+p.price*(_teaDraft.cart[p.id]||0),0);}
+function teaDeliveryFee(){return _teaDraft.method==='delivery'&&teaCartCount()&&teaSubtotal()<38?6:0;}
+function teaTotal(){return teaSubtotal()+teaDeliveryFee();}
+function renderTeaContacts(){
+  const box=document.getElementById('teaContactList'); if(!box)return;
+  box.innerHTML=state.contacts.map(c=>`<button class="tea-contact-item ${String(_teaDraft.contactId)===String(c.id)?'selected':''}" data-cid="${c.id}">${avatarHtml(c.avatar,c.name,34)}<span>${escapeHtml(c.name)}</span><small>收货人</small></button>`).join('')||'<div class="tea-empty">请先添加联系人</div>';
+}
+function renderTeaMenu(category='人气推荐'){
+  document.querySelectorAll('[data-tea-category]').forEach(x=>x.classList.toggle('selected',x.dataset.teaCategory===category));
+  const products=TEA_MENU.filter(p=>p.category===category);
+  document.getElementById('teaMenuList').innerHTML=products.map(p=>{
+    const qty=_teaDraft.cart[p.id]||0;
+    return `<article class="tea-product">
+      <img src="${p.img}" alt="${escapeHtml(p.name)}" loading="lazy">
+      <div class="tea-product-info"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.desc)}</p><small>月售 ${p.sold}+</small>
+      <div class="tea-product-bottom"><strong>¥${p.price}</strong><div class="tea-qty">${qty?`<button data-tea-minus="${p.id}">−</button><span>${qty}</span>`:''}<button class="plus" data-tea-plus="${p.id}">＋</button></div></div></div>
+    </article>`;
+  }).join('');
+}
+function updateTeaTotal(){
+  const total=teaTotal(),count=teaCartCount();
+  document.getElementById('teaTotalAmount').textContent=`¥${total.toFixed(2)}`;
+  document.getElementById('teaCartCount').textContent=String(count);
+  document.getElementById('teaCartCount').classList.toggle('hidden',!count);
+  document.getElementById('teaGoPayBtn').disabled=!count;
+  return total;
+}
+function openTeaOrder(){
+  _teaDraft={contactId:state.contacts[0]?.id||null,cart:{},method:'delivery',address:safeGetItem(TEA_ADDRESS_KEY,'')||'',sugar:'少糖',ice:'少冰',note:''};
   document.getElementById('teaOrderForm').classList.remove('hidden');
   document.getElementById('teaOrderTracking').classList.add('hidden');
   document.getElementById('teaBottomBar').classList.remove('hidden');
-  document.getElementById('teaAddressInput').value = _teaDraft.address;
-  document.querySelectorAll('.tea-method-chip').forEach(c => c.classList.toggle('selected', c.dataset.method === 'pickup'));
-  document.getElementById('teaAddressWrap').classList.add('hidden');
-  const contactBox = document.getElementById('teaContactList');
-  contactBox.innerHTML = state.contacts.map(c => `<div class="tea-contact-item" data-cid="${c.id}"><span>${escapeHtml(c.name)}</span></div>`).join('') || '<div style="color:#999;font-size:13px;padding:10px;">还没有角色，请先添加角色</div>';
-  const menuBox = document.getElementById('teaMenuList');
-  menuBox.innerHTML = TEA_MENU.map((d,i) => `<div class="tea-menu-item" data-idx="${i}"><span class="tea-name">${d.name}</span><span class="tea-price">¥${d.price}</span></div>`).join('');
-  updateTeaTotal();
-  pushPage('page-teaorder');
+  document.getElementById('teaAddressInput').value=_teaDraft.address;
+  document.getElementById('teaNoteInput').value='';
+  document.querySelectorAll('[data-tea-sugar]').forEach(x=>x.classList.toggle('selected',x.dataset.teaSugar==='少糖'));
+  document.querySelectorAll('[data-tea-ice]').forEach(x=>x.classList.toggle('selected',x.dataset.teaIce==='少冰'));
+  document.querySelectorAll('.tea-method-chip').forEach(x=>x.classList.toggle('selected',x.dataset.method==='delivery'));
+  document.getElementById('teaAddressWrap').classList.remove('hidden');
+  document.getElementById('teaCategoryList').innerHTML=['人气推荐','轻乳茶','清爽果茶'].map((x,i)=>`<button data-tea-category="${x}" class="${i===0?'selected':''}">${x}</button>`).join('');
+  renderTeaContacts(); renderTeaMenu(); updateTeaTotal(); pushPage('page-teaorder');
 }
-function updateTeaTotal() {
-  let total = 0;
-  if (_teaDraft.drinkIndex !== null) total += TEA_MENU[_teaDraft.drinkIndex].price;
-  if (_teaDraft.method === 'delivery') total += 3;
-  document.getElementById('teaTotalAmount').textContent = `¥${total.toFixed(2)}`;
-  return total;
+function changeTeaQty(id,delta){
+  _teaDraft.cart[id]=Math.max(0,(_teaDraft.cart[id]||0)+delta);
+  if(!_teaDraft.cart[id])delete _teaDraft.cart[id];
+  const active=document.querySelector('[data-tea-category].selected')?.dataset.teaCategory||'人气推荐';
+  renderTeaMenu(active);updateTeaTotal();
 }
-function bindTeaOrder() {
-  document.getElementById('backFromTeaOrder')?.addEventListener('click', () => popPage());
-  document.getElementById('teaContactList')?.addEventListener('click', e => {
-    const item = e.target.closest('[data-cid]'); if (!item) return;
-    _teaDraft.contactId = item.dataset.cid;
-    document.querySelectorAll('.tea-contact-item').forEach(x => x.classList.toggle('selected', x === item));
-  });
-  document.getElementById('teaMenuList')?.addEventListener('click', e => {
-    const item = e.target.closest('[data-idx]'); if (!item) return;
-    _teaDraft.drinkIndex = Number(item.dataset.idx);
-    document.querySelectorAll('.tea-menu-item').forEach(x => x.classList.toggle('selected', x === item));
-    updateTeaTotal();
-  });
-  document.getElementById('teaMethodRow')?.addEventListener('click', e => {
-    const chip = e.target.closest('[data-method]'); if (!chip) return;
-    _teaDraft.method = chip.dataset.method;
-    document.querySelectorAll('.tea-method-chip').forEach(c => c.classList.toggle('selected', c === chip));
-    document.getElementById('teaAddressWrap').classList.toggle('hidden', _teaDraft.method !== 'delivery');
-    updateTeaTotal();
-  });
-  document.getElementById('teaGoPayBtn')?.addEventListener('click', () => {
-    if (!_teaDraft.contactId) { alert('请选择送给谁'); return; }
-    if (_teaDraft.drinkIndex === null) { alert('请选择饮品'); return; }
-    if (_teaDraft.method === 'delivery') {
-      _teaDraft.address = document.getElementById('teaAddressInput').value.trim();
-      if (!_teaDraft.address) { alert('请填写配送地址'); return; }
-      safeSetItem(TEA_ADDRESS_KEY, _teaDraft.address);
+function bindTeaOrder(){
+  document.getElementById('backFromTeaOrder')?.addEventListener('click',()=>popPage());
+  document.getElementById('teaCategoryList')?.addEventListener('click',e=>{const b=e.target.closest('[data-tea-category]');if(b)renderTeaMenu(b.dataset.teaCategory);});
+  document.getElementById('teaMenuList')?.addEventListener('click',e=>{const plus=e.target.closest('[data-tea-plus]'),minus=e.target.closest('[data-tea-minus]');if(plus)changeTeaQty(plus.dataset.teaPlus,1);if(minus)changeTeaQty(minus.dataset.teaMinus,-1);});
+  document.getElementById('teaContactList')?.addEventListener('click',e=>{const item=e.target.closest('[data-cid]');if(item){_teaDraft.contactId=item.dataset.cid;renderTeaContacts();}});
+  document.getElementById('teaMethodRow')?.addEventListener('click',e=>{const chip=e.target.closest('[data-method]');if(!chip)return;_teaDraft.method=chip.dataset.method;document.querySelectorAll('.tea-method-chip').forEach(c=>c.classList.toggle('selected',c===chip));document.getElementById('teaAddressWrap').classList.toggle('hidden',_teaDraft.method!=='delivery');updateTeaTotal();});
+  document.querySelectorAll('[data-tea-sugar]').forEach(x=>x.addEventListener('click',()=>{_teaDraft.sugar=x.dataset.teaSugar;document.querySelectorAll('[data-tea-sugar]').forEach(y=>y.classList.toggle('selected',y===x));}));
+  document.querySelectorAll('[data-tea-ice]').forEach(x=>x.addEventListener('click',()=>{_teaDraft.ice=x.dataset.teaIce;document.querySelectorAll('[data-tea-ice]').forEach(y=>y.classList.toggle('selected',y===x));}));
+  document.getElementById('teaGoPayBtn')?.addEventListener('click',()=>{
+    if(!teaCartCount()){alert('请先选择饮品');return;}
+    if(!_teaDraft.contactId){alert('请选择收货人');return;}
+    if(_teaDraft.method==='delivery'){
+      _teaDraft.address=document.getElementById('teaAddressInput').value.trim();
+      if(!_teaDraft.address){alert('请填写配送地址');return;}
+      safeSetItem(TEA_ADDRESS_KEY,_teaDraft.address);
     }
-    const total = updateTeaTotal();
-    document.getElementById('teaPayAmount').textContent = `¥${total.toFixed(2)}`;
-    document.getElementById('teaPayCurrentBalance').textContent = `¥${getWallet().balance.toFixed(2)}`;
+    _teaDraft.note=document.getElementById('teaNoteInput').value.trim();
+    document.getElementById('teaPayAmount').textContent=`¥${teaTotal().toFixed(2)}`;
+    document.getElementById('teaPayCurrentBalance').textContent=`¥${getWallet().balance.toFixed(2)}`;
+    document.getElementById('teaPaySummary').textContent=`${teaCartCount()} 件商品 · ${_teaDraft.method==='delivery'?'配送':'到店自取'}`;
     pushPage('page-teapay');
   });
-  document.getElementById('backFromTeaPay')?.addEventListener('click', () => popPage());
-  document.getElementById('teaConfirmPayBtn')?.addEventListener('click', () => {
-    if (_walletActionBusy) return;
-    const total = updateTeaTotal();
-    const w = getWallet();
-    if (w.balance < total) { alert('余额不足，请先充值'); return; }
-    _walletActionBusy = true;
-    runFaceIdSimulation(() => {
-      const w2 = getWallet();
-      if (w2.balance < total) { _walletActionBusy = false; alert('余额不足，请先充值'); popPage(); return; }
-      w2.balance -= total;
-      const drinkName = TEA_MENU[_teaDraft.drinkIndex].name;
-      w2.transactions.push({ title: `奶茶订单-${drinkName}`, amount: -total, ts: Date.now() });
-      saveWallet(w2);
-      _walletActionBusy = false;
-      popPage();
-      startTeaTracking(drinkName);
+  document.getElementById('backFromTeaPay')?.addEventListener('click',()=>popPage());
+  document.getElementById('teaConfirmPayBtn')?.addEventListener('click',()=>{
+    if(_walletActionBusy)return;
+    const total=teaTotal(),w=getWallet();
+    if(w.balance<total){alert('余额不足，请先充值');return;}
+    _walletActionBusy=true;
+    runFaceIdSimulation(()=>{
+      const w2=getWallet();if(w2.balance<total){_walletActionBusy=false;alert('余额不足，请先充值');popPage();return;}
+      const items=TEA_MENU.filter(p=>_teaDraft.cart[p.id]).map(p=>`${p.name}×${_teaDraft.cart[p.id]}`);
+      w2.balance-=total;w2.transactions.push({title:`沐茶订单 · ${items.join('、')}`,amount:-total,ts:Date.now()});saveWallet(w2);
+      _walletActionBusy=false;popPage();startTeaTracking(items);
     });
   });
-  document.getElementById('teaOrderAgainBtn')?.addEventListener('click', () => openTeaOrder());
+  document.getElementById('teaOrderAgainBtn')?.addEventListener('click',openTeaOrder);
 }
-function startTeaTracking(drinkName) {
+function startTeaTracking(items){
   document.getElementById('teaOrderForm').classList.add('hidden');
   document.getElementById('teaBottomBar').classList.add('hidden');
   document.getElementById('teaOrderTracking').classList.remove('hidden');
-  const steps = ['已下单', '制作中', _teaDraft.method === 'delivery' ? '派送中' : '取餐中', '已完成'];
-  const stepsBox = document.getElementById('teaTrackSteps');
-  function renderSteps(activeIdx) {
-    stepsBox.innerHTML = steps.map((s,i) => `<div class="tea-track-step ${i<activeIdx?'done':''} ${i===activeIdx?'active':''}"><div class="tea-track-dot"></div><div class="tea-track-label">${s}</div></div>`).join('');
-  }
-  renderSteps(0);
-  _teaTrackTimers.forEach(t => clearTimeout(t));
-  _teaTrackTimers = [];
-  _teaTrackTimers.push(setTimeout(() => renderSteps(1), 2500));
-  _teaTrackTimers.push(setTimeout(() => renderSteps(2), 5000));
-  _teaTrackTimers.push(setTimeout(async () => {
-    renderSteps(3);
-    const contactId = _teaDraft.contactId;
-    const contact = getContactById(contactId);
-    if (contact) {
-      await replyWithTarot(String(contactId), String(contactId), `(我送的奶茶「${drinkName}」到了，请开心地表达感谢)`, contact.persona);
-    }
-  }, 8000));
+  document.getElementById('teaOrderSummary').innerHTML=`<strong>沐茶 MUTEA</strong><span>${escapeHtml(items.join('、'))}</span><small>${escapeHtml(_teaDraft.sugar)} · ${escapeHtml(_teaDraft.ice)}${_teaDraft.note?' · '+escapeHtml(_teaDraft.note):''}</small>`;
+  const steps=['商家已接单','饮品制作中',_teaDraft.method==='delivery'?'骑手配送中':'等待取餐','订单已完成'];
+  const box=document.getElementById('teaTrackSteps');
+  const render=i=>box.innerHTML=steps.map((s,n)=>`<div class="tea-track-step ${n<i?'done':''} ${n===i?'active':''}"><div class="tea-track-dot"></div><div class="tea-track-label">${s}<small>${n===i?'进行中':''}</small></div></div>`).join('');
+  render(0);_teaTrackTimers.forEach(clearTimeout);_teaTrackTimers=[];
+  [2500,5000,8000].forEach((ms,i)=>_teaTrackTimers.push(setTimeout(async()=>{render(i+1);if(i===2){const c=getContactById(_teaDraft.contactId);if(c)await replyWithTarot(String(c.id),String(c.id),`(我送的奶茶“${items.join('、')}”到了，请自然地回应)`,c.persona);}},ms)));
 }
 
 /* ============ 导出 / 导入 ============ */

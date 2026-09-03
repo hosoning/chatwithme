@@ -107,28 +107,39 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .row-icon svg { width:18px !important; height:18px !important; }
 
 .moments-scroll { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; background:#fff; }
-.moments-cover-wrap { position:relative; margin-bottom:36px; flex-shrink:0; }
-.moments-cover { height:230px; background:linear-gradient(135deg,#3a6186,#89253e); background-size:cover; background-position:center; cursor:pointer; touch-action:manipulation; }
-.moments-profile { position:absolute; right:16px; bottom:-30px; display:flex; align-items:center; gap:10px; z-index:5; }
-.moments-my-name { color:#fff; font-size:16px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,0.5); }
-.moments-my-avatar { width:64px; height:64px; border-radius:7px; box-shadow:0 0 0 2px #fff, 0 2px 8px rgba(0,0,0,0.2); cursor:pointer; flex-shrink:0; touch-action:manipulation; }
+.moments-cover-wrap { position:relative; margin-bottom:38px; flex-shrink:0; }
+.moments-cover { height:250px; background:#45484d url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80') center/cover no-repeat; cursor:pointer; touch-action:manipulation; }
+.moments-profile { position:absolute; right:16px; bottom:-32px; display:flex; align-items:center; gap:11px; z-index:5; }
+.moments-my-name { color:#fff; font-size:17px; font-weight:600; text-shadow:0 1px 5px rgba(0,0,0,.65); }
+.moments-my-avatar { width:68px; height:68px; border-radius:6px; box-shadow:0 0 0 2px #fff; cursor:pointer; flex-shrink:0; touch-action:manipulation; }
 .moments-list { position:relative; z-index:1; background:#fff; padding-bottom:20px; }
-.moment-item { padding:16px 15px; border-bottom:0.5px solid #f0f0f0; display:flex; gap:11px; align-items:flex-start; }
+.moment-item { padding:15px 13px 13px; border-bottom:.5px solid #e9e9e9; display:flex; gap:10px; align-items:flex-start; }
 .moment-header { cursor:pointer; touch-action:manipulation; }
-.moment-item .avatar { width:44px; height:44px; font-size:17px; border-radius:6px; flex-shrink:0; }
+.moment-item .avatar { width:42px!important; height:42px!important; font-size:16px; border-radius:5px; flex-shrink:0; }
 .moment-body { flex:1; min-width:0; }
-.moment-item .mname { color:#576b95; font-size:15.5px; font-weight:600; }
-.moment-item .content { font-size:15.5px; margin-top:5px; color:#0a0a0a; line-height:1.5; word-break:break-word; }
-.moment-image { width:100%; max-width:220px; border-radius:6px; margin-top:8px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
-.moment-item .time-row { display:flex; justify-content:space-between; align-items:center; margin-top:9px; }
-.moment-item .time { font-size:12.5px; color:#b0b0b0; }
-.comment-btn { font-size:12.5px; color:#576b95; background:#f0f0f0; padding:4px 11px; border-radius:4px; cursor:pointer; touch-action:manipulation; }
-.comment-list { margin-top:9px; background:#f7f7f7; border-radius:6px; padding:8px 10px; font-size:13.5px; }
-.comment-line { padding:3px 0; line-height:1.5; }
+.moment-item .mname { color:#576b95; font-size:15px; font-weight:600; line-height:1.35; }
+.moment-item .content { font-size:15.5px; margin-top:4px; color:#111; line-height:1.48; word-break:break-word; white-space:pre-wrap; }
+.moment-image { width:auto; max-width:min(245px,100%); max-height:300px; object-fit:cover; border-radius:2px; margin-top:8px; display:block; }
+.moment-location { color:#576b95; font-size:12px; margin-top:7px; }
+.moment-item .time-row { display:flex; justify-content:space-between; align-items:center; margin-top:8px; min-height:24px; }
+.moment-item .time { font-size:12px; color:#999; }
+.moment-delete { border:0;background:transparent;color:#576b95;font-size:12px;margin-left:10px;padding:0; }
+.moment-action-wrap { position:relative; }
+.moment-action-trigger { border:0;background:#f3f3f3;color:#576b95;border-radius:3px;width:32px;height:20px;font-size:18px;font-weight:700;line-height:12px;letter-spacing:1px; }
+.moment-action-menu { position:absolute;right:38px;top:-7px;height:40px;background:#4c5154;border-radius:5px;display:flex;overflow:hidden;z-index:8;box-shadow:0 3px 10px rgba(0,0,0,.22); }
+.moment-action-menu button { width:76px;border:0;background:transparent;color:#fff;font-size:14px;display:flex;gap:6px;align-items:center;justify-content:center; }
+.moment-action-menu button+button { border-left:.5px solid #707477; }
+.moment-social { background:#f3f3f5;margin-top:7px;border-radius:2px;font-size:13.5px;position:relative; }
+.moment-social::before { content:'';position:absolute;top:-6px;left:9px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:6px solid #f3f3f5; }
+.moment-likes { color:#576b95;padding:7px 9px;border-bottom:.5px solid #dddfe2;line-height:1.35; }
+.moment-heart { font-size:16px;margin-right:5px; }
+.comment-list { padding:5px 9px; font-size:13.5px; }
+.comment-line { padding:2px 0; line-height:1.42; }
 .comment-line b { color:#576b95; font-weight:500; }
-.comment-input-row { display:flex; gap:7px; margin-top:9px; }
-.comment-input-row input { flex:1; border:1px solid #e2e2e2; border-radius:6px; padding:6px 9px; font-size:13.5px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
-.comment-input-row button { background:#07c160; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13.5px; }
+.comment-input-row { display:flex; gap:7px; margin-top:8px; }
+.comment-input-row input { flex:1; border:1px solid #ddd; border-radius:4px; padding:7px 9px; font-size:14px; background:#f7f7f7; user-select:text!important;-webkit-user-select:text!important;-webkit-touch-callout:default!important; }
+.comment-input-row button { background:#07c160;color:#fff;border:0;border-radius:4px;padding:6px 12px;font-size:13.5px; }
+.moments-empty { padding:55px 20px;text-align:center;color:#aaa;font-size:14px; }
 
 .mask { position:absolute; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:99; backdrop-filter:blur(2px); }
 .sheet { background:#fff; border-radius:12px; width:88%; max-height:84%; overflow-y:auto; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,0.25); }
@@ -339,26 +350,29 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .dyn-label { color:#fff; font-size:12px; margin-top:2px; opacity:0; transition:opacity .25s ease .15s; }
 .dyn-island.expanded .dyn-label { opacity:.85; }
 
-/* ===== 小程式 / 奶茶点餐 ===== */
-.tea-menu-item, .tea-contact-item, .tea-method-chip { padding:12px 14px; background:#fff; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border:1.5px solid transparent; cursor:pointer; touch-action:manipulation; }
-.tea-menu-item.selected, .tea-contact-item.selected { border-color:#07c160; background:#f0fbf5; }
-.tea-menu-item .tea-name { font-size:15px; color:#0a0a0a; }
-.tea-menu-item .tea-price { font-size:14px; color:#f7811f; font-weight:600; }
-.tea-method-row { display:flex; gap:10px; margin-bottom:10px; }
-.tea-method-chip { flex:1; text-align:center; justify-content:center; }
-.tea-method-chip.selected { border-color:#07c160; background:#f0fbf5; color:#07c160; }
-.tea-bottom-bar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); background:#fff; border-top:0.5px solid #dcdcdc; flex-shrink:0; }
-.tea-total-amount { font-size:18px; font-weight:700; color:#f7811f; }
-.tea-pay-btn { background:#07c160; color:#fff; border:none; border-radius:8px; padding:11px 26px; font-size:15px; touch-action:manipulation; }
-.tea-track-step { display:flex; align-items:center; gap:12px; padding:14px 4px; }
-.tea-track-dot { width:14px; height:14px; border-radius:50%; background:#ddd; flex-shrink:0; }
-.tea-track-step.done .tea-track-dot { background:#07c160; }
-.tea-track-step.active .tea-track-dot { background:#07c160; box-shadow:0 0 0 4px rgba(7,193,96,.2); }
-.tea-track-label { font-size:15px; color:#333; }
-.tea-track-step.done .tea-track-label, .tea-track-step.active .tea-track-label { color:#0a0a0a; font-weight:500; }
-.mini-app-list-item { display:flex; align-items:center; gap:12px; padding:16px; background:#fff; border-radius:10px; margin:12px; cursor:pointer; touch-action:manipulation; box-shadow:0 1px 3px rgba(0,0,0,.05); }
-.mini-app-icon { width:48px; height:48px; border-radius:8px; background:linear-gradient(135deg,#ffb03d,#ff6a3d); display:flex; align-items:center; justify-content:center; }
-.mini-app-icon svg { width:26px !important; height:26px !important; }
+/* ===== 小程式 / 沐茶 MUTEA ===== */
+.mini-app-list-item{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:10px;margin:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.mini-app-icon{width:48px;height:48px;border-radius:11px;background:#15291f;display:flex;align-items:center;justify-content:center}
+.mini-app-icon svg{width:27px!important;height:27px!important}
+.tea-store-hero{margin:12px;border-radius:14px;overflow:hidden;background:#17281f;color:#fff;position:relative;min-height:126px;padding:20px;box-shadow:0 6px 18px rgba(21,41,31,.2)}
+.tea-store-hero::after{content:'MUTEA';position:absolute;right:-8px;bottom:-15px;font-size:58px;font-weight:800;opacity:.08;letter-spacing:-4px}
+.tea-store-hero h2{font-size:22px;margin-bottom:7px}.tea-store-hero p{font-size:12.5px;opacity:.78;line-height:1.5}.tea-store-badge{display:inline-block;margin-top:12px;padding:4px 8px;background:rgba(255,255,255,.13);border-radius:4px;font-size:11px}
+.tea-method-row{display:flex;background:#eceeed;border-radius:9px;padding:3px;margin:0 12px 12px}
+.tea-method-chip{flex:1;text-align:center;padding:9px;border-radius:7px;color:#666;font-size:14px}
+.tea-method-chip.selected{background:#fff;color:#14291e;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.tea-shop-layout{display:grid;grid-template-columns:86px 1fr;align-items:start;background:#fff;min-height:410px}
+.tea-category-list{background:#f6f6f6;min-height:410px}
+.tea-category-list button{width:100%;border:0;background:transparent;padding:18px 7px;font-size:13px;color:#666;position:relative}
+.tea-category-list button.selected{background:#fff;color:#111;font-weight:600}.tea-category-list button.selected::before{content:'';position:absolute;left:0;top:17px;width:3px;height:18px;background:#1e5139;border-radius:0 3px 3px 0}
+.tea-menu-list{padding:5px 12px 90px}
+.tea-product{display:flex;gap:11px;padding:13px 0;border-bottom:.5px solid #eee}.tea-product>img{width:88px;height:88px;border-radius:8px;object-fit:cover;background:#eee}
+.tea-product-info{flex:1;min-width:0}.tea-product h3{font-size:15px;margin:1px 0 5px}.tea-product p{font-size:11.5px;color:#888;line-height:1.35;min-height:31px}.tea-product small{font-size:10.5px;color:#aaa}
+.tea-product-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:4px}.tea-product-bottom strong{font-size:16px;color:#e24c32}.tea-qty{display:flex;align-items:center;gap:7px}.tea-qty button{width:24px;height:24px;border-radius:50%;border:1px solid #d7d7d7;background:#fff;font-size:18px;line-height:18px}.tea-qty button.plus{background:#1f6b47;color:#fff;border-color:#1f6b47}.tea-qty span{font-size:13px}
+.tea-checkout-card{margin:10px 12px;background:#fff;border-radius:12px;padding:13px}.tea-checkout-title{font-size:13px;color:#777;margin-bottom:9px}.tea-contact-scroll{display:flex;gap:8px;overflow-x:auto}.tea-contact-item{border:1px solid #eee;background:#fff;border-radius:9px;min-width:120px;padding:8px;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;gap:0 7px;text-align:left}.tea-contact-item .avatar{grid-row:1/3}.tea-contact-item span{font-size:13px;align-self:end}.tea-contact-item small{font-size:10px;color:#aaa}.tea-contact-item.selected{border-color:#1f6b47;background:#f2f8f4}.tea-empty{font-size:13px;color:#999;padding:10px}
+.tea-options{display:flex;gap:7px;flex-wrap:wrap}.tea-options button{border:1px solid #e6e6e6;background:#fff;border-radius:15px;padding:6px 11px;color:#666}.tea-options button.selected{border-color:#1f6b47;color:#1f6b47;background:#f2f8f4}
+.tea-bottom-bar{display:flex;align-items:center;gap:12px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:#fff;border-top:.5px solid #ddd}.tea-cart-icon{position:relative;width:44px;height:44px;border-radius:50%;background:#173c2a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px}.tea-cart-count{position:absolute;right:-3px;top:-4px;background:#ed5438;color:#fff;border-radius:9px;min-width:18px;height:18px;line-height:18px;text-align:center;font-size:10px}.tea-total-wrap{flex:1}.tea-total-amount{display:block;font-size:19px;font-weight:700;color:#111}.tea-total-wrap small{font-size:10px;color:#999}.tea-pay-btn{background:#1f6b47;color:#fff;border:0;border-radius:22px;padding:12px 24px;font-size:14px}.tea-pay-btn:disabled{background:#b8c2bc}
+.tea-order-summary{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:5px}.tea-order-summary span{font-size:14px}.tea-order-summary small{color:#888}
+.tea-track-step{display:flex;gap:12px;padding:13px 4px}.tea-track-dot{width:12px;height:12px;border-radius:50%;background:#ddd;margin-top:3px}.tea-track-step.done .tea-track-dot,.tea-track-step.active .tea-track-dot{background:#1f6b47}.tea-track-step.active .tea-track-dot{box-shadow:0 0 0 4px rgba(31,107,71,.15)}.tea-track-label{font-size:14px}.tea-track-label small{display:block;color:#1f6b47;font-size:10px;margin-top:3px}
 
 svg { max-width:100%; max-height:100%; }
 #debugErrorBanner { font-family:monospace; }
@@ -713,71 +727,32 @@ svg { max-width:100%; max-height:100%; }
 
   <!-- 小程式列表 -->
   <div class="page hidden" id="page-miniprograms">
-    <div class="nav-bar">
-      <svg class="icon-btn nav-back" id="backFromMiniPrograms" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="nav-title">小程式</span><span></span>
-    </div>
-    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
-      <div class="mini-app-list-item" id="miniAppTea">
-        <div class="mini-app-icon"><svg viewBox="0 0 24 24"><path d="M6 9h12l-1.2 10.5a2 2 0 0 1-2 1.5H9.2a2 2 0 0 1-2-1.5z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M8 9V7a4 4 0 0 1 8 0v2" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div>
-        <div><div style="font-size:16px;font-weight:600;color:#0a0a0a;">角色奶茶</div><div style="font-size:13px;color:#999;margin-top:2px;">给你喜欢的角色点一杯奶茶</div></div>
-      </div>
-    </div>
+    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromMiniPrograms" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">小程式</span><span></span></div>
+    <div style="flex:1;overflow-y:auto;"><div class="mini-app-list-item" id="miniAppTea"><div class="mini-app-icon"><svg viewBox="0 0 24 24"><path d="M7 5h10l-1 15H8L7 5zM5 5h14M9 2h6" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div><div><div style="font-size:16px;font-weight:600;">沐茶 MUTEA</div><div style="font-size:13px;color:#999;margin-top:2px;">鲜果茶 · 轻乳茶 · 到店自取</div></div></div></div>
   </div>
 
-  <!-- 奶茶点单页 -->
+  <!-- 沐茶点单页 -->
   <div class="page hidden" id="page-teaorder">
-    <div class="nav-bar">
-      <svg class="icon-btn nav-back" id="backFromTeaOrder" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="nav-title">角色奶茶</span><span></span>
-    </div>
-    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px 90px;">
+    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaOrder" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">沐茶 MUTEA</span><span></span></div>
+    <div style="flex:1;overflow-y:auto;background:#f5f5f5;padding-bottom:84px;">
       <div id="teaOrderForm">
-        <div class="settings-group-title">送给谁</div>
-        <div id="teaContactList"></div>
-        <div class="settings-group-title">选饮品</div>
-        <div id="teaMenuList"></div>
-        <div class="settings-group-title">取餐方式</div>
-        <div class="tea-method-row" id="teaMethodRow">
-          <div class="tea-method-chip selected" data-method="pickup">自取</div>
-          <div class="tea-method-chip" data-method="delivery">外送 (+¥3)</div>
-        </div>
-        <div id="teaAddressWrap" class="hidden">
-          <div class="form-row col"><label>配送地址</label><input id="teaAddressInput" placeholder="请输入地址"></div>
-        </div>
-        <div class="form-row col"><label>备注（可选）</label><input id="teaNoteInput" placeholder="少冰、少糖之类的"></div>
+        <section class="tea-store-hero"><h2>沐茶 MUTEA</h2><p>元朗形点店 · 营业至 22:30<br>预计 25–35 分钟送达</p><span class="tea-store-badge">满 ¥38 免配送费</span></section>
+        <div class="tea-method-row" id="teaMethodRow"><div class="tea-method-chip selected" data-method="delivery">外送</div><div class="tea-method-chip" data-method="pickup">到店自取</div></div>
+        <div class="tea-shop-layout"><aside class="tea-category-list" id="teaCategoryList"></aside><main class="tea-menu-list" id="teaMenuList"></main></div>
+        <section class="tea-checkout-card"><div class="tea-checkout-title">收货人</div><div class="tea-contact-scroll" id="teaContactList"></div></section>
+        <section class="tea-checkout-card" id="teaAddressWrap"><div class="form-row col"><label>配送地址</label><input id="teaAddressInput" placeholder="填写详细地址"></div></section>
+        <section class="tea-checkout-card"><div class="tea-checkout-title">糖度</div><div class="tea-options"><button data-tea-sugar="不另外加糖">不另外加糖</button><button class="selected" data-tea-sugar="少糖">少糖</button><button data-tea-sugar="正常糖">正常糖</button></div><div class="tea-checkout-title" style="margin-top:14px;">冰量</div><div class="tea-options"><button data-tea-ice="去冰">去冰</button><button class="selected" data-tea-ice="少冰">少冰</button><button data-tea-ice="正常冰">正常冰</button></div></section>
+        <section class="tea-checkout-card"><div class="form-row col"><label>订单备注</label><input id="teaNoteInput" placeholder="口味、配送等特殊要求"></div></section>
       </div>
-      <div id="teaOrderTracking" class="hidden">
-        <div class="settings-group-title">订单状态</div>
-        <div id="teaTrackSteps"></div>
-        <button class="save-btn" id="teaOrderAgainBtn">再点一单</button>
-      </div>
+      <div id="teaOrderTracking" class="hidden" style="padding:14px;"><div class="tea-order-summary" id="teaOrderSummary"></div><div class="tea-order-summary"><div id="teaTrackSteps"></div></div><button class="save-btn" id="teaOrderAgainBtn">再来一单</button></div>
     </div>
-    <div class="tea-bottom-bar" id="teaBottomBar">
-      <span>合计 <span class="tea-total-amount" id="teaTotalAmount">¥0.00</span></span>
-      <button class="tea-pay-btn" id="teaGoPayBtn">去支付</button>
-    </div>
+    <div class="tea-bottom-bar" id="teaBottomBar"><div class="tea-cart-icon">🛍<span class="tea-cart-count hidden" id="teaCartCount">0</span></div><div class="tea-total-wrap"><span class="tea-total-amount" id="teaTotalAmount">¥0.00</span><small>另计配送费 ¥6</small></div><button class="tea-pay-btn" id="teaGoPayBtn" disabled>去结算</button></div>
   </div>
 
   <!-- 奶茶支付页 -->
   <div class="page hidden" id="page-teapay">
-    <div class="nav-bar">
-      <svg class="icon-btn nav-back" id="backFromTeaPay" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="nav-title">微信支付</span><span></span>
-    </div>
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:60px;">
-      <div style="font-size:14px;color:#999;">支付给"角色奶茶"</div>
-      <div style="font-size:38px;font-weight:700;color:#0a0a0a;margin:14px 0 30px;" id="teaPayAmount">¥0.00</div>
-      <div class="form-row" style="width:88%;">
-        <label>付款方式</label>
-        <span style="color:#07c160;font-size:14px;">零钱余额</span>
-      </div>
-      <div class="form-row" style="width:88%;">
-        <label>当前余额</label>
-        <span id="teaPayCurrentBalance" style="color:#333;font-size:14px;"></span>
-      </div>
-      <button class="save-btn" id="teaConfirmPayBtn" style="width:88%;margin-top:40px;">确认支付</button>
-    </div>
+    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaPay" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">微信支付</span><span></span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:58px;background:#f5f5f5;"><div style="font-size:14px;color:#777;">沐茶 MUTEA</div><div style="font-size:12px;color:#aaa;margin-top:7px;" id="teaPaySummary"></div><div style="font-size:38px;font-weight:700;margin:14px 0 30px;" id="teaPayAmount">¥0.00</div><div class="form-row" style="width:88%;"><label>付款方式</label><span style="color:#07c160;font-size:14px;">零钱余额</span></div><div class="form-row" style="width:88%;"><label>当前余额</label><span id="teaPayCurrentBalance" style="font-size:14px;"></span></div><button class="save-btn" id="teaConfirmPayBtn" style="width:88%;margin-top:40px;">确认支付</button></div>
   </div>
 
   <!-- 长按：塔罗牌 + 保护罩 -->
@@ -1061,10 +1036,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=26" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=26" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=26" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=26" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=26" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=27" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=27" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=27" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=27" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=27" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
