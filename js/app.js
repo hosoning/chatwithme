@@ -647,7 +647,9 @@ function renderMessages() {
         <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
       </div>`;
     } else if (m.voiceUrl) {
-      bubbleHtml = `<div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${m.durationSec || Math.max(1, Math.round((m.text || '').length / 4))}″</span></div>`;
+      const voiceSeconds = m.durationSec || Math.max(1, Math.round((m.text || '').length / 4));
+      const transcript = m.voiceTranscript || '';
+      bubbleHtml = `<div class="voice-message-wrap"><div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${voiceSeconds}″</span></div>${isMe ? `<button class="voice-to-text" data-transcribe="${m.id}">${transcript ? '转文字' : '转文字'}</button><div class="voice-transcript ${m.voiceTranscriptVisible ? '' : 'hidden'}" data-transcript-box="${m.id}">${transcript ? escapeHtml(transcript) : '未识别到文字'}</div>` : ''}</div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
@@ -692,6 +694,16 @@ function bindMsgListDelegation() {
 
   box.addEventListener('click', e => {
     if (longPressFired) { longPressFired = false; return; }
+    const transcribeEl = e.target.closest('[data-transcribe]');
+    if (transcribeEl) {
+      const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === transcribeEl.dataset.transcribe);
+      if (msg?.from === 'me' && msg.voiceUrl) {
+        msg.voiceTranscriptVisible = !msg.voiceTranscriptVisible;
+        persist();
+        renderMessages();
+      }
+      return;
+    }
     const playEl = e.target.closest('[data-play]');
     if (playEl) {
       const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
@@ -788,12 +800,13 @@ function handleSend(text) {
     else processSingleBatch(chatId);
   }, 900);
 }
-function sendVoiceMessage(dataUrl, durationSec) {
+function sendVoiceMessage(dataUrl, durationSec, transcript = '') {
   const chatId = state.activeChatId;
   if (!chatId) return;
-  addMessage(chatId, 'me', '[语音]', { voiceUrl: dataUrl, durationSec });
+  const cleanTranscript = String(transcript || '').trim();
+  addMessage(chatId, 'me', '[语音]', { voiceUrl: dataUrl, durationSec, voiceTranscript: cleanTranscript, voiceTranscriptVisible: false });
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
-  state.pendingBatch[chatId].push('(发来一条语音消息)');
+  state.pendingBatch[chatId].push(cleanTranscript ? `(发来一条语音消息，转写内容：${cleanTranscript})` : '(发来一条语音消息，未能取得转写内容)');
   clearTimeout(state.batchTimer[chatId]);
   state.batchTimer[chatId] = setTimeout(() => {
     if (isGroupChat(chatId)) processGroupBatch(chatId);
@@ -2092,56 +2105,58 @@ function bindHoldToRecord(holdBtn) {
     holdBtn.addEventListener('pointerdown', () => alert('当前浏览器不支持录音，请切换回文字输入'));
     return;
   }
-  let mediaRecorder = null, recordedChunks = [], mediaStream = null, recordStartTs = 0, recording = false, starting = false;
-  function cleanupStream() { mediaStream?.getTracks().forEach(t => t.stop()); mediaStream = null; }
-  async function startRecording() {
-    if (recording || starting) return;
-    starting = true;
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      alert('无法访问麦克风，请检查系统/浏览器的麦克风权限设置');
-      holdBtn.classList.remove('active');
-      starting = false;
-      return;
-    }
-    recordedChunks = [];
-    const mimeType = getSupportedAudioMimeType();
-    try { mediaRecorder = mimeType ? new MediaRecorder(mediaStream, { mimeType }) : new MediaRecorder(mediaStream); }
-    catch (e) { alert('录音初始化失败：' + (e?.message || '未知错误')); cleanupStream(); starting = false; return; }
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    recordStartTs = Date.now();
-    mediaRecorder.start();
-    recording = true;
-    starting = false;
+  let mediaRecorder=null,recordedChunks=[],mediaStream=null,recordStartTs=0,recording=false,starting=false;
+  let recordTimer=null,cancelled=false,startY=0,recognizer=null,finalTranscript='',interimTranscript='';
+  const overlay=document.getElementById('voiceRecordOverlay'),timeEl=document.getElementById('voiceRecordTime'),hintEl=document.getElementById('voiceRecordHint');
+  function cleanupStream(){mediaStream?.getTracks().forEach(t=>t.stop());mediaStream=null;}
+  function setRecordUi(show,isCancel=false){
+    overlay?.classList.toggle('hidden',!show);
+    overlay?.classList.toggle('cancel',isCancel);
+    holdBtn.classList.toggle('cancel',isCancel);
+    if(hintEl)hintEl.textContent=isCancel?'松开手指，取消发送':'松开发送 · 上滑取消';
   }
-  function stopRecording() {
-    return new Promise(resolve => {
-      if (!recording || !mediaRecorder) { resolve(null); return; }
-      recording = false;
-      const durationSec = Math.round((Date.now() - recordStartTs) / 1000 * 10) / 10;
-      mediaRecorder.onstop = () => {
-        cleanupStream();
-        if (durationSec < 1) { resolve(null); return; }
-        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        if (!blob.size) { resolve(null); return; }
-        const reader = new FileReader();
-        reader.onload = () => resolve({ dataUrl: reader.result, durationSec: Math.max(1, Math.round(durationSec)) });
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      };
-      try { mediaRecorder.stop(); } catch (e) { cleanupStream(); resolve(null); }
+  function beginRecognition(){
+    const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SpeechRecognition)return;
+    try{
+      recognizer=new SpeechRecognition();recognizer.lang='zh-CN';recognizer.continuous=true;recognizer.interimResults=true;
+      recognizer.onresult=e=>{interimTranscript='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0]?.transcript||'';if(e.results[i].isFinal)finalTranscript+=t;else interimTranscript+=t;}};
+      recognizer.onerror=()=>{};recognizer.start();
+    }catch(e){recognizer=null;}
+  }
+  function endRecognition(){if(recognizer){try{recognizer.stop();}catch(e){}recognizer=null;}}
+  async function startRecording(){
+    if(recording||starting)return;starting=true;cancelled=false;finalTranscript='';interimTranscript='';
+    try{mediaStream=await navigator.mediaDevices.getUserMedia({audio:true});}
+    catch(e){alert('无法访问麦克风，请检查系统/浏览器的麦克风权限设置');holdBtn.classList.remove('active');setRecordUi(false);starting=false;return;}
+    recordedChunks=[];const mimeType=getSupportedAudioMimeType();
+    try{mediaRecorder=mimeType?new MediaRecorder(mediaStream,{mimeType}):new MediaRecorder(mediaStream);}
+    catch(e){alert('录音初始化失败：'+(e?.message||'未知错误'));cleanupStream();starting=false;setRecordUi(false);return;}
+    mediaRecorder.ondataavailable=e=>{if(e.data.size>0)recordedChunks.push(e.data);};
+    recordStartTs=Date.now();mediaRecorder.start();recording=true;starting=false;beginRecognition();
+    if(timeEl)timeEl.textContent='0″';
+    clearInterval(recordTimer);recordTimer=setInterval(()=>{const sec=Math.min(60,Math.floor((Date.now()-recordStartTs)/1000));if(timeEl)timeEl.textContent=sec+'″';if(sec>=60)finishRecording();},250);
+  }
+  function stopRecording(){
+    return new Promise(resolve=>{
+      clearInterval(recordTimer);recordTimer=null;endRecognition();
+      if(!recording||!mediaRecorder){cleanupStream();resolve(null);return;}
+      recording=false;const durationSec=Math.min(60,Math.max(0,Math.round((Date.now()-recordStartTs)/1000)));
+      mediaRecorder.onstop=()=>{cleanupStream();if(cancelled||durationSec<1){resolve(null);return;}const blob=new Blob(recordedChunks,{type:mediaRecorder.mimeType||'audio/webm'});if(!blob.size){resolve(null);return;}const reader=new FileReader();reader.onload=()=>resolve({dataUrl:reader.result,durationSec,transcript:(finalTranscript+' '+interimTranscript).trim()});reader.onerror=()=>resolve(null);reader.readAsDataURL(blob);};
+      try{mediaRecorder.stop();}catch(e){cleanupStream();resolve(null);}
     });
   }
-  holdBtn.addEventListener('pointerdown', () => { holdBtn.classList.add('active'); startRecording(); });
-  const stopTalk = async () => {
-    if (!holdBtn.classList.contains('active')) return;
-    holdBtn.classList.remove('active');
-    const result = await stopRecording();
-    if (result) sendVoiceMessage(result.dataUrl, result.durationSec);
-  };
-  holdBtn.addEventListener('pointerup', stopTalk);
-  holdBtn.addEventListener('pointerleave', stopTalk);
+  async function finishRecording(){
+    if(!holdBtn.classList.contains('active')&&!recording)return;
+    holdBtn.classList.remove('active','cancel');setRecordUi(false);
+    const result=await stopRecording();
+    if(result&&!cancelled)sendVoiceMessage(result.dataUrl,result.durationSec,result.transcript);
+    cancelled=false;
+  }
+  holdBtn.addEventListener('pointerdown',e=>{e.preventDefault();startY=e.clientY;holdBtn.setPointerCapture?.(e.pointerId);holdBtn.classList.add('active');setRecordUi(true,false);startRecording();});
+  holdBtn.addEventListener('pointermove',e=>{if(!holdBtn.classList.contains('active'))return;cancelled=e.clientY<startY-65;setRecordUi(true,cancelled);});
+  holdBtn.addEventListener('pointerup',finishRecording);
+  holdBtn.addEventListener('pointercancel',()=>{cancelled=true;finishRecording();});
 }
 
 /* ============ 初始化 ============ */

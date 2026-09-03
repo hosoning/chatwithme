@@ -57,6 +57,8 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .msg-row.me .bubble::before { right:-11px; border-left-color:#95ec69; }
 .bubble.voice, .bubble.call { display:flex; align-items:center; gap:8px; min-width:110px; cursor:pointer; }
 .bubble.voice svg, .bubble.call svg { width:19px !important; height:19px !important; flex-shrink:0; }
+.voice-message-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.msg-row:not(.me) .voice-message-wrap{align-items:flex-start}.voice-to-text{border:0;background:transparent;color:#576b95;font-size:12px;padding:0 2px;cursor:pointer}.voice-transcript{max-width:235px;background:rgba(255,255,255,.86);border-radius:4px;padding:8px 10px;font-size:14px;line-height:1.45;color:#333;white-space:pre-wrap;word-break:break-word}
+.voice-record-overlay{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:70;width:170px;padding:18px 12px;border-radius:12px;background:rgba(25,25,25,.84);color:#fff;text-align:center;pointer-events:none}.voice-record-overlay.cancel{background:rgba(214,65,55,.9)}.voice-record-time{font-size:27px;font-variant-numeric:tabular-nums}.voice-record-wave{height:22px;margin:9px auto;display:flex;align-items:center;justify-content:center;gap:3px}.voice-record-wave i{display:block;width:3px;height:9px;border-radius:2px;background:#fff;animation:voiceWave .65s ease-in-out infinite alternate}.voice-record-wave i:nth-child(2){animation-delay:.12s;height:17px}.voice-record-wave i:nth-child(3){animation-delay:.24s;height:12px}.voice-record-wave i:nth-child(4){animation-delay:.36s;height:20px}.voice-record-hint{font-size:12px}.hold-talk-btn.cancel{background:#ddd;color:#d33}@keyframes voiceWave{to{transform:scaleY(.45);opacity:.55}}
 .call-bubble-text { display:flex; flex-direction:column; gap:1px; }
 .call-bubble-duration { font-size:12px; opacity:.65; }
 .msg-row.me .bubble.image, .msg-row:not(.me) .bubble.image { background:transparent !important; }
@@ -520,6 +522,7 @@ svg { max-width:100%; max-height:100%; }
       <svg class="icon-btn" id="micBtn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 7a2.2 2.2 0 0 1 2.2 2.2v3.6a2.2 2.2 0 0 1-4.4 0V9.2A2.2 2.2 0 0 1 12 7z" fill="#666"/><path d="M8.5 12.5a3.5 3.5 0 0 0 7 0" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/></svg>
       <input type="text" id="msgInput" placeholder="发消息...">
       <div class="hold-talk-btn hidden" id="holdTalkBtn">按住 说话</div>
+      <div class="voice-record-overlay hidden" id="voiceRecordOverlay"><div class="voice-record-time" id="voiceRecordTime">0″</div><div class="voice-record-wave"><i></i><i></i><i></i><i></i></div><div class="voice-record-hint" id="voiceRecordHint">松开发送 · 上滑取消</div></div>
       <svg class="icon-btn" id="btnEmoji" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><circle cx="9" cy="10.5" r="1.1" fill="#666"/><circle cx="15" cy="10.5" r="1.1" fill="#666"/><path d="M8.3 14c1 1.3 2.3 1.9 3.7 1.9s2.7-.6 3.7-1.9" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/></svg>
       <svg class="icon-btn" id="btnMore" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="#666" stroke-width="1.6" stroke-linecap="round"/></svg>
       <button class="send-btn hidden" id="btnSend">发送</button>
@@ -1006,10 +1009,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=28" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=28" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=28" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=28" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=28" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=29" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=29" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=29" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=29" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=29" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
