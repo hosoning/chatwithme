@@ -76,7 +76,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .location-text strong { display:block; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .location-text small { display:block; margin-top:3px; color:#999; font-size:10.5px; font-variant-numeric:tabular-nums; }
 .gps-map-wrap { height:220px; border-radius:10px; overflow:hidden; background:#e8ecef; margin-bottom:10px; }
-.gps-map-wrap iframe { width:100%; height:100%; border:0; display:block; }
+.gps-map-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
 .gps-status { color:#888; font-size:13px; padding:2px 2px 10px; }
 .gps-btn { background:#fff; color:#576b95; border-radius:10px; min-height:46px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; cursor:pointer; }
 .gps-btn.disabled { opacity:.55; pointer-events:none; }
@@ -245,29 +245,12 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .msg-system { text-align:center; font-size:12.5px; color:#9a9a9a; margin:4px 0; }
 .msg-time-divider { text-align:center; font-size:12px; color:#a8a8a8; margin:2px 0 4px; }
 
-.bubble.redpacket { display:flex; align-items:center; gap:11px; padding:14px 18px; min-width:190px; border-radius:8px; cursor:pointer; box-shadow:0 3px 10px rgba(247,129,31,0.3); }
-.msg-row.me .bubble.redpacket, .msg-row:not(.me) .bubble.redpacket { background:linear-gradient(160deg,#fcaa5a,#f7811f) !important; color:#fff; }
-.bubble.redpacket.claimed { opacity:.7; }
-.bubble.redpacket::before { border-right-color:#fcaa5a !important; border-left-color:#fcaa5a !important; }
-.rp-icon { width:32px !important; height:32px !important; flex-shrink:0; }
-.rp-text { display:flex; flex-direction:column; gap:2px; }
-.rp-note { font-size:15.5px; font-weight:500; }
-.rp-sub { font-size:11.5px; opacity:.85; }
-
-.redpacket-sheet input { text-align:center; font-size:16px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
-.rp-confirm { background:#f7811f !important; }
-
-.rp-detail { width:82%; background:linear-gradient(180deg,#f2711f,#f9924a); border-radius:16px; padding:28px 22px; text-align:center; color:#fff; box-shadow:0 12px 40px rgba(0,0,0,0.3); }
-.rp-detail-top { display:flex; flex-direction:column; align-items:center; gap:11px; margin-bottom:22px; }
-.rp-detail-avatar { width:54px; height:54px; border-radius:50%; background:#fff3; background-size:cover; background-position:center; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
-.rp-detail-note { font-size:16.5px; }
-.rp-detail-mid { display:flex; flex-direction:column; align-items:center; gap:14px; cursor:pointer; touch-action:manipulation; }
-.rp-icon-big svg { width:58px !important; height:58px !important; }
-.rp-action-text { width:58px; height:58px; border-radius:50%; background:#fff; color:#f2711f; display:flex; align-items:center; justify-content:center; font-size:15.5px; font-weight:600; margin-top:-72px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,0.2); }
-.rp-detail-result { margin-top:12px; }
-.rp-amount { font-size:34px; font-weight:700; }
-.rp-sub-text { font-size:13.5px; opacity:.85; margin-top:7px; }
-.rp-detail .sheet-close { color:#fff; opacity:.9; }
+.bubble.redpacket{padding:0!important;width:238px;border-radius:5px!important;overflow:hidden;cursor:pointer;box-shadow:none!important}
+.msg-row.me .bubble.redpacket,.msg-row:not(.me) .bubble.redpacket{background:#f89b3c!important;color:#fff}
+.bubble.redpacket::before{border-right-color:#f89b3c!important;border-left-color:#f89b3c!important}.bubble.redpacket.claimed{opacity:.62}
+.rp-main{display:flex;align-items:center;gap:11px;padding:13px 13px 11px}.rp-envelope{width:42px;height:48px;border:2px solid rgba(255,255,255,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;position:relative}.rp-envelope::before{content:'';position:absolute;left:3px;right:3px;top:8px;height:18px;border-bottom:1.5px solid rgba(255,255,255,.8);transform:skewY(-23deg)}.rp-envelope span{font-size:17px;z-index:1}.rp-text{min-width:0}.rp-note{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rp-status{font-size:12px;opacity:.85;margin-top:4px}.rp-footer{background:#fff;color:#aaa;font-size:10px;padding:4px 10px}
+.redpacket-sheet{background:#f4f4f4!important}.rp-money-box{background:#fff;border-radius:8px;display:flex;align-items:center;padding:14px;margin-bottom:12px}.rp-money-box label{font-size:15px}.rp-money-box input{flex:1;border:0;background:transparent;text-align:right;font-size:28px;min-width:0;outline:0;user-select:text!important;-webkit-user-select:text!important}.rp-money-box b{font-size:15px;margin-left:5px}.rp-note-box{background:#fff;border-radius:8px;padding:0 14px}.rp-note-box input{width:100%;border:0;padding:14px 0;font-size:15px;outline:0;text-align:left;user-select:text!important;-webkit-user-select:text!important}.rp-confirm{background:#e85b4a!important;color:#fff!important}.rp-limit{text-align:center;color:#aaa;font-size:12px;margin:12px 0}
+.rp-detail{width:86%;min-height:430px;background:#d95345;border-radius:12px;overflow:hidden;text-align:center;color:#ffe7bd;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:0!important}.rp-detail-head{height:178px;background:#cf4b3e;border-radius:0 0 50% 50%/0 0 24% 24%;padding-top:34px}.rp-detail-avatar{width:52px;height:52px;border-radius:5px;background:#eee center/cover;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600}.rp-detail-sender{font-size:14px}.rp-detail-note{font-size:18px;color:#fff;margin-top:13px}.rp-open-btn{width:78px;height:78px;border-radius:50%;background:#f3c982;color:#8b5523;font-size:28px;display:flex;align-items:center;justify-content:center;margin:-24px auto 0;box-shadow:0 3px 9px rgba(0,0,0,.2);cursor:pointer}.rp-detail-waiting{padding:42px 20px;color:#f6d5ad;font-size:14px}.rp-detail-result{padding:40px 20px}.rp-result-line{display:flex;align-items:baseline;justify-content:center;gap:5px}.rp-amount{font-size:42px;color:#fff;font-weight:500}.rp-result-unit{font-size:15px;color:#fff}.rp-sub-text{font-size:13px;margin-top:9px}.rp-detail .sheet-close{color:#f7d9b1;margin:25px 20px 16px;opacity:.9}
 
 .map-picker-canvas { height:260px; position:relative; overflow:hidden; border-radius:10px; background:#cfe3d4; background-image:
   linear-gradient(0deg, rgba(255,255,255,.55) 1px, transparent 1px),
@@ -371,7 +354,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .tea-checkout-card{margin:10px 12px;background:#fff;border-radius:12px;padding:13px}.tea-checkout-title{font-size:13px;color:#777;margin-bottom:9px}.tea-contact-scroll{display:flex;gap:8px;overflow-x:auto}.tea-contact-item{border:1px solid #eee;background:#fff;border-radius:9px;min-width:120px;padding:8px;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;gap:0 7px;text-align:left}.tea-contact-item .avatar{grid-row:1/3}.tea-contact-item span{font-size:13px;align-self:end}.tea-contact-item small{font-size:10px;color:#aaa}.tea-contact-item.selected{border-color:#1f6b47;background:#f2f8f4}.tea-empty{font-size:13px;color:#999;padding:10px}
 .tea-options{display:flex;gap:7px;flex-wrap:wrap}.tea-options button{border:1px solid #e6e6e6;background:#fff;border-radius:15px;padding:6px 11px;color:#666}.tea-options button.selected{border-color:#1f6b47;color:#1f6b47;background:#f2f8f4}
 .tea-bottom-bar{display:flex;align-items:center;gap:12px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:#fff;border-top:.5px solid #ddd}.tea-cart-icon{position:relative;width:44px;height:44px;border-radius:50%;background:#173c2a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px}.tea-cart-count{position:absolute;right:-3px;top:-4px;background:#ed5438;color:#fff;border-radius:9px;min-width:18px;height:18px;line-height:18px;text-align:center;font-size:10px}.tea-total-wrap{flex:1}.tea-total-amount{display:block;font-size:19px;font-weight:700;color:#111}.tea-total-wrap small{font-size:10px;color:#999}.tea-pay-btn{background:#1f6b47;color:#fff;border:0;border-radius:22px;padding:12px 24px;font-size:14px}.tea-pay-btn:disabled{background:#b8c2bc}
-.tea-order-summary{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:5px}.tea-order-summary span{font-size:14px}.tea-order-summary small{color:#888}
+.tea-order-summary{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:5px}.tea-order-summary span{font-size:14px;border-top:.5px solid #eee;padding-top:7px;margin-top:2px}.tea-order-summary small{color:#888}.tea-custom-sheet{background:#fff;border-radius:16px 16px 0 0;width:100%;padding:20px 16px calc(14px + env(safe-area-inset-bottom));align-self:flex-end}.tea-custom-name{font-size:19px;font-weight:700;margin-bottom:18px}.tea-custom-label{font-size:13px;color:#777;margin:15px 0 8px}.tea-custom-options{display:flex;flex-wrap:wrap;gap:8px}.tea-custom-options button{border:1px solid #e2e2e2;background:#fff;border-radius:6px;padding:8px 13px;font-size:13px}.tea-custom-options button.selected{border-color:#1f6b47;background:#eef7f1;color:#1f6b47}.tea-custom-actions{display:flex;gap:10px;margin-top:22px}.tea-custom-actions button{flex:1;border:0;border-radius:22px;padding:12px;font-size:15px}.tea-custom-cancel{background:#eee}.tea-custom-confirm{background:#1f6b47;color:#fff}
 .tea-track-step{display:flex;gap:12px;padding:13px 4px}.tea-track-dot{width:12px;height:12px;border-radius:50%;background:#ddd;margin-top:3px}.tea-track-step.done .tea-track-dot,.tea-track-step.active .tea-track-dot{background:#1f6b47}.tea-track-step.active .tea-track-dot{box-shadow:0 0 0 4px rgba(31,107,71,.15)}.tea-track-label{font-size:14px}.tea-track-label small{display:block;color:#1f6b47;font-size:10px;margin-top:3px}
 
 svg { max-width:100%; max-height:100%; }
@@ -389,7 +372,7 @@ svg { max-width:100%; max-height:100%; }
 @keyframes typingDot { 0%, 60%, 100% { transform:translateY(0); opacity:.5; } 30% { transform:translateY(-4px); opacity:1; } }
 
 @keyframes redpacketNudge { 0%, 100% { box-shadow:0 3px 10px rgba(247,129,31,0.3); } 50% { box-shadow:0 3px 16px rgba(247,129,31,0.65); } }
-.bubble.redpacket:not(.claimed) { animation:redpacketNudge 1.8s ease-in-out infinite; }
+
 
 @keyframes badgePop { from { transform:scale(0); } 60% { transform:scale(1.15); } to { transform:scale(1); } }
 .unread-badge { animation:badgePop .25s cubic-bezier(.34,1.56,.64,1); }
@@ -741,12 +724,11 @@ svg { max-width:100%; max-height:100%; }
         <div class="tea-shop-layout"><aside class="tea-category-list" id="teaCategoryList"></aside><main class="tea-menu-list" id="teaMenuList"></main></div>
         <section class="tea-checkout-card"><div class="tea-checkout-title">收货人</div><div class="tea-contact-scroll" id="teaContactList"></div></section>
         <section class="tea-checkout-card" id="teaAddressWrap"><div class="form-row col"><label>配送地址</label><input id="teaAddressInput" placeholder="填写详细地址"></div></section>
-        <section class="tea-checkout-card"><div class="tea-checkout-title">糖度</div><div class="tea-options"><button data-tea-sugar="不另外加糖">不另外加糖</button><button class="selected" data-tea-sugar="少糖">少糖</button><button data-tea-sugar="正常糖">正常糖</button></div><div class="tea-checkout-title" style="margin-top:14px;">冰量</div><div class="tea-options"><button data-tea-ice="去冰">去冰</button><button class="selected" data-tea-ice="少冰">少冰</button><button data-tea-ice="正常冰">正常冰</button></div></section>
         <section class="tea-checkout-card"><div class="form-row col"><label>订单备注</label><input id="teaNoteInput" placeholder="口味、配送等特殊要求"></div></section>
       </div>
       <div id="teaOrderTracking" class="hidden" style="padding:14px;"><div class="tea-order-summary" id="teaOrderSummary"></div><div class="tea-order-summary"><div id="teaTrackSteps"></div></div><button class="save-btn" id="teaOrderAgainBtn">再来一单</button></div>
     </div>
-    <div class="tea-bottom-bar" id="teaBottomBar"><div class="tea-cart-icon">🛍<span class="tea-cart-count hidden" id="teaCartCount">0</span></div><div class="tea-total-wrap"><span class="tea-total-amount" id="teaTotalAmount">¥0.00</span><small>另计配送费 ¥6</small></div><button class="tea-pay-btn" id="teaGoPayBtn" disabled>去结算</button></div>
+    <div class="tea-bottom-bar" id="teaBottomBar"><div class="tea-cart-icon">🛍<span class="tea-cart-count hidden" id="teaCartCount">0</span></div><div class="tea-total-wrap"><span class="tea-total-amount" id="teaTotalAmount">¥0.00</span><small id="teaFeeHint">配送费 ¥6 · 满 ¥38 免配送</small></div><button class="tea-pay-btn" id="teaGoPayBtn" disabled>去结算</button></div>
   </div>
 
   <!-- 奶茶支付页 -->
@@ -754,6 +736,8 @@ svg { max-width:100%; max-height:100%; }
     <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaPay" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">微信支付</span><span></span></div>
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:58px;background:#f5f5f5;"><div style="font-size:14px;color:#777;">沐茶 MUTEA</div><div style="font-size:12px;color:#aaa;margin-top:7px;" id="teaPaySummary"></div><div style="font-size:38px;font-weight:700;margin:14px 0 30px;" id="teaPayAmount">¥0.00</div><div class="form-row" style="width:88%;"><label>付款方式</label><span style="color:#07c160;font-size:14px;">零钱余额</span></div><div class="form-row" style="width:88%;"><label>当前余额</label><span id="teaPayCurrentBalance" style="font-size:14px;"></span></div><button class="save-btn" id="teaConfirmPayBtn" style="width:88%;margin-top:40px;">确认支付</button></div>
   </div>
+
+  <div class="mask hidden" id="teaCustomizeSheet" style="align-items:flex-end;"><div class="tea-custom-sheet"><div class="tea-custom-name" id="teaCustomizeName"></div><div id="teaCustomizeOptions"><div class="tea-custom-label">糖度</div><div class="tea-custom-options"><button data-custom-sugar="不另外加糖">不另外加糖</button><button data-custom-sugar="少糖">少糖</button><button data-custom-sugar="正常糖">正常糖</button></div><div class="tea-custom-label">冰量</div><div class="tea-custom-options"><button data-custom-ice="去冰">去冰</button><button data-custom-ice="少冰">少冰</button><button data-custom-ice="正常冰">正常冰</button></div><div class="tea-custom-label">加料</div><div class="tea-custom-options"><button data-custom-topping="none">不加料</button><button data-custom-topping="pearl">黑糖珍珠 +¥2</button><button data-custom-topping="jelly">桂花冻 +¥2</button><button data-custom-topping="cream">云顶奶盖 +¥3</button></div></div><div class="tea-custom-actions"><button class="tea-custom-cancel" id="teaCustomizeCancel">取消</button><button class="tea-custom-confirm" id="teaCustomizeConfirm">加入购物车</button></div></div></div>
 
   <!-- 长按：塔罗牌 + 保护罩 -->
   <div class="mask hidden" id="tarotSheet">
@@ -834,12 +818,10 @@ svg { max-width:100%; max-height:100%; }
   <div class="mask hidden" id="sendRedPacketSheet">
     <div class="sheet redpacket-sheet">
       <div class="sheet-title">发红包</div>
-      <div class="form-row col"><label>金额（元）</label><input id="rpAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div>
-      <div class="form-row col"><label>祝福语</label><input id="rpNote" placeholder="恭喜发财，大吉大利" maxlength="30"></div>
-      <div class="sheet-actions">
-        <div class="sheet-btn cancel" id="rpCancel">取消</div>
-        <div class="sheet-btn confirm rp-confirm" id="rpConfirm">塞钱进红包</div>
-      </div>
+      <div class="rp-money-box"><label>金额</label><input id="rpAmount" inputmode="decimal" type="number" min="0.01" max="200" step="0.01" placeholder="0.00"><b>元</b></div>
+      <div class="rp-note-box"><input id="rpNote" placeholder="恭喜发财，大吉大利" maxlength="30"></div>
+      <div class="rp-limit">单个红包金额不可超过 200 元</div>
+      <div class="sheet-actions"><div class="sheet-btn cancel" id="rpCancel">取消</div><div class="sheet-btn confirm rp-confirm" id="rpConfirm">塞钱进红包</div></div>
     </div>
   </div>
 
@@ -857,25 +839,13 @@ svg { max-width:100%; max-height:100%; }
   </div>
 
   <!-- 红包详情/领取 -->
-  <div class="mask hidden" id="redPacketOpenSheet">
-    <div class="rp-detail">
-      <div class="rp-detail-top">
-        <div class="rp-detail-avatar" id="rpDetailAvatar"></div>
-        <div class="rp-detail-note" id="rpDetailNote"></div>
-      </div>
-      <div class="rp-detail-mid" id="rpDetailMid">
-        <div class="rp-icon-big">
-          <svg viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.6" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
-        </div>
-        <div class="rp-action-text" id="rpActionText">开</div>
-      </div>
-      <div class="rp-detail-result hidden" id="rpDetailResult">
-        <div class="rp-amount" id="rpAmountShow">0.00</div>
-        <div class="rp-sub-text">已存入零钱</div>
-      </div>
-      <div class="sheet-close" id="rpDetailClose">关闭</div>
-    </div>
-  </div>
+  <div class="mask hidden" id="redPacketOpenSheet"><div class="rp-detail">
+    <div class="rp-detail-head"><div class="rp-detail-avatar" id="rpDetailAvatar"></div><div class="rp-detail-sender" id="rpDetailSender"></div><div class="rp-detail-note" id="rpDetailNote"></div></div>
+    <div class="rp-open-btn hidden" id="rpDetailOpen">开</div>
+    <div class="rp-detail-waiting hidden" id="rpDetailWaiting">等待对方领取</div>
+    <div class="rp-detail-result hidden" id="rpDetailResult"><div class="rp-result-line"><span class="rp-amount" id="rpAmountShow"></span><span class="rp-result-unit" id="rpResultUnit"></span></div><div class="rp-sub-text" id="rpResultHint"></div></div>
+    <div class="sheet-close" id="rpDetailClose">关闭</div>
+  </div></div>
 
   <!-- 修改昵称 -->
   <div class="mask hidden" id="editNameSheet">
@@ -922,7 +892,7 @@ svg { max-width:100%; max-height:100%; }
   <div class="mask hidden" id="locationPickerSheet">
     <div class="sheet">
       <div class="sheet-title">发送位置</div>
-      <div class="gps-map-wrap"><iframe id="locationPickerMap" referrerpolicy="no-referrer" title="GPS 地图"></iframe></div>
+      <div class="gps-map-wrap"><img id="locationPickerMap" alt="GPS 地图"></div>
       <div class="gps-status" id="locationGpsStatus">准备定位…</div>
       <div class="gps-btn" id="locationGpsBtn">重新定位</div>
       <div class="form-row col"><label>位置名称</label><input id="locationNameInput" placeholder="我的位置"></div>
@@ -937,7 +907,7 @@ svg { max-width:100%; max-height:100%; }
   <div class="mask hidden" id="viewLocationSheet">
     <div class="sheet">
       <div class="sheet-title" id="viewLocationTitle">位置</div>
-      <div class="gps-map-wrap"><iframe id="viewLocationMap" referrerpolicy="no-referrer" title="位置地图"></iframe></div>
+      <div class="gps-map-wrap"><img id="viewLocationMap" alt="位置地图"></div>
       <div class="location-coords" id="viewLocationCoords"></div>
       <div class="menu-row" id="viewLocationOpenMaps" style="color:#576b95;">在地图 App 中打开</div>
       <div class="sheet-close" id="viewLocationClose">关闭</div>
@@ -1036,10 +1006,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=27" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=27" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=27" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=27" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=27" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=28" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=28" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=28" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=28" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=28" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>

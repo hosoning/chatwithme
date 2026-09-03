@@ -589,19 +589,16 @@ function nearbyGps(base) {
   const lng = Number(base.lng) + (distanceKm / (111 * lngScale)) * Math.sin(angle);
   return { lat, lng, accuracy: 30 + secureRandomInt(90), ts: Date.now() };
 }
-function mapEmbedUrl(lat, lng) {
-  lat = Number(lat); lng = Number(lng);
-  const dLat = 0.0055, dLng = 0.0075;
-  const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].map(n => n.toFixed(6)).join(',');
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`;
+function staticMapUrl(lat,lng,width=460,height=256){
+ lat=Number(lat);lng=Number(lng);
+ return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat.toFixed(6)},${lng.toFixed(6)}&zoom=16&size=${width}x${height}&maptype=mapnik&markers=${lat.toFixed(6)},${lng.toFixed(6)},red-pushpin`;
 }
-function externalMapUrl(lat, lng, label) {
-  return `https://maps.apple.com/?ll=${encodeURIComponent(Number(lat).toFixed(6) + ',' + Number(lng).toFixed(6))}&q=${encodeURIComponent(label || '位置')}`;
+async function reverseGeocode(lat,lng){
+ try{const u=`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1&accept-language=zh-Hant`;const r=await fetch(u,{headers:{'Accept-Language':'zh-Hant,zh;q=0.9'}});if(!r.ok)return null;const d=await r.json(),a=d.address||{},main=a.amenity||a.shop||a.building||a.road||a.pedestrian||a.neighbourhood||a.suburb,area=a.suburb||a.city_district||a.city||a.town||a.county;return [main,area].filter((v,i,x)=>v&&x.indexOf(v)===i).slice(0,2).join(' · ')||d.name||d.display_name?.split(',').slice(0,2).join(' · ')||null;}catch(_){return null;}
 }
-function locationPreviewHtml(lat, lng) {
-  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return '<div class="location-map-fallback">旧版位置</div>';
-  return `<iframe class="location-map-frame" src="${mapEmbedUrl(lat, lng)}" loading="lazy" referrerpolicy="no-referrer" tabindex="-1" aria-hidden="true"></iframe><div class="location-map-shield"></div>`;
-}
+function externalMapUrl(lat,lng,label){return `https://maps.apple.com/?ll=${encodeURIComponent(Number(lat).toFixed(6)+','+Number(lng).toFixed(6))}&q=${encodeURIComponent(label||'位置')}`;}
+function locationPreviewHtml(lat,lng){if(!Number.isFinite(Number(lat))||!Number.isFinite(Number(lng)))return '<div class="location-map-fallback">旧版位置</div>';return `<img class="location-map-frame" src="${staticMapUrl(lat,lng)}" loading="lazy" alt="位置地图"><div class="location-map-shield"></div>`;}
+
 
 function renderMessages() {
   const box = document.getElementById('msgList');
@@ -627,10 +624,7 @@ function renderMessages() {
 
     let bubbleHtml;
     if (m.type === 'redpacket') {
-      bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}">
-        <svg class="rp-icon" viewBox="0 0 24 24"><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 8l8-4 8 4" fill="none" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="13" r="2.4" fill="none" stroke="#fff" stroke-width="1.2"/></svg>
-        <div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-sub">${m.redpacket.status === 'claimed' ? '已领取' : '微信红包'}</div></div>
-      </div>`;
+      bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}"><div class="rp-main"><div class="rp-envelope"><span>¥</span></div><div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-status">${m.redpacket.status==='claimed'?'红包已被领取':'领取红包'}</div></div></div><div class="rp-footer">微信红包</div></div>`;
     } else if (m.type === 'options') {
       bubbleHtml = `<div class="bubble options">
         <div class="options-title">请选择</div>
@@ -923,7 +917,8 @@ async function contactShareLocation(contactId, chatId) {
     catch (_) { base = { lat: 22.3193, lng: 114.1694, accuracy: 100, ts: Date.now() }; }
   }
   const gps = nearbyGps(base);
-  addMessage(chatId, contactId, `${contact.name || '对方'}的位置`, {
+  const place = await reverseGeocode(gps.lat,gps.lng);
+  addMessage(chatId, contactId, place || `${contact.name || '对方'}的位置`, {
     type: 'location', latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy
   });
 }
@@ -935,7 +930,7 @@ function updateLocationPicker(gps) {
   sheet.dataset.lat = String(gps.lat);
   sheet.dataset.lng = String(gps.lng);
   sheet.dataset.accuracy = String(gps.accuracy || 0);
-  if (frame) frame.src = mapEmbedUrl(gps.lat, gps.lng);
+  if (frame) frame.src = staticMapUrl(gps.lat,gps.lng,620,360);
   if (status) status.textContent = gps.accuracy ? `已定位 · 误差约 ${Math.round(gps.accuracy)} 米` : '已定位';
 }
 async function locateForPicker() {
@@ -943,7 +938,7 @@ async function locateForPicker() {
   const btn = document.getElementById('locationGpsBtn');
   if (status) status.textContent = '正在取得 GPS 位置…';
   if (btn) btn.classList.add('disabled');
-  try { updateLocationPicker(await requestCurrentGps()); }
+  try { const gps=await requestCurrentGps();updateLocationPicker(gps);const place=await reverseGeocode(gps.lat,gps.lng);if(place)document.getElementById('locationNameInput').value=place; }
   catch (err) { if (status) status.textContent = err.message || '无法取得位置'; }
   finally { if (btn) btn.classList.remove('disabled'); }
 }
@@ -977,7 +972,7 @@ function openViewLocation(msgId) {
   const lat = Number(msg.latitude), lng = Number(msg.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) { alert('这是一条旧版位置消息，没有 GPS 坐标'); return; }
   document.getElementById('viewLocationTitle').textContent = msg.text || '位置';
-  document.getElementById('viewLocationMap').src = mapEmbedUrl(lat, lng);
+  document.getElementById('viewLocationMap').src = staticMapUrl(lat,lng,620,360);
   const openBtn = document.getElementById('viewLocationOpenMaps');
   openBtn.dataset.url = externalMapUrl(lat, lng, msg.text || '位置');
   document.getElementById('viewLocationCoords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -1483,67 +1478,20 @@ async function replyToOptions(chatId, fromId, options, persona) {
   }
 }
 
-/* ============ 红包（含领取即入账钱包） ============ */
-function openSendRedPacket() { document.getElementById('sendRedPacketSheet')?.classList.remove('hidden'); }
-function bindRedPacket() {
-  document.getElementById('rpCancel')?.addEventListener('click', () => document.getElementById('sendRedPacketSheet').classList.add('hidden'));
-  document.getElementById('rpConfirm')?.addEventListener('click', () => {
-    const amount = parseFloat(document.getElementById('rpAmount').value);
-    const note = document.getElementById('rpNote').value.trim() || '恭喜发财，大吉大利';
-    if (!amount || amount <= 0) { alert('请输入有效金额'); return; }
-    const chatId = state.activeChatId;
-    if (!chatId) { alert('请先进入一个聊天'); return; }
-    const msg = addMessage(chatId, 'me', note, { type:'redpacket', redpacket:{ amount: amount.toFixed(2), note, status:'unclaimed', claimedBy:null } });
-    document.getElementById('sendRedPacketSheet').classList.add('hidden');
-    document.getElementById('rpAmount').value = ''; document.getElementById('rpNote').value = '';
-    setTimeout(() => {
-      const list = state.chats[chatId] || [];
-      const target = list.find(m => m.id === msg.id);
-      if (!target || target.redpacket.status === 'claimed') return;
-      let claimer;
-      if (isGroupChat(chatId)) { const g = getGroupById(chatId.slice(2)); claimer = g?.memberIds?.[secureRandomInt(g.memberIds.length)]; }
-      else claimer = chatId;
-      if (!claimer) return;
-      const claimerName = getContactById(claimer)?.name || '对方';
-      target.redpacket.status = 'claimed'; target.redpacket.claimedBy = claimer;
-      persist(); renderMessages();
-      addMessage(chatId, claimer, `${claimerName} 领取了你的红包`, { systemNote: true });
-      replyWithTarot(chatId, claimer, '(收到了你发的红包，表达感谢)', getContactById(claimer)?.persona);
-    }, 1500 + secureRandomInt(3000));
-  });
+/* ============ 微信红包 ============ */
+function openSendRedPacket(){document.getElementById('rpAmount').value='';document.getElementById('rpNote').value='恭喜发财，大吉大利';document.getElementById('sendRedPacketSheet')?.classList.remove('hidden');}
+function bindRedPacket(){
+ document.getElementById('rpCancel')?.addEventListener('click',()=>document.getElementById('sendRedPacketSheet').classList.add('hidden'));
+ document.getElementById('rpConfirm')?.addEventListener('click',()=>{const amount=Number(document.getElementById('rpAmount').value),note=document.getElementById('rpNote').value.trim()||'恭喜发财，大吉大利';if(!Number.isFinite(amount)||amount<.01||amount>200){alert('单个红包金额须为 ¥0.01–200.00');return;}const chatId=state.activeChatId;if(!chatId)return;const msg=addMessage(chatId,'me',note,{type:'redpacket',redpacket:{amount:amount.toFixed(2),note,status:'unclaimed',claimedBy:null,sentAt:Date.now()}});document.getElementById('sendRedPacketSheet').classList.add('hidden');setTimeout(async()=>{const t=(state.chats[chatId]||[]).find(m=>m.id===msg.id);if(!t||t.redpacket.status==='claimed')return;const g=isGroupChat(chatId)?getGroupById(chatId.slice(2)):null,claimer=g?.memberIds?.length?g.memberIds[secureRandomInt(g.memberIds.length)]:chatId,c=getContactById(claimer);if(!c)return;t.redpacket.status='claimed';t.redpacket.claimedBy=claimer;t.redpacket.claimedAt=Date.now();persist();renderMessages();addMessage(chatId,claimer,`${c.name}领取了你的红包`,{systemNote:true});await replyWithTarot(chatId,claimer,'(刚领取了我发的微信红包，自然回应，不要复述系统提示)',c.persona);},8000+secureRandomInt(52000));});
 }
-function openRedPacketDetail(msgId) {
-  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
-  if (!msg) return;
-  const senderAvatar = msg.from === 'me' ? state.myAvatar : getContactById(msg.from)?.avatar;
-  const avatarEl = document.getElementById('rpDetailAvatar');
-  if (avatarEl) avatarEl.style.backgroundImage = senderAvatar ? `url('${senderAvatar}')` : '';
-  const noteEl = document.getElementById('rpDetailNote');
-  if (noteEl) noteEl.textContent = msg.redpacket.note;
-  const resultBox = document.getElementById('rpDetailResult');
-  const midBox = document.getElementById('rpDetailMid');
-  const amountShow = document.getElementById('rpAmountShow');
-  if (msg.redpacket.status === 'claimed') {
-    midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
-    amountShow.textContent = `¥${msg.redpacket.amount}`;
-  } else {
-    midBox.classList.remove('hidden'); resultBox.classList.add('hidden');
-    midBox.onclick = () => {
-      if (msg.from === 'me') { alert('自己发的红包不能自己领取哦'); return; }
-      if (msg.redpacket.status === 'claimed') return;
-      msg.redpacket.status = 'claimed'; msg.redpacket.claimedBy = 'me';
-      const w = getWallet();
-      const amt = parseFloat(msg.redpacket.amount) || 0;
-      w.balance += amt;
-      w.transactions.push({ title: `收到红包-${getContactById(msg.from)?.name || '对方'}`, amount: amt, ts: Date.now() });
-      saveWallet(w);
-      persist(); renderMessages();
-      midBox.classList.add('hidden'); resultBox.classList.remove('hidden');
-      amountShow.textContent = `¥${msg.redpacket.amount}`;
-    };
-  }
-  document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');
+function renderRedPacketDetail(msg){
+ const mine=msg.from==='me',sender=mine?{name:state.myName||'我',avatar:state.myAvatar}:getContactById(msg.from),av=document.getElementById('rpDetailAvatar');
+ av.style.backgroundImage=sender?.avatar?`url('${sender.avatar}')`:'';av.textContent=sender?.avatar?'':(sender?.name||'对方').slice(0,1);document.getElementById('rpDetailSender').textContent=`${sender?.name||'对方'}的红包`;document.getElementById('rpDetailNote').textContent=msg.redpacket.note;
+ const open=document.getElementById('rpDetailOpen'),result=document.getElementById('rpDetailResult'),waiting=document.getElementById('rpDetailWaiting');open.classList.add('hidden');result.classList.add('hidden');waiting.classList.add('hidden');
+ if(msg.redpacket.status==='claimed'){result.classList.remove('hidden');document.getElementById('rpAmountShow').textContent=mine?'红包已领取':msg.redpacket.amount;document.getElementById('rpResultUnit').textContent=mine?'':'元';document.getElementById('rpResultHint').textContent=mine?`${getContactById(msg.redpacket.claimedBy)?.name||'对方'}已领取`:'已存入零钱';}
+ else if(mine)waiting.classList.remove('hidden');else{open.classList.remove('hidden');open.onclick=()=>{if(msg.redpacket.status==='claimed')return;msg.redpacket.status='claimed';msg.redpacket.claimedBy='me';msg.redpacket.claimedAt=Date.now();const w=getWallet(),amt=Number(msg.redpacket.amount)||0;w.balance+=amt;w.transactions.push({title:`微信红包 · ${sender?.name||'对方'}`,amount:amt,ts:Date.now()});saveWallet(w);persist();renderMessages();renderRedPacketDetail(msg);};}
 }
+function openRedPacketDetail(msgId){const msg=(state.chats[state.activeChatId]||[]).find(m=>String(m.id)===String(msgId));if(!msg?.redpacket)return;renderRedPacketDetail(msg);document.getElementById('redPacketOpenSheet')?.classList.remove('hidden');}
 
 /* ============ 塔罗弹层 & 字卡管理 ============ */
 function bindSheetClose() { document.getElementById('sheetClose')?.addEventListener('click', () => document.getElementById('tarotSheet').classList.add('hidden')); }
@@ -1915,117 +1863,60 @@ function bindWallet() {
 }
 
 /* ============ 小程式：沐茶 MUTEA 点单 ============ */
-const TEA_MENU = [
-  {id:'grape',category:'人气推荐',name:'多肉葡萄',desc:'巨峰葡萄果肉 · 清爽绿妍茶底',price:29,sold:823,img:'https://images.unsplash.com/photo-1572490122747-3968b75cc699?auto=format&fit=crop&w=320&q=80'},
-  {id:'brown',category:'人气推荐',name:'黑糖波波牛乳',desc:'黑糖珍珠 · 鲜牛乳 · 不含茶',price:24,sold:615,img:'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=320&q=80'},
-  {id:'jasmine',category:'轻乳茶',name:'茉莉轻乳茶',desc:'茉莉绿茶 · 云顶轻乳',price:19,sold:492,img:'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=320&q=80'},
-  {id:'oolong',category:'轻乳茶',name:'桂花乌龙轻乳茶',desc:'桂花乌龙 · 鲜奶 · 微咸奶盖',price:22,sold:381,img:'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=320&q=80'},
-  {id:'lemon',category:'清爽果茶',name:'手打柠檬茶',desc:'香水柠檬 · 原叶红茶',price:18,sold:704,img:'https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&w=320&q=80'},
-  {id:'peach',category:'清爽果茶',name:'白桃茉莉',desc:'白桃果肉 · 茉莉绿茶',price:21,sold:336,img:'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?auto=format&fit=crop&w=320&q=80'}
-];
-let _teaDraft={contactId:null,cart:{},method:'delivery',address:'',sugar:'少糖',ice:'少冰',note:''};
-let _teaTrackTimers=[];
+const TEA_MENU=[
+{id:'grape',category:'人气推荐',name:'多肉葡萄',desc:'巨峰葡萄果肉 · 清爽绿妍茶底',price:29,sold:823,img:'https://images.unsplash.com/photo-1572490122747-3968b75cc699?auto=format&fit=crop&w=320&q=80'},
+{id:'brown',category:'人气推荐',name:'黑糖波波牛乳',desc:'黑糖珍珠 · 鲜牛乳 · 不含茶',price:24,sold:615,img:'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=320&q=80'},
+{id:'mango',category:'人气推荐',name:'芒芒甘露',desc:'台农芒果 · 西柚 · 椰乳',price:28,sold:766,img:'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?auto=format&fit=crop&w=320&q=80'},
+{id:'jasmine',category:'轻乳茶',name:'茉莉轻乳茶',desc:'茉莉绿茶 · 云顶轻乳',price:19,sold:492,img:'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=320&q=80'},
+{id:'oolong',category:'轻乳茶',name:'桂花乌龙轻乳茶',desc:'桂花乌龙 · 鲜奶 · 微咸奶盖',price:22,sold:381,img:'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=320&q=80'},
+{id:'matcha',category:'轻乳茶',name:'抹茶云顶',desc:'宇治抹茶 · 鲜乳 · 云顶奶盖',price:26,sold:288,img:'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&w=320&q=80'},
+{id:'lemon',category:'鲜果茶',name:'手打柠檬茶',desc:'香水柠檬 · 原叶红茶',price:18,sold:704,img:'https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&w=320&q=80'},
+{id:'peach',category:'鲜果茶',name:'白桃茉莉',desc:'白桃果肉 · 茉莉绿茶',price:21,sold:336,img:'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?auto=format&fit=crop&w=320&q=80'},
+{id:'orange',category:'鲜果茶',name:'满杯鲜橙',desc:'鲜橙果肉 · 绿茶 · 橙汁',price:23,sold:459,img:'https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=crop&w=320&q=80'},
+{id:'jasminepure',category:'原叶纯茶',name:'茉莉绿妍',desc:'清香茉莉 · 低温冷萃',price:13,sold:247,img:'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=320&q=80'},
+{id:'oolongpure',category:'原叶纯茶',name:'金桂乌龙',desc:'金桂花香 · 炭焙乌龙',price:15,sold:193,img:'https://images.unsplash.com/photo-1594631252845-29fc4cc8cde9?auto=format&fit=crop&w=320&q=80'},
+{id:'earl',category:'原叶纯茶',name:'伯爵红茶',desc:'佛手柑香 · 锡兰红茶',price:15,sold:174,img:'https://images.unsplash.com/photo-1597318181409-cf64d0b5d8a2?auto=format&fit=crop&w=320&q=80'}];
+const TEA_TOPPINGS={none:{name:'不加料',price:0},pearl:{name:'黑糖珍珠',price:2},jelly:{name:'桂花冻',price:2},cream:{name:'云顶奶盖',price:3}};
+const TEA_ACTIVE_ORDER_KEY='tarot_active_tea_order_v2';
+let _teaDraft={contactId:null,cart:{},method:'delivery',address:'',note:''},_teaCustomProductId=null,_teaTrackTimers=[];
 
-function bindMiniPrograms(){
-  document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>pushPage('page-miniprograms'));
-  document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());
-  document.getElementById('miniAppTea')?.addEventListener('click',openTeaOrder);
-}
-function teaCartCount(){return Object.values(_teaDraft.cart).reduce((a,b)=>a+b,0);}
-function teaSubtotal(){return TEA_MENU.reduce((sum,p)=>sum+p.price*(_teaDraft.cart[p.id]||0),0);}
+function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>pushPage('page-miniprograms'));document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniAppTea')?.addEventListener('click',openTeaOrder);}
+function teaCartItems(){return Object.values(_teaDraft.cart).flat();}
+function teaCartCount(){return teaCartItems().length;}
+function teaSubtotal(){return teaCartItems().reduce((sum,x)=>sum+(TEA_MENU.find(p=>p.id===x.productId)?.price||0)+(TEA_TOPPINGS[x.topping]?.price||0),0);}
 function teaDeliveryFee(){return _teaDraft.method==='delivery'&&teaCartCount()&&teaSubtotal()<38?6:0;}
 function teaTotal(){return teaSubtotal()+teaDeliveryFee();}
-function renderTeaContacts(){
-  const box=document.getElementById('teaContactList'); if(!box)return;
-  box.innerHTML=state.contacts.map(c=>`<button class="tea-contact-item ${String(_teaDraft.contactId)===String(c.id)?'selected':''}" data-cid="${c.id}">${avatarHtml(c.avatar,c.name,34)}<span>${escapeHtml(c.name)}</span><small>收货人</small></button>`).join('')||'<div class="tea-empty">请先添加联系人</div>';
-}
-function renderTeaMenu(category='人气推荐'){
-  document.querySelectorAll('[data-tea-category]').forEach(x=>x.classList.toggle('selected',x.dataset.teaCategory===category));
-  const products=TEA_MENU.filter(p=>p.category===category);
-  document.getElementById('teaMenuList').innerHTML=products.map(p=>{
-    const qty=_teaDraft.cart[p.id]||0;
-    return `<article class="tea-product">
-      <img src="${p.img}" alt="${escapeHtml(p.name)}" loading="lazy">
-      <div class="tea-product-info"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.desc)}</p><small>月售 ${p.sold}+</small>
-      <div class="tea-product-bottom"><strong>¥${p.price}</strong><div class="tea-qty">${qty?`<button data-tea-minus="${p.id}">−</button><span>${qty}</span>`:''}<button class="plus" data-tea-plus="${p.id}">＋</button></div></div></div>
-    </article>`;
-  }).join('');
-}
-function updateTeaTotal(){
-  const total=teaTotal(),count=teaCartCount();
-  document.getElementById('teaTotalAmount').textContent=`¥${total.toFixed(2)}`;
-  document.getElementById('teaCartCount').textContent=String(count);
-  document.getElementById('teaCartCount').classList.toggle('hidden',!count);
-  document.getElementById('teaGoPayBtn').disabled=!count;
-  return total;
-}
-function openTeaOrder(){
-  _teaDraft={contactId:state.contacts[0]?.id||null,cart:{},method:'delivery',address:safeGetItem(TEA_ADDRESS_KEY,'')||'',sugar:'少糖',ice:'少冰',note:''};
-  document.getElementById('teaOrderForm').classList.remove('hidden');
-  document.getElementById('teaOrderTracking').classList.add('hidden');
-  document.getElementById('teaBottomBar').classList.remove('hidden');
-  document.getElementById('teaAddressInput').value=_teaDraft.address;
-  document.getElementById('teaNoteInput').value='';
-  document.querySelectorAll('[data-tea-sugar]').forEach(x=>x.classList.toggle('selected',x.dataset.teaSugar==='少糖'));
-  document.querySelectorAll('[data-tea-ice]').forEach(x=>x.classList.toggle('selected',x.dataset.teaIce==='少冰'));
-  document.querySelectorAll('.tea-method-chip').forEach(x=>x.classList.toggle('selected',x.dataset.method==='delivery'));
-  document.getElementById('teaAddressWrap').classList.remove('hidden');
-  document.getElementById('teaCategoryList').innerHTML=['人气推荐','轻乳茶','清爽果茶'].map((x,i)=>`<button data-tea-category="${x}" class="${i===0?'selected':''}">${x}</button>`).join('');
-  renderTeaContacts(); renderTeaMenu(); updateTeaTotal(); pushPage('page-teaorder');
-}
-function changeTeaQty(id,delta){
-  _teaDraft.cart[id]=Math.max(0,(_teaDraft.cart[id]||0)+delta);
-  if(!_teaDraft.cart[id])delete _teaDraft.cart[id];
-  const active=document.querySelector('[data-tea-category].selected')?.dataset.teaCategory||'人气推荐';
-  renderTeaMenu(active);updateTeaTotal();
-}
+function renderTeaContacts(){const box=document.getElementById('teaContactList');if(!box)return;box.innerHTML=state.contacts.map(c=>`<button class="tea-contact-item ${String(_teaDraft.contactId)===String(c.id)?'selected':''}" data-cid="${c.id}">${avatarHtml(c.avatar,c.name,34)}<span>${escapeHtml(c.name)}</span><small>收货人</small></button>`).join('')||'<div class="tea-empty">请先添加联系人</div>';}
+function renderTeaMenu(category='人气推荐'){document.querySelectorAll('[data-tea-category]').forEach(x=>x.classList.toggle('selected',x.dataset.teaCategory===category));document.getElementById('teaMenuList').innerHTML=TEA_MENU.filter(p=>p.category===category).map(p=>{const qty=(_teaDraft.cart[p.id]||[]).length;return `<article class="tea-product"><img src="${p.img}" alt="${escapeHtml(p.name)}" loading="lazy"><div class="tea-product-info"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.desc)}</p><small>月售 ${p.sold}+</small><div class="tea-product-bottom"><strong>¥${p.price} 起</strong><div class="tea-qty">${qty?`<button data-tea-minus="${p.id}">−</button><span>${qty}</span>`:''}<button class="plus" data-tea-plus="${p.id}">＋</button></div></div></div></article>`;}).join('');}
+function updateTeaTotal(){const total=teaTotal(),count=teaCartCount();document.getElementById('teaTotalAmount').textContent=`¥${total.toFixed(2)}`;document.getElementById('teaCartCount').textContent=String(count);document.getElementById('teaCartCount').classList.toggle('hidden',!count);document.getElementById('teaGoPayBtn').disabled=!count;document.getElementById('teaFeeHint').textContent=_teaDraft.method==='pickup'?'免配送费':teaDeliveryFee()?'配送费 ¥6 · 满 ¥38 免配送':'已免配送费';return total;}
+function selectCustomOption(button,attr){document.querySelectorAll(`[${attr}]`).forEach(x=>x.classList.toggle('selected',x===button));}
+function openTeaCustomize(id){_teaCustomProductId=id;const p=TEA_MENU.find(x=>x.id===id);if(!p)return;document.getElementById('teaCustomizeName').textContent=p.name;selectCustomOption(document.querySelector('[data-custom-sugar="少糖"]'),'data-custom-sugar');selectCustomOption(document.querySelector('[data-custom-ice="少冰"]'),'data-custom-ice');selectCustomOption(document.querySelector('[data-custom-topping="none"]'),'data-custom-topping');document.getElementById('teaCustomizeSheet').classList.remove('hidden');}
+function addCustomizedTea(){const sugar=document.querySelector('[data-custom-sugar].selected')?.dataset.customSugar||'少糖',ice=document.querySelector('[data-custom-ice].selected')?.dataset.customIce||'少冰',topping=document.querySelector('[data-custom-topping].selected')?.dataset.customTopping||'none';(_teaDraft.cart[_teaCustomProductId]||=[]).push({productId:_teaCustomProductId,sugar,ice,topping});document.getElementById('teaCustomizeSheet').classList.add('hidden');const cat=document.querySelector('[data-tea-category].selected')?.dataset.teaCategory||'人气推荐';renderTeaMenu(cat);updateTeaTotal();}
+function removeTea(id){const list=_teaDraft.cart[id]||[];list.pop();if(!list.length)delete _teaDraft.cart[id];const cat=document.querySelector('[data-tea-category].selected')?.dataset.teaCategory||'人气推荐';renderTeaMenu(cat);updateTeaTotal();}
+function showNewTeaOrder(){_teaDraft={contactId:state.contacts[0]?.id||null,cart:{},method:'delivery',address:safeGetItem(TEA_ADDRESS_KEY,'')||'',note:''};document.getElementById('teaOrderForm').classList.remove('hidden');document.getElementById('teaOrderTracking').classList.add('hidden');document.getElementById('teaBottomBar').classList.remove('hidden');document.getElementById('teaAddressInput').value=_teaDraft.address;document.getElementById('teaNoteInput').value='';document.querySelectorAll('.tea-method-chip').forEach(x=>x.classList.toggle('selected',x.dataset.method==='delivery'));document.getElementById('teaAddressWrap').classList.remove('hidden');document.getElementById('teaCategoryList').innerHTML=['人气推荐','轻乳茶','鲜果茶','原叶纯茶'].map((x,i)=>`<button data-tea-category="${x}" class="${i===0?'selected':''}">${x}</button>`).join('');renderTeaContacts();renderTeaMenu();updateTeaTotal();}
+function openTeaOrder(){pushPage('page-teaorder');const active=safeLoadJSON(TEA_ACTIVE_ORDER_KEY,null);if(active&&!active.cleared)return renderTeaTracking(active);showNewTeaOrder();}
 function bindTeaOrder(){
-  document.getElementById('backFromTeaOrder')?.addEventListener('click',()=>popPage());
-  document.getElementById('teaCategoryList')?.addEventListener('click',e=>{const b=e.target.closest('[data-tea-category]');if(b)renderTeaMenu(b.dataset.teaCategory);});
-  document.getElementById('teaMenuList')?.addEventListener('click',e=>{const plus=e.target.closest('[data-tea-plus]'),minus=e.target.closest('[data-tea-minus]');if(plus)changeTeaQty(plus.dataset.teaPlus,1);if(minus)changeTeaQty(minus.dataset.teaMinus,-1);});
-  document.getElementById('teaContactList')?.addEventListener('click',e=>{const item=e.target.closest('[data-cid]');if(item){_teaDraft.contactId=item.dataset.cid;renderTeaContacts();}});
-  document.getElementById('teaMethodRow')?.addEventListener('click',e=>{const chip=e.target.closest('[data-method]');if(!chip)return;_teaDraft.method=chip.dataset.method;document.querySelectorAll('.tea-method-chip').forEach(c=>c.classList.toggle('selected',c===chip));document.getElementById('teaAddressWrap').classList.toggle('hidden',_teaDraft.method!=='delivery');updateTeaTotal();});
-  document.querySelectorAll('[data-tea-sugar]').forEach(x=>x.addEventListener('click',()=>{_teaDraft.sugar=x.dataset.teaSugar;document.querySelectorAll('[data-tea-sugar]').forEach(y=>y.classList.toggle('selected',y===x));}));
-  document.querySelectorAll('[data-tea-ice]').forEach(x=>x.addEventListener('click',()=>{_teaDraft.ice=x.dataset.teaIce;document.querySelectorAll('[data-tea-ice]').forEach(y=>y.classList.toggle('selected',y===x));}));
-  document.getElementById('teaGoPayBtn')?.addEventListener('click',()=>{
-    if(!teaCartCount()){alert('请先选择饮品');return;}
-    if(!_teaDraft.contactId){alert('请选择收货人');return;}
-    if(_teaDraft.method==='delivery'){
-      _teaDraft.address=document.getElementById('teaAddressInput').value.trim();
-      if(!_teaDraft.address){alert('请填写配送地址');return;}
-      safeSetItem(TEA_ADDRESS_KEY,_teaDraft.address);
-    }
-    _teaDraft.note=document.getElementById('teaNoteInput').value.trim();
-    document.getElementById('teaPayAmount').textContent=`¥${teaTotal().toFixed(2)}`;
-    document.getElementById('teaPayCurrentBalance').textContent=`¥${getWallet().balance.toFixed(2)}`;
-    document.getElementById('teaPaySummary').textContent=`${teaCartCount()} 件商品 · ${_teaDraft.method==='delivery'?'配送':'到店自取'}`;
-    pushPage('page-teapay');
-  });
-  document.getElementById('backFromTeaPay')?.addEventListener('click',()=>popPage());
-  document.getElementById('teaConfirmPayBtn')?.addEventListener('click',()=>{
-    if(_walletActionBusy)return;
-    const total=teaTotal(),w=getWallet();
-    if(w.balance<total){alert('余额不足，请先充值');return;}
-    _walletActionBusy=true;
-    runFaceIdSimulation(()=>{
-      const w2=getWallet();if(w2.balance<total){_walletActionBusy=false;alert('余额不足，请先充值');popPage();return;}
-      const items=TEA_MENU.filter(p=>_teaDraft.cart[p.id]).map(p=>`${p.name}×${_teaDraft.cart[p.id]}`);
-      w2.balance-=total;w2.transactions.push({title:`沐茶订单 · ${items.join('、')}`,amount:-total,ts:Date.now()});saveWallet(w2);
-      _walletActionBusy=false;popPage();startTeaTracking(items);
-    });
-  });
-  document.getElementById('teaOrderAgainBtn')?.addEventListener('click',openTeaOrder);
+ document.getElementById('backFromTeaOrder')?.addEventListener('click',()=>popPage());
+ document.getElementById('teaCategoryList')?.addEventListener('click',e=>{const b=e.target.closest('[data-tea-category]');if(b)renderTeaMenu(b.dataset.teaCategory);});
+ document.getElementById('teaMenuList')?.addEventListener('click',e=>{const p=e.target.closest('[data-tea-plus]'),m=e.target.closest('[data-tea-minus]');if(p)openTeaCustomize(p.dataset.teaPlus);if(m)removeTea(m.dataset.teaMinus);});
+ document.getElementById('teaCustomizeOptions')?.addEventListener('click',e=>{const b=e.target.closest('[data-custom-sugar],[data-custom-ice],[data-custom-topping]');if(!b)return;if(b.dataset.customSugar!=null)selectCustomOption(b,'data-custom-sugar');else if(b.dataset.customIce!=null)selectCustomOption(b,'data-custom-ice');else selectCustomOption(b,'data-custom-topping');});
+ document.getElementById('teaCustomizeCancel')?.addEventListener('click',()=>document.getElementById('teaCustomizeSheet').classList.add('hidden'));document.getElementById('teaCustomizeConfirm')?.addEventListener('click',addCustomizedTea);
+ document.getElementById('teaContactList')?.addEventListener('click',e=>{const x=e.target.closest('[data-cid]');if(x){_teaDraft.contactId=x.dataset.cid;renderTeaContacts();}});
+ document.getElementById('teaMethodRow')?.addEventListener('click',e=>{const x=e.target.closest('[data-method]');if(!x)return;_teaDraft.method=x.dataset.method;document.querySelectorAll('.tea-method-chip').forEach(c=>c.classList.toggle('selected',c===x));document.getElementById('teaAddressWrap').classList.toggle('hidden',_teaDraft.method!=='delivery');updateTeaTotal();});
+ document.getElementById('teaGoPayBtn')?.addEventListener('click',()=>{if(!teaCartCount()){alert('请先选择饮品');return;}if(!_teaDraft.contactId){alert('请选择收货人');return;}if(_teaDraft.method==='delivery'){_teaDraft.address=document.getElementById('teaAddressInput').value.trim();if(!_teaDraft.address){alert('请填写配送地址');return;}safeSetItem(TEA_ADDRESS_KEY,_teaDraft.address);}_teaDraft.note=document.getElementById('teaNoteInput').value.trim();document.getElementById('teaPayAmount').textContent=`¥${teaTotal().toFixed(2)}`;document.getElementById('teaPayCurrentBalance').textContent=`¥${getWallet().balance.toFixed(2)}`;document.getElementById('teaPaySummary').textContent=`${teaCartCount()} 杯 · ${_teaDraft.method==='delivery'?'配送':'到店自取'}`;pushPage('page-teapay');});
+ document.getElementById('backFromTeaPay')?.addEventListener('click',()=>popPage());
+ document.getElementById('teaConfirmPayBtn')?.addEventListener('click',()=>{if(_walletActionBusy)return;const total=teaTotal(),w=getWallet();if(w.balance<total){alert('余额不足，请先充值');return;}_walletActionBusy=true;runFaceIdSimulation(()=>{const w2=getWallet();if(w2.balance<total){_walletActionBusy=false;alert('余额不足');popPage();return;}const now=Date.now(),accept=25000+secureRandomInt(65000),prepare=(6+secureRandomInt(9))*60000,travel=_teaDraft.method==='delivery'?(12+secureRandomInt(17))*60000:(2+secureRandomInt(5))*60000;const order={id:now,contactId:_teaDraft.contactId,items:teaCartItems(),method:_teaDraft.method,address:_teaDraft.address,note:_teaDraft.note,total,createdAt:now,acceptedAt:now+accept,preparedAt:now+accept+prepare,completedAt:now+accept+prepare+travel,notified:false};w2.balance-=total;w2.transactions.push({title:`沐茶订单 · ${order.items.length}杯`,amount:-total,ts:now});saveWallet(w2);safeSaveJSON(TEA_ACTIVE_ORDER_KEY,order);_walletActionBusy=false;popPage();renderTeaTracking(order);});});
+ document.getElementById('teaOrderAgainBtn')?.addEventListener('click',()=>{safeSaveJSON(TEA_ACTIVE_ORDER_KEY,{cleared:true});showNewTeaOrder();});
 }
-function startTeaTracking(items){
-  document.getElementById('teaOrderForm').classList.add('hidden');
-  document.getElementById('teaBottomBar').classList.add('hidden');
-  document.getElementById('teaOrderTracking').classList.remove('hidden');
-  document.getElementById('teaOrderSummary').innerHTML=`<strong>沐茶 MUTEA</strong><span>${escapeHtml(items.join('、'))}</span><small>${escapeHtml(_teaDraft.sugar)} · ${escapeHtml(_teaDraft.ice)}${_teaDraft.note?' · '+escapeHtml(_teaDraft.note):''}</small>`;
-  const steps=['商家已接单','饮品制作中',_teaDraft.method==='delivery'?'骑手配送中':'等待取餐','订单已完成'];
-  const box=document.getElementById('teaTrackSteps');
-  const render=i=>box.innerHTML=steps.map((s,n)=>`<div class="tea-track-step ${n<i?'done':''} ${n===i?'active':''}"><div class="tea-track-dot"></div><div class="tea-track-label">${s}<small>${n===i?'进行中':''}</small></div></div>`).join('');
-  render(0);_teaTrackTimers.forEach(clearTimeout);_teaTrackTimers=[];
-  [2500,5000,8000].forEach((ms,i)=>_teaTrackTimers.push(setTimeout(async()=>{render(i+1);if(i===2){const c=getContactById(_teaDraft.contactId);if(c)await replyWithTarot(String(c.id),String(c.id),`(我送的奶茶“${items.join('、')}”到了，请自然地回应)`,c.persona);}},ms)));
+function teaItemDescription(item){const p=TEA_MENU.find(x=>x.id===item.productId),t=TEA_TOPPINGS[item.topping];return (p?.name||'饮品')+' · '+item.sugar+' · '+item.ice+(t&&t.price?' · '+t.name:'');}
+function renderTeaTracking(order){
+ document.getElementById('teaOrderForm').classList.add('hidden');document.getElementById('teaBottomBar').classList.add('hidden');document.getElementById('teaOrderTracking').classList.remove('hidden');
+ const now=Date.now(),stage=now<order.acceptedAt?0:now<order.preparedAt?1:now<order.completedAt?2:3,steps=['订单已提交','商家制作中',order.method==='delivery'?'骑手配送中':'等待取餐','已送达'];
+ document.getElementById('teaOrderSummary').innerHTML=`<strong>沐茶 MUTEA</strong>${order.items.map(x=>`<span>${escapeHtml(teaItemDescription(x))}</span>`).join('')}<small>实付 ¥${Number(order.total).toFixed(2)} · ${order.method==='delivery'?'配送':'自取'}</small>`;
+ document.getElementById('teaTrackSteps').innerHTML=steps.map((s,i)=>`<div class="tea-track-step ${i<stage?'done':''} ${i===stage?'active':''}"><div class="tea-track-dot"></div><div class="tea-track-label">${s}<small>${i===stage&&stage<3?(stage===0?'等待商家确认':stage===1?'预计 '+Math.max(1,Math.ceil((order.preparedAt-now)/60000))+' 分钟完成':'预计 '+Math.max(1,Math.ceil((order.completedAt-now)/60000))+' 分钟送达'):''}</small></div></div>`).join('');
+ _teaTrackTimers.forEach(clearTimeout);_teaTrackTimers=[];
+ if(stage<3){const next=[order.acceptedAt,order.preparedAt,order.completedAt][stage];_teaTrackTimers.push(setTimeout(()=>renderTeaTracking(order),Math.max(1000,next-now+300)));}
+ else if(!order.notified){order.notified=true;safeSaveJSON(TEA_ACTIVE_ORDER_KEY,order);const c=getContactById(order.contactId);if(c)replyWithTarot(String(c.id),String(c.id),`(我送的奶茶刚刚实际送达，你现在才收到。饮品是：${order.items.map(teaItemDescription).join('；')}。请自然回应)`,c.persona);}
 }
 
 /* ============ 导出 / 导入 ============ */
