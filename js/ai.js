@@ -52,41 +52,58 @@ async function synthesizeVoiceOpenAI(text, cfg, key) {
 // the voice_setting/audio_setting body shape, or how the audio comes back (currently
 // a hex string at data.audio) may need updating to match their current API version.
 async function synthesizeVoiceMiniMax(text, cfg, key) {
-  const endpoint = (cfg.voiceEndpoint && cfg.voiceEndpoint.includes('minimax'))
-    ? cfg.voiceEndpoint
-    : `https://api.minimax.chat/v1/t2a_v2?GroupId=${encodeURIComponent(cfg.voiceGroupId || '')}`;
+  const endpoint = (cfg.voiceEndpoint && /minimax\.io/.test(cfg.voiceEndpoint))
+    ? cfg.voiceEndpoint.replace(/\?.*$/, '')
+    : 'https://api.minimax.io/v1/t2a_v2';
+  if (!cfg.voiceName?.trim()) throw new Error('请填写 MiniMax 克隆声音的 Voice ID');
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
     body: JSON.stringify({
-      model: cfg.voiceModel || 'speech-02-turbo',
+      model: cfg.voiceModel || 'speech-2.8-hd',
       text,
       stream: false,
-      voice_setting: { voice_id: cfg.voiceName, speed: 1, vol: 1, pitch: 0 },
+      language_boost: 'Chinese',
+      output_format: 'hex',
+      voice_setting: { voice_id: cfg.voiceName.trim(), speed: 1, vol: 1, pitch: 0 },
       audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
     })
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const data = await res.json();
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) {
+    const detail = data?.base_resp?.status_msg || data?.message || data?.error?.message || '';
+    throw new Error(`MiniMax HTTP ${res.status}${detail ? '：' + detail : ''}`);
+  }
   if (data?.base_resp?.status_code && data.base_resp.status_code !== 0) {
-    throw new Error(`MiniMax ${data.base_resp.status_code}: ${data.base_resp.status_msg || ''}`);
+    throw new Error(`MiniMax ${data.base_resp.status_code}：${data.base_resp.status_msg || '请求失败'}`);
   }
   const hex = data?.data?.audio;
-  if (!hex) throw new Error('MiniMax 响应里没有找到音频数据');
+  if (!hex) throw new Error('MiniMax 已响应，但没有返回音频；请检查 Voice ID 与账户余额');
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return URL.createObjectURL(new Blob([bytes], { type: 'audio/mp3' }));
+  return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
 }
-async function synthesizeVoice(text) {
+async function synthesizeVoice(text, options = {}) {
   const cfg = getAIConfig();
-  if (!cfg.voiceEnabled) return null;
+  if (!cfg.voiceEnabled) {
+    if (options.throwOnError) throw new Error('请先开启「启用语音回复」');
+    return null;
+  }
   const key = cfg.voiceApiKey || cfg.apiKey;
-  if (!key) return null;
+  if (!key) {
+    if (options.throwOnError) throw new Error('请填写 TTS API Key');
+    return null;
+  }
   try {
     return cfg.voiceProvider === 'minimax'
       ? await synthesizeVoiceMiniMax(text, cfg, key)
       : await synthesizeVoiceOpenAI(text, cfg, key);
-  } catch (e) { console.warn('语音合成失败', e); return null; }
+  } catch (e) {
+    console.warn('语音合成失败', e);
+    if (options.throwOnError) throw e;
+    return null;
+  }
 }
 
 function localSimilarity(a, b) {

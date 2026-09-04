@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tarot-wechat-v29';
+const CACHE_NAME = 'tarot-wechat-v30';
 const ASSETS = [
   './', './index.html',
   './js/tarot.js', './js/wordcards.js', './js/ai.js', './js/cloud.js', './js/app.js',

@@ -2026,39 +2026,69 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
   loadCloudSettingsForm();
 }
-function updateVoiceProviderFields() {
+function updateVoiceProviderFields(e) {
   const provider = document.getElementById('cfgVoiceProvider')?.value;
   const isMiniMax = provider === 'minimax';
-  document.getElementById('cfgVoiceGroupIdRow')?.classList.toggle('hidden', !isMiniMax);
+  document.getElementById('cfgVoiceGroupIdRow')?.classList.add('hidden');
   const nameLabel = document.getElementById('cfgVoiceNameLabel');
-  if (nameLabel) nameLabel.textContent = isMiniMax ? '声音 Voice ID（克隆声音的ID）' : '音色';
+  if (nameLabel) nameLabel.textContent = isMiniMax ? '李泽言 Voice ID' : '音色';
   const nameInput = document.getElementById('cfgVoiceName');
-  if (nameInput) nameInput.placeholder = isMiniMax ? '在 MiniMax 克隆好声音后拿到的 voice_id' : 'alloy / echo / nova...';
+  if (nameInput) nameInput.placeholder = isMiniMax ? '填写国际版控制台生成的 voice_id' : 'alloy / echo / nova...';
   const endpointInput = document.getElementById('cfgVoiceEndpoint');
-  if (endpointInput) endpointInput.placeholder = isMiniMax ? 'https://api.minimax.chat/v1/t2a_v2（留空则自动使用）' : 'https://api.openai.com/v1/audio/speech';
+  const modelInput = document.getElementById('cfgVoiceModel');
+  if (endpointInput) endpointInput.placeholder = isMiniMax ? 'https://api.minimax.io/v1/t2a_v2' : 'https://api.openai.com/v1/audio/speech';
+  if (e?.type === 'change' && isMiniMax) {
+    if (!endpointInput.value || /openai|api\.minimax\.chat/.test(endpointInput.value)) endpointInput.value = 'https://api.minimax.io/v1/t2a_v2';
+    if (!modelInput.value || /^tts-/.test(modelInput.value) || /^speech-0[12]/.test(modelInput.value)) modelInput.value = 'speech-2.8-hd';
+  }
+}
+function readAISettingsForm() {
+  return {
+    textEnabled: document.getElementById('cfgTextEnabled').checked,
+    endpoint: document.getElementById('cfgEndpoint').value.trim(),
+    apiKey: document.getElementById('cfgApiKey').value.trim(),
+    model: document.getElementById('cfgModel').value.trim(),
+    voiceEnabled: document.getElementById('cfgVoiceEnabled').checked,
+    voiceProvider: document.getElementById('cfgVoiceProvider').value,
+    voiceEndpoint: document.getElementById('cfgVoiceEndpoint').value.trim(),
+    voiceGroupId: document.getElementById('cfgVoiceGroupId')?.value.trim() || '',
+    voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
+    voiceModel: document.getElementById('cfgVoiceModel').value.trim(),
+    voiceName: document.getElementById('cfgVoiceName').value.trim(),
+    autoMsg: document.getElementById('cfgAutoMsg').checked,
+    autoMoment: document.getElementById('cfgAutoMoment').checked,
+    autoAvatar: document.getElementById('cfgAutoAvatar').checked,
+    autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
+  };
 }
 function bindSettingsSave() {
   document.getElementById('cfgVoiceProvider')?.addEventListener('change', updateVoiceProviderFields);
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
-    saveAIConfig({
-      textEnabled: document.getElementById('cfgTextEnabled').checked,
-      endpoint: document.getElementById('cfgEndpoint').value.trim(),
-      apiKey: document.getElementById('cfgApiKey').value.trim(),
-      model: document.getElementById('cfgModel').value.trim(),
-      voiceEnabled: document.getElementById('cfgVoiceEnabled').checked,
-      voiceProvider: document.getElementById('cfgVoiceProvider').value,
-      voiceEndpoint: document.getElementById('cfgVoiceEndpoint').value.trim(),
-      voiceGroupId: document.getElementById('cfgVoiceGroupId').value.trim(),
-      voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
-      voiceModel: document.getElementById('cfgVoiceModel').value.trim(),
-      voiceName: document.getElementById('cfgVoiceName').value,
-      autoMsg: document.getElementById('cfgAutoMsg').checked,
-      autoMoment: document.getElementById('cfgAutoMoment').checked,
-      autoAvatar: document.getElementById('cfgAutoAvatar').checked,
-      autoRedpacket: document.getElementById('cfgAutoRedpacket').checked
-    });
+    saveAIConfig(readAISettingsForm());
     saveCurrentCloudForm();
     alert('已保存');
+  });
+  document.getElementById('testVoiceBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('testVoiceBtn');
+    const status = document.getElementById('testVoiceStatus');
+    const player = document.getElementById('testVoicePlayer');
+    saveAIConfig(readAISettingsForm());
+    btn.disabled = true;
+    status.className = 'tts-test-status';
+    status.textContent = '正在连接 MiniMax…';
+    player.classList.add('hidden');
+    try {
+      const url = await synthesizeVoice('语音连接测试成功。', { throwOnError: true });
+      player.src = url;
+      player.classList.remove('hidden');
+      status.classList.add('success');
+      status.textContent = '连接成功，可以播放试听';
+      player.play().catch(()=>{});
+    } catch (e) {
+      status.classList.add('error');
+      const msg = e?.message || '未知错误';
+      status.textContent = msg.includes('Failed to fetch') ? '浏览器无法直连 MiniMax（可能是跨域限制），需要加入安全代理' : msg;
+    } finally { btn.disabled = false; }
   });
 }
 
