@@ -2037,9 +2037,9 @@ function updateVoiceProviderFields(e) {
   const endpointInput = document.getElementById('cfgVoiceEndpoint');
   const modelInput = document.getElementById('cfgVoiceModel');
   if (endpointInput) endpointInput.placeholder = isMiniMax ? 'https://api.minimax.io/v1/t2a_v2' : 'https://api.openai.com/v1/audio/speech';
-  if (e?.type === 'change' && isMiniMax) {
-    if (!endpointInput.value || /openai|api\.minimax\.chat/.test(endpointInput.value)) endpointInput.value = 'https://api.minimax.io/v1/t2a_v2';
-    if (!modelInput.value || /^tts-/.test(modelInput.value) || /^speech-0[12]/.test(modelInput.value)) modelInput.value = 'speech-2.8-hd';
+  if (isMiniMax) {
+    if (!endpointInput.value || !/api\.minimax\.io/.test(endpointInput.value)) endpointInput.value = 'https://api.minimax.io/v1/t2a_v2';
+    if (!/^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(modelInput.value)) modelInput.value = 'speech-2.8-hd';
   }
 }
 function readAISettingsForm() {
@@ -2053,7 +2053,7 @@ function readAISettingsForm() {
     voiceEndpoint: document.getElementById('cfgVoiceEndpoint').value.trim(),
     voiceGroupId: document.getElementById('cfgVoiceGroupId')?.value.trim() || '',
     voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
-    voiceModel: document.getElementById('cfgVoiceModel').value.trim(),
+    voiceModel: document.getElementById('cfgVoiceProvider').value === 'minimax' && !/^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(document.getElementById('cfgVoiceModel').value.trim()) ? 'speech-2.8-hd' : document.getElementById('cfgVoiceModel').value.trim(),
     voiceName: document.getElementById('cfgVoiceName').value.trim(),
     autoMsg: document.getElementById('cfgAutoMsg').checked,
     autoMoment: document.getElementById('cfgAutoMoment').checked,

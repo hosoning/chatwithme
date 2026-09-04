@@ -60,7 +60,7 @@ async function synthesizeVoiceMiniMax(text, cfg, key) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
     body: JSON.stringify({
-      model: cfg.voiceModel || 'speech-2.8-hd',
+      model: /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(cfg.voiceModel || '') ? cfg.voiceModel : 'speech-2.8-hd',
       text,
       stream: false,
       language_boost: 'Chinese',
