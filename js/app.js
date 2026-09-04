@@ -846,7 +846,7 @@ async function replyWithTarot(chatId, fromId, text, persona) {
     const picks = await interpretAndReply(text, cards, pool, persona);
     for (let i = 0; i < picks.length; i++) {
       await new Promise(r => setTimeout(r, 450));
-      const voiceUrl = await synthesizeVoice(picks[i]);
+      const voiceUrl = contactVoiceReplyEnabled(contact) ? await synthesizeVoice(picks[i]) : null;
       addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
       if (i < picks.length - 1) showTypingIndicator(chatId, contact);
     }
@@ -1050,7 +1050,7 @@ async function sendDuringCall(text) {
   const replyText = picks.join(' ');
   addCallLogEntry('contact', replyText);
   const cfg = getAIConfig();
-  if (cfg.voiceEnabled) {
+  if (cfg.voiceEnabled && contactVoiceReplyEnabled(contact)) {
     const voiceUrl = await synthesizeVoice(replyText);
     if (voiceUrl) { const audio = new Audio(voiceUrl); audio.play().catch(()=>{}); }
   }
@@ -1484,7 +1484,7 @@ async function replyToOptions(chatId, fromId, options, persona) {
     const cards = drawCards(3);
     const shieldCards = drawCards(3);
     const shield = calcShield(shieldCards);
-    const voiceUrl = await synthesizeVoice(options[idx]);
+    const voiceUrl = contactVoiceReplyEnabled(contact) ? await synthesizeVoice(options[idx]) : null;
     addMessage(chatId, fromId, options[idx], { cards, shieldCards, shield, voiceUrl });
   } finally {
     hideTypingIndicator();
@@ -1652,6 +1652,11 @@ function bindAddGroup() {
 }
 
 /* ============ 聊天设置 ============ */
+function contactVoiceReplyEnabled(contact) {
+  if (!contact) return false;
+  if (typeof contact.voiceReplyEnabled === 'boolean') return contact.voiceReplyEnabled;
+  return /李[泽澤]言/.test(String(contact.name || '').trim());
+}
 let chatSettingsTarget = null;
 function openChatSettings() {
   const chatId = state.activeChatId;
@@ -1692,6 +1697,10 @@ function openChatSettings() {
         <textarea id="editPersona" rows="3">${escapeHtml(c.persona || '')}</textarea>
       </div>
       <div class="settings-card">
+        <div class="settings-card-title">回复方式</div>
+        <div class="form-row"><div><label>使用语音回复</label><small style="display:block;color:#999;margin-top:4px;">关闭后只发送文字</small></div><label class="switch"><input type="checkbox" id="editVoiceReplyEnabled" ${contactVoiceReplyEnabled(c) ? 'checked' : ''}><span class="slider"></span></label></div>
+      </div>
+      <div class="settings-card">
         <div class="settings-card-title">字卡来源</div>
         <div class="form-row"><label>叠加专属字卡（在全局字卡基础上）</label><label class="switch"><input type="checkbox" id="editWordCardMode" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="menu-row" id="editContactCustomCards" style="margin-top:2px;">编辑专属字卡</div>
@@ -1724,6 +1733,7 @@ function bindChatSettingsDelegation() {
       const c = getContactById(chatSettingsTarget.id);
       if (c) {
         c.persona = document.getElementById('editPersona').value.trim();
+        c.voiceReplyEnabled = document.getElementById('editVoiceReplyEnabled').checked;
         c.wordCardMode = document.getElementById('editWordCardMode').checked ? 'custom' : 'global';
         persist();
       }
