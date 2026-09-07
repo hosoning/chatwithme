@@ -530,7 +530,8 @@ async function pickAvatarFromCards(cards, library, persona) {
         await sleep(delayMs);
         if (shouldSendRedPacket(cards)) { const amount=randomRedPacketAmount(), note=pool[secureRandomInt(pool.length)]||'恭喜发财'; addMessage(chatId,fromId,note,{type:'redpacket',cards,shieldCards,shield,redpacket:{amount,note,status:'unclaimed',claimedBy:null}}); return; }
         const picks = await interpretAndReply(text,cards,pool,persona); const safePicks = Array.isArray(picks)&&picks.length?picks:[(pool&&pool.length?pool[secureRandomInt(pool.length)]:'嗯')];
-        for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const voiceUrl=await synthesizeVoice(safePicks[i]); addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl}); }
+        const voiceFirst=nextReplyStartsWithVoice(chatId);
+        for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const useVoice=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(safePicks[i])&&((i%2===0)===voiceFirst); const voiceUrl=useVoice?await synthesizeVoice(safePicks[i]):null; addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl}); }
       } finally { hideTypingIndicator(); }
     };
     window.sendOptionsMessage = function(chatId, options) {
@@ -546,7 +547,7 @@ async function pickAvatarFromCards(cards, library, persona) {
       const contact=getContactById(fromId); showTypingIndicator(chatId,contact);
       try{
         await sleep(getReplyDelay(chatId)); const idx=secureRandomInt(options.length);
-        const cards=drawCards(3),shieldCards=drawCards(3),shield=calcShield(shieldCards),answer=options[idx],voiceUrl=await synthesizeVoice(answer);
+        const cards=drawCards(3),shieldCards=drawCards(3),shield=calcShield(shieldCards),answer=options[idx],voiceUrl=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(answer)&&nextReplyStartsWithVoice(chatId)?await synthesizeVoice(answer):null;
         addMessage(chatId,fromId,answer,{cards,shieldCards,shield,voiceUrl,optionAnswerTo:question||null});
       }finally{hideTypingIndicator();}
     };
