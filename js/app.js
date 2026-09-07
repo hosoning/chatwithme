@@ -531,6 +531,8 @@ function bindChatItemActionSheet() {
 
 /* ============ 聊天详情 ============ */
 function openChat(chatId) {
+  pendingQuote = null;
+  renderPendingQuote();
   state.activeChatId = chatId;
   state.unread[chatId] = 0;
   persist();
@@ -649,11 +651,17 @@ function renderMessages() {
     } else if (m.voiceUrl) {
       const voiceSeconds = m.durationSec || Math.max(1, Math.round((m.text || '').length / 4));
       const transcript = m.voiceTranscript || '';
-      bubbleHtml = `<div class="voice-message-wrap"><div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${voiceSeconds}″</span></div>${isMe ? `<button class="voice-to-text" data-transcribe="${m.id}">${transcript ? '转文字' : '转文字'}</button><div class="voice-transcript ${m.voiceTranscriptVisible ? '' : 'hidden'}" data-transcript-box="${m.id}">${transcript ? escapeHtml(transcript) : '未识别到文字'}</div>` : ''}</div>`;
+      bubbleHtml = `<div class="voice-message-wrap"><div class="bubble voice" data-play="${m.id}"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="#07c160"/></svg><span>${voiceSeconds}″</span></div>${m.voiceTranscriptVisible ? `<div class="voice-transcript ${isMe ? '' : 'remote'}" data-transcript-box="${m.id}">${escapeHtml(transcript || (isMe ? '未识别到文字' : m.text || '未识别到文字'))}</div>` : ''}</div>`;
     } else {
       bubbleHtml = `<div class="bubble">${escapeHtml(m.text)}</div>`;
     }
 
+    if (m.quote) {
+      const quoted = `<div class="message-quote"><span class="message-quote-name">${escapeHtml(m.quote.senderName || '消息')}</span><span class="message-quote-text">${escapeHtml(m.quote.text || '')}</span></div>`;
+      const wrap = document.createElement('div'); wrap.innerHTML = bubbleHtml;
+      const target = wrap.querySelector('.bubble'); if (target) target.insertAdjacentHTML('afterbegin', quoted);
+      bubbleHtml = wrap.innerHTML;
+    }
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return dividerHtml + `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
@@ -680,7 +688,7 @@ function bindMsgListDelegation() {
     pressTimer = setTimeout(() => {
       longPressFired = true;
       try { window.getSelection()?.removeAllRanges(); } catch(_) {}
-      openTarotSheet(row.dataset.id);
+      openMessageActionSheet(row.dataset.id);
     }, 480);
   }, { passive: true });
   box.addEventListener('touchmove', e => {
@@ -697,7 +705,8 @@ function bindMsgListDelegation() {
     const transcribeEl = e.target.closest('[data-transcribe]');
     if (transcribeEl) {
       const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === transcribeEl.dataset.transcribe);
-      if (msg?.from === 'me' && msg.voiceUrl) {
+      if (msg?.voiceUrl) {
+        if (!msg.voiceTranscript) msg.voiceTranscript = msg.from === 'me' ? '' : (msg.text || '');
         msg.voiceTranscriptVisible = !msg.voiceTranscriptVisible;
         persist();
         renderMessages();
@@ -720,6 +729,41 @@ function bindMsgListDelegation() {
 }
 
 let activeMessageActionId = null;
+let pendingQuote = null;
+function getActiveActionMessage() { return (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(activeMessageActionId)); }
+function messageSummary(msg) {
+  if (!msg) return '';
+  if (msg.voiceUrl) return msg.text && msg.text !== '[语音]' ? msg.text : '[语音]';
+  if (msg.type === 'image') return '[图片]';
+  if (msg.type === 'location') return `[位置] ${msg.text || ''}`.trim();
+  if (msg.type === 'redpacket') return `[红包] ${msg.redpacket?.note || ''}`.trim();
+  if (msg.type === 'call') return `[${msg.callType === 'video' ? '视频通话' : '语音通话'}]`;
+  return String(msg.text || '').slice(0, 160);
+}
+function messageSenderName(msg) { return msg?.from === 'me' ? (state.myName || '我') : (getContactById(msg?.from)?.name || '对方'); }
+function openMessageActionSheet(msgId) {
+  activeMessageActionId = String(msgId);
+  const msg = getActiveActionMessage(); if (!msg || msg.recalled) return;
+  document.getElementById('messageTranscribeBtn')?.classList.toggle('hidden', !(msg.voiceUrl && msg.from !== 'me'));
+  document.getElementById('messageCardsBtn')?.classList.toggle('hidden', !(msg.cards?.length || msg.shieldCards?.length));
+  document.getElementById('messageActionRecallBtn')?.classList.toggle('hidden', msg.from !== 'me');
+  document.getElementById('messageActionSheet')?.classList.remove('hidden');
+}
+function closeMessageActionSheet() { document.getElementById('messageActionSheet')?.classList.add('hidden'); }
+function showActiveVoiceTranscript() {
+  const msg = getActiveActionMessage(); if (!msg?.voiceUrl) return;
+  msg.voiceTranscript = msg.voiceTranscript || (msg.from === 'me' ? '' : msg.text || '');
+  msg.voiceTranscriptVisible = true; persist(); closeMessageActionSheet(); renderMessages();
+}
+function renderPendingQuote() {
+  const bar = document.getElementById('quoteCompose'), text = document.getElementById('quoteComposeText'); if (!bar || !text) return;
+  bar.classList.toggle('hidden', !pendingQuote); text.textContent = pendingQuote ? `${pendingQuote.senderName}：${pendingQuote.text}` : '';
+}
+function quoteActiveMessage() {
+  const msg = getActiveActionMessage(); if (!msg) return;
+  pendingQuote = { messageId: msg.id, senderName: messageSenderName(msg), text: messageSummary(msg) };
+  closeMessageActionSheet(); renderPendingQuote(); document.getElementById('msgInput')?.focus();
+}
 function openTarotSheet(msgId) {
   activeMessageActionId = String(msgId);
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
@@ -744,12 +788,19 @@ function recallActiveMessage() {
   msg.recalled = true;
   msg.recalledAt = Date.now();
   persist();
+  closeMessageActionSheet();
   document.getElementById('tarotSheet')?.classList.add('hidden');
   renderMessages();
   renderChatList();
 }
 function bindMessageRecall() {
   document.getElementById('messageRecallBtn')?.addEventListener('click', recallActiveMessage);
+  document.getElementById('messageActionRecallBtn')?.addEventListener('click', recallActiveMessage);
+  document.getElementById('messageActionCancel')?.addEventListener('click', closeMessageActionSheet);
+  document.getElementById('messageTranscribeBtn')?.addEventListener('click', showActiveVoiceTranscript);
+  document.getElementById('messageQuoteBtn')?.addEventListener('click', quoteActiveMessage);
+  document.getElementById('messageCardsBtn')?.addEventListener('click', () => { const id = activeMessageActionId; closeMessageActionSheet(); openTarotSheet(id); });
+  document.getElementById('quoteComposeClose')?.addEventListener('click', () => { pendingQuote = null; renderPendingQuote(); });
 }
 
 /* ============ 发消息 & 塔罗回复 ============ */
@@ -780,7 +831,9 @@ const LOCATION_ASK_KEYWORDS = ['你在哪', '你的位置', '分享位置', '你
 function handleSend(text) {
   const chatId = state.activeChatId;
   if (!chatId || !text || !text.trim()) return;
-  addMessage(chatId, 'me', text.trim());
+  const quote = pendingQuote ? { ...pendingQuote } : null;
+  pendingQuote = null; renderPendingQuote();
+  addMessage(chatId, 'me', text.trim(), quote ? { quote } : {});
 
   if (AVATAR_CHANGE_KEYWORDS.some(k => text.includes(k))) {
     if (isGroupChat(chatId)) {
@@ -793,7 +846,7 @@ function handleSend(text) {
   }
 
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
-  state.pendingBatch[chatId].push(text.trim());
+  state.pendingBatch[chatId].push(quote ? `(引用${quote.senderName}的消息「${quote.text}」并回复) ${text.trim()}` : text.trim());
   clearTimeout(state.batchTimer[chatId]);
   state.batchTimer[chatId] = setTimeout(() => {
     if (isGroupChat(chatId)) processGroupBatch(chatId);
@@ -828,6 +881,10 @@ function showTypingIndicator(chatId, contact) {
 function hideTypingIndicator() {
   document.getElementById('typingIndicatorRow')?.remove();
 }
+function nextReplyStartsWithVoice(chatId) {
+  const previous = [...(state.chats[chatId] || [])].reverse().find(m => m.from !== 'me' && !m.systemNote && !m.recalled && m.type !== 'redpacket' && m.type !== 'call');
+  return previous ? !previous.voiceUrl : secureRandomInt(2) === 0;
+}
 async function replyWithTarot(chatId, fromId, text, persona) {
   const cards = drawCards(3);
   const shieldCards = drawCards(3);
@@ -844,9 +901,11 @@ async function replyWithTarot(chatId, fromId, text, persona) {
       return;
     }
     const picks = await interpretAndReply(text, cards, pool, persona);
+    const voiceFirst = nextReplyStartsWithVoice(chatId);
     for (let i = 0; i < picks.length; i++) {
       await new Promise(r => setTimeout(r, 450));
-      const voiceUrl = contactVoiceReplyEnabled(contact) ? await synthesizeVoice(picks[i]) : null;
+      const useVoice = contactVoiceReplyEnabled(contact) && !/[()（）]/.test(picks[i]) && ((i % 2 === 0) === voiceFirst);
+      const voiceUrl = useVoice ? await synthesizeVoice(picks[i]) : null;
       addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
       if (i < picks.length - 1) showTypingIndicator(chatId, contact);
     }
@@ -1484,7 +1543,7 @@ async function replyToOptions(chatId, fromId, options, persona) {
     const cards = drawCards(3);
     const shieldCards = drawCards(3);
     const shield = calcShield(shieldCards);
-    const voiceUrl = contactVoiceReplyEnabled(contact) ? await synthesizeVoice(options[idx]) : null;
+    const voiceUrl = contactVoiceReplyEnabled(contact) && !/[()（）]/.test(options[idx]) && nextReplyStartsWithVoice(chatId) ? await synthesizeVoice(options[idx]) : null;
     addMessage(chatId, fromId, options[idx], { cards, shieldCards, shield, voiceUrl });
   } finally {
     hideTypingIndicator();
