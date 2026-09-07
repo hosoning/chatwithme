@@ -45,7 +45,15 @@ async function synthesizeVoiceOpenAI(text, cfg, key) {
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  return blobToDataUrl(blob);
+}
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('音频读取失败'));
+    reader.readAsDataURL(blob);
+  });
 }
 // MiniMax's T2A v2 API — request/response shape per MiniMax's docs as of this writing.
 // If MiniMax changes their contract, this is the one place to adjust: the endpoint,
@@ -82,7 +90,7 @@ async function synthesizeVoiceMiniMax(text, cfg, key) {
   if (!hex) throw new Error('MiniMax 已响应，但没有返回音频；请检查 Voice ID 与账户余额');
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+  return blobToDataUrl(new Blob([bytes], { type: 'audio/mpeg' }));
 }
 async function synthesizeVoice(text, options = {}) {
   const cfg = getAIConfig();
