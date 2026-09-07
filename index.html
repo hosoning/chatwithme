@@ -84,8 +84,9 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .gps-btn.disabled { opacity:.55; pointer-events:none; }
 .location-coords { color:#999; font-size:12px; text-align:center; padding:9px 0; font-variant-numeric:tabular-nums; }
 
-.input-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f7f7f7; border-top:0.5px solid #dcdcdc; padding-bottom:calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; }
+.input-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f7f7f7; border-top:0.5px solid #dcdcdc; padding-bottom:calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; flex-wrap:wrap; }
 .input-bar input { flex:1; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.quote-compose{width:100%;display:flex;align-items:center;gap:9px;background:#e9e9e9;border-radius:5px;padding:7px 9px;color:#666;font-size:12px;line-height:1.35}.quote-compose-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.quote-compose-close{border:0;background:transparent;color:#777;font-size:20px;line-height:18px;padding:0 2px}.message-quote{margin:-2px 0 7px;padding:5px 8px;border-left:3px solid rgba(0,0,0,.18);background:rgba(0,0,0,.055);border-radius:2px;font-size:12px;line-height:1.35;color:#666}.message-quote-name{font-weight:600;margin-right:5px}.voice-transcript.remote{background:#fff}.message-action-sheet .menu-row{text-align:center}.message-action-sheet .danger{color:#fa5151}
 .hold-talk-btn { flex:1; height:40px; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; color:#333; touch-action:manipulation; }
 .hold-talk-btn.active { background:#e0e0e0; }
 .send-btn { background:#07c160; color:#fff; border:none; border-radius:6px; padding:0 18px; height:34px; font-size:15px; flex-shrink:0; font-weight:500; transition:opacity .1s; touch-action:manipulation; }
@@ -520,6 +521,7 @@ svg { max-width:100%; max-height:100%; }
     </div>
     <div class="msg-list" id="msgList"></div>
     <div class="input-bar">
+      <div class="quote-compose hidden" id="quoteCompose"><div class="quote-compose-text" id="quoteComposeText"></div><button class="quote-compose-close" id="quoteComposeClose">×</button></div>
       <svg class="icon-btn" id="micBtn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#666" stroke-width="1.6"/><path d="M12 7a2.2 2.2 0 0 1 2.2 2.2v3.6a2.2 2.2 0 0 1-4.4 0V9.2A2.2 2.2 0 0 1 12 7z" fill="#666"/><path d="M8.5 12.5a3.5 3.5 0 0 0 7 0" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round"/></svg>
       <input type="text" id="msgInput" placeholder="发消息...">
       <div class="hold-talk-btn hidden" id="holdTalkBtn">按住 说话</div>
@@ -746,7 +748,17 @@ svg { max-width:100%; max-height:100%; }
 
   <div class="mask hidden" id="teaCustomizeSheet" style="align-items:flex-end;"><div class="tea-custom-sheet"><div class="tea-custom-name" id="teaCustomizeName"></div><div id="teaCustomizeOptions"><div class="tea-custom-label">糖度</div><div class="tea-custom-options"><button data-custom-sugar="不另外加糖">不另外加糖</button><button data-custom-sugar="少糖">少糖</button><button data-custom-sugar="正常糖">正常糖</button></div><div class="tea-custom-label">冰量</div><div class="tea-custom-options"><button data-custom-ice="去冰">去冰</button><button data-custom-ice="少冰">少冰</button><button data-custom-ice="正常冰">正常冰</button></div><div class="tea-custom-label">加料</div><div class="tea-custom-options"><button data-custom-topping="none">不加料</button><button data-custom-topping="pearl">黑糖珍珠 +¥2</button><button data-custom-topping="jelly">桂花冻 +¥2</button><button data-custom-topping="cream">云顶奶盖 +¥3</button></div></div><div class="tea-custom-actions"><button class="tea-custom-cancel" id="teaCustomizeCancel">取消</button><button class="tea-custom-confirm" id="teaCustomizeConfirm">加入购物车</button></div></div></div>
 
-  <!-- 长按：塔罗牌 + 保护罩 -->
+  <!-- 长按消息操作 -->
+  <div class="mask hidden" id="messageActionSheet"><div class="sheet message-action-sheet">
+    <div class="sheet-title">消息操作</div>
+    <div class="menu-row hidden" id="messageTranscribeBtn">转文字</div>
+    <div class="menu-row" id="messageQuoteBtn">引用</div>
+    <div class="menu-row" id="messageCardsBtn">查看抽到的牌</div>
+    <div class="menu-row danger hidden" id="messageActionRecallBtn">撤回</div>
+    <div class="sheet-close" id="messageActionCancel">取消</div>
+  </div></div>
+
+  <!-- 塔罗牌 + 保护罩 -->
   <div class="mask hidden" id="tarotSheet">
     <div class="sheet">
       <div class="sheet-title">本条消息抽到的塔罗牌</div>
@@ -1013,10 +1025,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=32" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=32" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=32" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=32" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=32" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=33" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=33" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=33" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=33" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=33" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
