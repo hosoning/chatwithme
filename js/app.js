@@ -625,7 +625,10 @@ function renderMessages() {
     const avatarDataUrl = isMe ? state.myAvatar : (senderContact?.avatar || null);
 
     let bubbleHtml;
-    if (m.type === 'redpacket') {
+    if (m.type === 'chatRecord') {
+      const preview = (m.records || []).slice(0, 4).map(r => `<div class="chat-record-line"><b>${escapeHtml(r.senderName)}：</b>${escapeHtml(r.text)}</div>`).join('');
+      bubbleHtml = `<div class="bubble chat-record-bubble" data-chatrecord="${m.id}"><div class="chat-record-title">聊天记录</div>${preview}<div class="chat-record-footer">${(m.records || []).length} 条消息 · 点击查看</div></div>`;
+    } else if (m.type === 'redpacket') {
       bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}"><div class="rp-main"><div class="rp-envelope"><span>¥</span></div><div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-status">${m.redpacket.status==='claimed'?'红包已被领取':'领取红包'}</div></div></div><div class="rp-footer">微信红包</div></div>`;
     } else if (m.type === 'options') {
       bubbleHtml = `<div class="bubble options">
@@ -665,10 +668,11 @@ function renderMessages() {
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return dividerHtml + `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
-      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
+      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${multiSelectMode ? `<span class="msg-select-circle ${selectedMessageIds.has(String(m.id)) ? 'selected' : ''}"></span>` : ''}${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
     </div>`;
   }).join('');
-  box.scrollTop = box.scrollHeight;
+  box.classList.toggle('message-selecting', multiSelectMode);
+  if (!multiSelectMode) box.scrollTop = box.scrollHeight;
 }
 
 /* ============ 消息长按逻辑 ============ */
@@ -680,6 +684,7 @@ function bindMsgListDelegation() {
   let longPressFired = false;
 
   box.addEventListener('touchstart', e => {
+    if (multiSelectMode) return;
     const row = e.target.closest('.msg-row');
     if (!row) return;
     const t = e.touches[0];
@@ -701,6 +706,13 @@ function bindMsgListDelegation() {
   box.addEventListener('contextmenu', e => e.preventDefault());
 
   box.addEventListener('click', e => {
+    const selectedRow = e.target.closest('.msg-row');
+    if (multiSelectMode && selectedRow) {
+      const id = String(selectedRow.dataset.id);
+      if (selectedMessageIds.has(id)) selectedMessageIds.delete(id); else selectedMessageIds.add(id);
+      selectedRow.querySelector('.msg-select-circle')?.classList.toggle('selected', selectedMessageIds.has(id));
+      updateMultiSelectBar(); return;
+    }
     if (longPressFired) { longPressFired = false; return; }
     const transcribeEl = e.target.closest('[data-transcribe]');
     if (transcribeEl) {
@@ -716,9 +728,11 @@ function bindMsgListDelegation() {
     const playEl = e.target.closest('[data-play]');
     if (playEl) {
       const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === playEl.dataset.play);
-      if (msg?.voiceUrl) new Audio(msg.voiceUrl).play().catch(()=>{});
+      if (msg?.voiceUrl) playVoiceMessage(msg);
       return;
     }
+    const recordEl = e.target.closest('[data-chatrecord]');
+    if (recordEl) { openChatRecordViewer(recordEl.dataset.chatrecord); return; }
     const rpEl = e.target.closest('[data-redpacket]');
     if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
     const locEl = e.target.closest('[data-location]');
@@ -728,8 +742,27 @@ function bindMsgListDelegation() {
   });
 }
 
+async function playVoiceMessage(msg) {
+  if (!msg?.voiceUrl) return;
+  let repairedOnce = false;
+  if (String(msg.voiceUrl).startsWith('blob:') && msg.from !== 'me' && msg.text && msg.text !== '[语音]') {
+    const repaired = await synthesizeVoice(msg.text);
+    if (repaired) { msg.voiceUrl = repaired; repairedOnce = true; persist(); }
+  }
+  const audio = new Audio(msg.voiceUrl);
+  try { await audio.play(); }
+  catch (_) {
+    if (!repairedOnce && msg.from !== 'me' && msg.text && msg.text !== '[语音]') {
+      const repaired = await synthesizeVoice(msg.text);
+      if (repaired) { msg.voiceUrl = repaired; persist(); try { await new Audio(repaired).play(); } catch (_) {} }
+    }
+  }
+}
+
 let activeMessageActionId = null;
 let pendingQuote = null;
+let multiSelectMode = false;
+const selectedMessageIds = new Set();
 function getActiveActionMessage() { return (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(activeMessageActionId)); }
 function messageSummary(msg) {
   if (!msg) return '';
@@ -748,8 +781,17 @@ function openMessageActionSheet(msgId) {
   document.getElementById('messageCardsBtn')?.classList.toggle('hidden', !(msg.cards?.length || msg.shieldCards?.length));
   document.getElementById('messageActionRecallBtn')?.classList.toggle('hidden', msg.from !== 'me');
   document.getElementById('messageActionSheet')?.classList.remove('hidden');
+  const pop = document.getElementById('messageActionPopover');
+  const row = [...document.querySelectorAll('#msgList .msg-row')].find(el => String(el.dataset.id) === String(msgId));
+  if (pop && row) {
+    pop.classList.remove('hidden', 'below');
+    const rect = row.getBoundingClientRect(), half = 150;
+    pop.style.left = `${Math.max(half + 8, Math.min(innerWidth - half - 8, rect.left + rect.width / 2))}px`;
+    if (rect.top > 115) pop.style.top = `${rect.top - pop.offsetHeight - 12}px`;
+    else { pop.classList.add('below'); pop.style.top = `${rect.bottom + 12}px`; }
+  }
 }
-function closeMessageActionSheet() { document.getElementById('messageActionSheet')?.classList.add('hidden'); }
+function closeMessageActionSheet() { document.getElementById('messageActionSheet')?.classList.add('hidden'); document.getElementById('messageActionPopover')?.classList.add('hidden'); }
 function showActiveVoiceTranscript() {
   const msg = getActiveActionMessage(); if (!msg?.voiceUrl) return;
   msg.voiceTranscript = msg.voiceTranscript || (msg.from === 'me' ? '' : msg.text || '');
@@ -763,6 +805,50 @@ function quoteActiveMessage() {
   const msg = getActiveActionMessage(); if (!msg) return;
   pendingQuote = { messageId: msg.id, senderName: messageSenderName(msg), text: messageSummary(msg) };
   closeMessageActionSheet(); renderPendingQuote(); document.getElementById('msgInput')?.focus();
+}
+function updateMultiSelectBar() {
+  document.getElementById('multiSelectCount').textContent = `已选择 ${selectedMessageIds.size} 条`;
+  document.getElementById('multiSelectForward').disabled = selectedMessageIds.size === 0;
+}
+function enterMultiSelect() {
+  const first = activeMessageActionId;
+  multiSelectMode = true; selectedMessageIds.clear(); if (first) selectedMessageIds.add(String(first));
+  closeMessageActionSheet();
+  document.querySelector('#page-chat .input-bar')?.classList.add('hidden');
+  document.getElementById('multiSelectBar')?.classList.remove('hidden');
+  renderMessages(); updateMultiSelectBar();
+}
+function exitMultiSelect() {
+  multiSelectMode = false; selectedMessageIds.clear();
+  document.querySelector('#page-chat .input-bar')?.classList.remove('hidden');
+  document.getElementById('multiSelectBar')?.classList.add('hidden');
+  renderMessages();
+}
+function selectedRecordPayload() {
+  return (state.chats[state.activeChatId] || []).filter(m => selectedMessageIds.has(String(m.id))).map(m => ({
+    senderName: messageSenderName(m), text: messageSummary(m), ts: m.ts
+  }));
+}
+function openForwardPicker() {
+  if (!selectedMessageIds.size) return;
+  const list = document.getElementById('forwardTargetList');
+  const targets = [
+    ...state.contacts.map(c => ({ id:String(c.id), name:c.name, avatar:c.avatar })),
+    ...state.groups.map(g => ({ id:`g_${g.id}`, name:g.name, avatar:null }))
+  ].filter(t => String(t.id) !== String(state.activeChatId));
+  list.innerHTML = targets.map(t => `<div class="forward-target" data-forward-chat="${escapeHtml(t.id)}">${avatarHtml(t.avatar,t.name,42)}<span>${escapeHtml(t.name)}</span></div>`).join('') || '<div style="padding:35px;text-align:center;color:#999">没有其他聊天</div>';
+  document.getElementById('forwardPickerPage')?.classList.remove('hidden');
+}
+function forwardSelectedTo(chatId) {
+  const records = selectedRecordPayload(); if (!records.length) return;
+  addMessage(chatId, 'me', '[聊天记录]', { type:'chatRecord', records });
+  document.getElementById('forwardPickerPage')?.classList.add('hidden'); exitMultiSelect();
+  alert(`已转发 ${records.length} 条聊天记录`);
+}
+function openChatRecordViewer(msgId) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId)); if (!msg?.records) return;
+  document.getElementById('chatRecordViewerList').innerHTML = msg.records.map(r => `<div style="background:#fff;padding:12px 16px;border-bottom:.5px solid #eee"><b>${escapeHtml(r.senderName)}</b><div style="margin-top:5px;line-height:1.5;word-break:break-word">${escapeHtml(r.text)}</div></div>`).join('');
+  document.getElementById('chatRecordViewer')?.classList.remove('hidden');
 }
 function openTarotSheet(msgId) {
   activeMessageActionId = String(msgId);
@@ -797,10 +883,17 @@ function bindMessageRecall() {
   document.getElementById('messageRecallBtn')?.addEventListener('click', recallActiveMessage);
   document.getElementById('messageActionRecallBtn')?.addEventListener('click', recallActiveMessage);
   document.getElementById('messageActionCancel')?.addEventListener('click', closeMessageActionSheet);
+  document.getElementById('messageActionSheet')?.addEventListener('click', closeMessageActionSheet);
   document.getElementById('messageTranscribeBtn')?.addEventListener('click', showActiveVoiceTranscript);
   document.getElementById('messageQuoteBtn')?.addEventListener('click', quoteActiveMessage);
+  document.getElementById('messageMultiBtn')?.addEventListener('click', enterMultiSelect);
   document.getElementById('messageCardsBtn')?.addEventListener('click', () => { const id = activeMessageActionId; closeMessageActionSheet(); openTarotSheet(id); });
   document.getElementById('quoteComposeClose')?.addEventListener('click', () => { pendingQuote = null; renderPendingQuote(); });
+  document.getElementById('multiSelectCancel')?.addEventListener('click', exitMultiSelect);
+  document.getElementById('multiSelectForward')?.addEventListener('click', openForwardPicker);
+  document.getElementById('forwardPickerClose')?.addEventListener('click', () => document.getElementById('forwardPickerPage')?.classList.add('hidden'));
+  document.getElementById('forwardTargetList')?.addEventListener('click', e => { const target=e.target.closest('[data-forward-chat]'); if(target) forwardSelectedTo(target.dataset.forwardChat); });
+  document.getElementById('chatRecordViewerClose')?.addEventListener('click', () => document.getElementById('chatRecordViewer')?.classList.add('hidden'));
 }
 
 /* ============ 发消息 & 塔罗回复 ============ */
