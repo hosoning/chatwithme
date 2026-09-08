@@ -45,15 +45,45 @@ async function synthesizeVoiceOpenAI(text, cfg, key) {
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const blob = await res.blob();
-  return blobToDataUrl(blob);
+  return persistVoiceBlob(blob);
 }
-function blobToDataUrl(blob) {
+const VOICE_DB_NAME = 'tarot_voice_audio_v1';
+const VOICE_DB_STORE = 'audio';
+function openVoiceDb() {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error('音频读取失败'));
-    reader.readAsDataURL(blob);
+    const req = indexedDB.open(VOICE_DB_NAME, 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(VOICE_DB_STORE)) req.result.createObjectStore(VOICE_DB_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('无法打开语音储存'));
   });
+}
+async function persistVoiceBlob(blob) {
+  const db = await openVoiceDb();
+  const id = (crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(VOICE_DB_STORE, 'readwrite');
+    tx.objectStore(VOICE_DB_STORE).put(blob, id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('语音储存失败'));
+  });
+  db.close();
+  return `idb-audio:${id}`;
+}
+async function persistVoiceDataUrl(dataUrl) {
+  const blob = await (await fetch(dataUrl)).blob();
+  return persistVoiceBlob(blob);
+}
+async function resolveVoiceUrl(ref) {
+  if (!String(ref || '').startsWith('idb-audio:')) return ref;
+  const id = String(ref).slice('idb-audio:'.length), db = await openVoiceDb();
+  const blob = await new Promise((resolve, reject) => {
+    const req = db.transaction(VOICE_DB_STORE, 'readonly').objectStore(VOICE_DB_STORE).get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('语音读取失败'));
+  });
+  db.close();
+  if (!blob) throw new Error('语音文件不存在');
+  return URL.createObjectURL(blob);
 }
 // MiniMax's T2A v2 API — request/response shape per MiniMax's docs as of this writing.
 // If MiniMax changes their contract, this is the one place to adjust: the endpoint,
@@ -90,7 +120,7 @@ async function synthesizeVoiceMiniMax(text, cfg, key) {
   if (!hex) throw new Error('MiniMax 已响应，但没有返回音频；请检查 Voice ID 与账户余额');
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return blobToDataUrl(new Blob([bytes], { type: 'audio/mpeg' }));
+  return persistVoiceBlob(new Blob([bytes], { type: 'audio/mpeg' }));
 }
 async function synthesizeVoice(text, options = {}) {
   const cfg = getAIConfig();
