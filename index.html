@@ -85,7 +85,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .location-coords { color:#999; font-size:12px; text-align:center; padding:9px 0; font-variant-numeric:tabular-nums; }
 
 .input-bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f7f7f7; border-top:0.5px solid #dcdcdc; padding-bottom:calc(10px + env(safe-area-inset-bottom)); flex-shrink:0; flex-wrap:wrap; }
-.input-bar input { flex:1; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
+.input-bar input { flex:1 1 0; min-width:0; height:40px; border:none; border-radius:8px; background:#fff; padding:0 13px; font-size:16px; box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.05); user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
 .quote-compose{width:100%;display:flex;align-items:center;gap:9px;background:#e9e9e9;border-radius:5px;padding:7px 9px;color:#666;font-size:12px;line-height:1.35}.quote-compose-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.quote-compose-close{border:0;background:transparent;color:#777;font-size:20px;line-height:18px;padding:0 2px}.message-quote{margin:-2px 0 7px;padding:5px 8px;border-left:3px solid rgba(0,0,0,.18);background:rgba(0,0,0,.055);border-radius:2px;font-size:12px;line-height:1.35;color:#666}.message-quote-name{font-weight:600;margin-right:5px}.voice-transcript.remote{background:#fff}
 .message-action-backdrop{position:fixed;inset:0;z-index:98;background:transparent}.message-action-popover{position:fixed;z-index:99;display:flex;flex-wrap:wrap;width:288px;padding:7px 5px;background:#4b4b4d;border-radius:7px;box-shadow:0 5px 18px rgba(0,0,0,.28);transform:translateX(-50%)}.message-action-popover::after{content:'';position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);border-left:8px solid transparent;border-right:8px solid transparent;border-top:8px solid #4b4b4d}.message-action-popover.below::after{top:-7px;bottom:auto;border-top:0;border-bottom:8px solid #4b4b4d}.message-action-item{width:25%;border:0;background:transparent;color:#fff;padding:8px 2px 6px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:4px}.message-action-icon{font-size:20px;line-height:22px}
 .msg-select-circle{display:none;width:22px;height:22px;border:1.5px solid #aaa;border-radius:50%;flex-shrink:0;align-self:center}.message-selecting .msg-select-circle{display:block}.message-selecting .msg-row{width:100%}.msg-select-circle.selected{border-color:#07c160;background:#07c160;box-shadow:inset 0 0 0 4px #e5e5e5}.multi-select-bar{min-height:58px;padding:8px 18px calc(8px + env(safe-area-inset-bottom));background:#f7f7f7;border-top:.5px solid #ddd;display:flex;align-items:center;justify-content:space-between}.multi-select-bar button{border:0;background:transparent;font-size:15px;color:#222}.multi-select-bar .forward{color:#07c160;font-weight:600}.chat-record-bubble{width:245px;background:#fff!important;padding:12px!important}.chat-record-title{font-size:15px;font-weight:600;margin-bottom:8px}.chat-record-line{font-size:12px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:4px 0}.chat-record-footer{font-size:11px;color:#aaa;border-top:.5px solid #eee;margin-top:8px;padding-top:7px}.forward-picker{position:absolute;inset:0;z-index:120;background:#ededed;display:flex;flex-direction:column}.forward-target-list{flex:1;overflow-y:auto}.forward-target{display:flex;align-items:center;gap:12px;background:#fff;padding:11px 16px;border-bottom:.5px solid #eee;font-size:16px}
@@ -1030,10 +1030,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=34" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=34" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=34" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=34" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=34" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=35" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=35" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=35" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=35" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=35" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
