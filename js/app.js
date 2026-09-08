@@ -749,12 +749,15 @@ async function playVoiceMessage(msg) {
     const repaired = await synthesizeVoice(msg.text);
     if (repaired) { msg.voiceUrl = repaired; repairedOnce = true; persist(); }
   }
-  const audio = new Audio(msg.voiceUrl);
-  try { await audio.play(); }
+  let playableUrl;
+  try { playableUrl = await resolveVoiceUrl(msg.voiceUrl); }
+  catch (_) { playableUrl = null; }
+  const audio = playableUrl ? new Audio(playableUrl) : null;
+  try { if (!audio) throw new Error('语音文件不存在'); await audio.play(); }
   catch (_) {
     if (!repairedOnce && msg.from !== 'me' && msg.text && msg.text !== '[语音]') {
       const repaired = await synthesizeVoice(msg.text);
-      if (repaired) { msg.voiceUrl = repaired; persist(); try { await new Audio(repaired).play(); } catch (_) {} }
+      if (repaired) { msg.voiceUrl = repaired; persist(); try { await new Audio(await resolveVoiceUrl(repaired)).play(); } catch (_) {} }
     }
   }
 }
@@ -946,11 +949,13 @@ function handleSend(text) {
     else processSingleBatch(chatId);
   }, 900);
 }
-function sendVoiceMessage(dataUrl, durationSec, transcript = '') {
+async function sendVoiceMessage(dataUrl, durationSec, transcript = '') {
   const chatId = state.activeChatId;
   if (!chatId) return;
   const cleanTranscript = String(transcript || '').trim();
-  addMessage(chatId, 'me', '[语音]', { voiceUrl: dataUrl, durationSec, voiceTranscript: cleanTranscript, voiceTranscriptVisible: false });
+  let voiceUrl = dataUrl;
+  try { voiceUrl = await persistVoiceDataUrl(dataUrl); } catch (e) { console.warn('录音独立储存失败，使用内嵌音频', e); }
+  addMessage(chatId, 'me', '[语音]', { voiceUrl, durationSec, voiceTranscript: cleanTranscript, voiceTranscriptVisible: false });
   state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
   state.pendingBatch[chatId].push(cleanTranscript ? `(发来一条语音消息，转写内容：${cleanTranscript})` : '(发来一条语音消息，未能取得转写内容)');
   clearTimeout(state.batchTimer[chatId]);
@@ -1204,7 +1209,7 @@ async function sendDuringCall(text) {
   const cfg = getAIConfig();
   if (cfg.voiceEnabled && contactVoiceReplyEnabled(contact)) {
     const voiceUrl = await synthesizeVoice(replyText);
-    if (voiceUrl) { const audio = new Audio(voiceUrl); audio.play().catch(()=>{}); }
+    if (voiceUrl) { const audio = new Audio(await resolveVoiceUrl(voiceUrl)); audio.play().catch(()=>{}); }
   }
 }
 function renderCallRemoteMedia(contact, type) {
@@ -2241,7 +2246,7 @@ function bindSettingsSave() {
     player.classList.add('hidden');
     try {
       const url = await synthesizeVoice('语音连接测试成功。', { throwOnError: true });
-      player.src = url;
+      player.src = await resolveVoiceUrl(url);
       player.classList.remove('hidden');
       status.classList.add('success');
       status.textContent = '连接成功，可以播放试听';
@@ -2367,8 +2372,20 @@ async function migrateOversizedAvatars() {
   }
   if (changed) persist();
 }
+async function migrateInlineVoiceAudio() {
+  let changed = false;
+  for (const messages of Object.values(state.chats || {})) {
+    for (const msg of messages || []) {
+      if (!String(msg.voiceUrl || '').startsWith('data:audio/')) continue;
+      try { msg.voiceUrl = await persistVoiceDataUrl(msg.voiceUrl); changed = true; }
+      catch (e) { console.warn('旧语音迁移失败', e); }
+    }
+  }
+  if (changed) persist();
+}
 async function init() {
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
+  await safeStepAsync('migrateInlineVoiceAudio', migrateInlineVoiceAudio);
   await safeStepAsync('migrateOversizedAvatars', migrateOversizedAvatars);
   safeStep('renderTabBars', renderTabBars);
   safeStep('renderMePage', renderMePage);
