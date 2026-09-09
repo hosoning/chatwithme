@@ -349,8 +349,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .tea-method-row{display:flex;background:#eceeed;border-radius:9px;padding:3px;margin:0 12px 12px}
 .tea-method-chip{flex:1;text-align:center;padding:9px;border-radius:7px;color:#666;font-size:14px}
 .tea-method-chip.selected{background:#fff;color:#14291e;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.tea-store-scroll{display:flex;gap:10px;overflow-x:auto;padding:2px 12px 12px;scrollbar-width:none}.tea-store-scroll::-webkit-scrollbar{display:none}.tea-store-card{border:1px solid #e8e8e8;background:#fff;border-radius:12px;padding:10px;min-width:138px;text-align:left;display:flex;gap:9px;align-items:center}.tea-store-card.selected{border-color:#1f6b47;background:#f0f8f3;box-shadow:0 2px 8px rgba(31,107,71,.1)}.tea-store-emoji{width:38px;height:38px;border-radius:9px;background:#f4f4f4;display:flex;align-items:center;justify-content:center;font-size:22px}.tea-store-card strong{display:block;font-size:13px}.tea-store-card small{display:block;color:#999;font-size:10px;margin-top:4px}
-.tea-order-direction{display:flex;gap:8px}.tea-direction-card{flex:1;border:1px solid #e7e7e7;background:#fff;border-radius:10px;padding:10px;text-align:left}.tea-direction-card strong{font-size:13px;display:block}.tea-direction-card small{font-size:10px;color:#999;display:block;margin-top:4px}.tea-direction-card.selected{border-color:#1f6b47;background:#f1f8f3}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
+.mini-app-icon.food{font-size:25px;color:#fff}.tea-recipient-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
 .tea-shop-layout{display:grid;grid-template-columns:86px 1fr;align-items:start;background:#fff;min-height:410px}
 .tea-category-list{background:#f6f6f6;min-height:410px}
 .tea-category-list button{width:100%;border:0;background:transparent;padding:18px 7px;font-size:13px;color:#666;position:relative}
@@ -725,7 +724,7 @@ svg { max-width:100%; max-height:100%; }
   <!-- 小程式列表 -->
   <div class="page hidden" id="page-miniprograms">
     <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromMiniPrograms" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">小程式</span><span></span></div>
-    <div style="flex:1;overflow-y:auto;"><div class="mini-app-list-item" id="miniAppTea"><div class="mini-app-icon"><svg viewBox="0 0 24 24"><path d="M7 5h10l-1 15H8L7 5zM5 5h14M9 2h6" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div><div><div style="font-size:16px;font-weight:600;">附近外卖</div><div style="font-size:13px;color:#999;margin-top:2px;">奶茶 · 早餐 · 中西餐 · 甜点</div></div></div></div>
+    <div style="flex:1;overflow-y:auto;" id="miniProgramStoreList"></div>
   </div>
 
   <!-- 外卖点单页 -->
@@ -734,10 +733,8 @@ svg { max-width:100%; max-height:100%; }
     <div style="flex:1;overflow-y:auto;background:#f5f5f5;padding-bottom:84px;">
       <div id="teaOrderForm">
         <section class="tea-store-hero" id="teaStoreHero"><h2 id="teaStoreName">沐茶 MUTEA</h2><p id="teaStoreMeta"></p><span class="tea-store-badge" id="teaStoreBadge"></span></section>
-        <div class="tea-store-scroll" id="teaStoreList"></div>
         <div class="tea-method-row" id="teaMethodRow"><div class="tea-method-chip selected" data-method="delivery">外送</div><div class="tea-method-chip" data-method="pickup">到店自取</div></div>
-        <section class="tea-checkout-card"><div class="tea-checkout-title">这单由谁来点</div><div class="tea-order-direction" id="teaOrderDirection"><button class="tea-direction-card selected" data-order-direction="outgoing"><strong>我请对方</strong><small>从我的零钱付款</small></button><button class="tea-direction-card" data-order-direction="incoming"><strong>对方请我</strong><small>对方下单，我收餐</small></button></div></section>
-        <section class="tea-checkout-card"><div class="tea-checkout-title" id="teaContactTitle">送给谁</div><div class="tea-contact-scroll" id="teaContactList"></div></section>
+        <section class="tea-checkout-card"><div class="tea-checkout-title">收货人信息</div><div class="tea-recipient-grid"><div class="form-row col"><label>姓名</label><input id="teaRecipientName" autocomplete="name" placeholder="收货人"></div><div class="form-row col"><label>手机号</label><input id="teaRecipientPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="配送联系电话"></div></div></section>
         <section class="tea-checkout-card tea-address-card" id="teaAddressWrap"><div class="form-row col"><label>📍 配送地址（必填）</label><input id="teaAddressInput" autocomplete="street-address" placeholder="请输入小区／楼栋／门牌号"></div><div class="tea-address-hint">填写后会保存为常用地址，下次自动带入</div></section>
         <div class="tea-shop-layout"><aside class="tea-category-list" id="teaCategoryList"></aside><main class="tea-menu-list" id="teaMenuList"></main></div>
         <section class="tea-checkout-card"><div class="form-row col"><label>订单备注</label><input id="teaNoteInput" placeholder="口味、配送等特殊要求"></div></section>
@@ -1034,10 +1031,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=37" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=37" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=37" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=37" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=37" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=38" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=38" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=38" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=38" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=38" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
