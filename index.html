@@ -339,16 +339,18 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .dyn-label { color:#fff; font-size:12px; margin-top:2px; opacity:0; transition:opacity .25s ease .15s; }
 .dyn-island.expanded .dyn-label { opacity:.85; }
 
-/* ===== 小程式 / 沐茶 MUTEA ===== */
+/* ===== 小程式 / 外卖点餐 ===== */
 .mini-app-list-item{display:flex;align-items:center;gap:12px;padding:16px;background:#fff;border-radius:10px;margin:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .mini-app-icon{width:48px;height:48px;border-radius:11px;background:#15291f;display:flex;align-items:center;justify-content:center}
 .mini-app-icon svg{width:27px!important;height:27px!important}
 .tea-store-hero{margin:12px;border-radius:14px;overflow:hidden;background:#17281f;color:#fff;position:relative;min-height:126px;padding:20px;box-shadow:0 6px 18px rgba(21,41,31,.2)}
-.tea-store-hero::after{content:'MUTEA';position:absolute;right:-8px;bottom:-15px;font-size:58px;font-weight:800;opacity:.08;letter-spacing:-4px}
+.tea-store-hero::after{content:attr(data-mark);position:absolute;right:-8px;bottom:-15px;font-size:58px;font-weight:800;opacity:.08;letter-spacing:-4px}
 .tea-store-hero h2{font-size:22px;margin-bottom:7px}.tea-store-hero p{font-size:12.5px;opacity:.78;line-height:1.5}.tea-store-badge{display:inline-block;margin-top:12px;padding:4px 8px;background:rgba(255,255,255,.13);border-radius:4px;font-size:11px}
 .tea-method-row{display:flex;background:#eceeed;border-radius:9px;padding:3px;margin:0 12px 12px}
 .tea-method-chip{flex:1;text-align:center;padding:9px;border-radius:7px;color:#666;font-size:14px}
 .tea-method-chip.selected{background:#fff;color:#14291e;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.tea-store-scroll{display:flex;gap:10px;overflow-x:auto;padding:2px 12px 12px;scrollbar-width:none}.tea-store-scroll::-webkit-scrollbar{display:none}.tea-store-card{border:1px solid #e8e8e8;background:#fff;border-radius:12px;padding:10px;min-width:138px;text-align:left;display:flex;gap:9px;align-items:center}.tea-store-card.selected{border-color:#1f6b47;background:#f0f8f3;box-shadow:0 2px 8px rgba(31,107,71,.1)}.tea-store-emoji{width:38px;height:38px;border-radius:9px;background:#f4f4f4;display:flex;align-items:center;justify-content:center;font-size:22px}.tea-store-card strong{display:block;font-size:13px}.tea-store-card small{display:block;color:#999;font-size:10px;margin-top:4px}
+.tea-order-direction{display:flex;gap:8px}.tea-direction-card{flex:1;border:1px solid #e7e7e7;background:#fff;border-radius:10px;padding:10px;text-align:left}.tea-direction-card strong{font-size:13px;display:block}.tea-direction-card small{font-size:10px;color:#999;display:block;margin-top:4px}.tea-direction-card.selected{border-color:#1f6b47;background:#f1f8f3}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
 .tea-shop-layout{display:grid;grid-template-columns:86px 1fr;align-items:start;background:#fff;min-height:410px}
 .tea-category-list{background:#f6f6f6;min-height:410px}
 .tea-category-list button{width:100%;border:0;background:transparent;padding:18px 7px;font-size:13px;color:#666;position:relative}
@@ -723,19 +725,21 @@ svg { max-width:100%; max-height:100%; }
   <!-- 小程式列表 -->
   <div class="page hidden" id="page-miniprograms">
     <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromMiniPrograms" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">小程式</span><span></span></div>
-    <div style="flex:1;overflow-y:auto;"><div class="mini-app-list-item" id="miniAppTea"><div class="mini-app-icon"><svg viewBox="0 0 24 24"><path d="M7 5h10l-1 15H8L7 5zM5 5h14M9 2h6" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div><div><div style="font-size:16px;font-weight:600;">沐茶 MUTEA</div><div style="font-size:13px;color:#999;margin-top:2px;">鲜果茶 · 轻乳茶 · 到店自取</div></div></div></div>
+    <div style="flex:1;overflow-y:auto;"><div class="mini-app-list-item" id="miniAppTea"><div class="mini-app-icon"><svg viewBox="0 0 24 24"><path d="M7 5h10l-1 15H8L7 5zM5 5h14M9 2h6" fill="none" stroke="#fff" stroke-width="1.6"/></svg></div><div><div style="font-size:16px;font-weight:600;">附近外卖</div><div style="font-size:13px;color:#999;margin-top:2px;">奶茶 · 早餐 · 中西餐 · 甜点</div></div></div></div>
   </div>
 
-  <!-- 沐茶点单页 -->
+  <!-- 外卖点单页 -->
   <div class="page hidden" id="page-teaorder">
-    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaOrder" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">沐茶 MUTEA</span><span></span></div>
+    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaOrder" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title" id="teaNavTitle">附近外卖</span><span></span></div>
     <div style="flex:1;overflow-y:auto;background:#f5f5f5;padding-bottom:84px;">
       <div id="teaOrderForm">
-        <section class="tea-store-hero"><h2>沐茶 MUTEA</h2><p>元朗形点店 · 营业至 22:30<br>预计 25–35 分钟送达</p><span class="tea-store-badge">满 ¥38 免配送费</span></section>
+        <section class="tea-store-hero" id="teaStoreHero"><h2 id="teaStoreName">沐茶 MUTEA</h2><p id="teaStoreMeta"></p><span class="tea-store-badge" id="teaStoreBadge"></span></section>
+        <div class="tea-store-scroll" id="teaStoreList"></div>
         <div class="tea-method-row" id="teaMethodRow"><div class="tea-method-chip selected" data-method="delivery">外送</div><div class="tea-method-chip" data-method="pickup">到店自取</div></div>
+        <section class="tea-checkout-card"><div class="tea-checkout-title">这单由谁来点</div><div class="tea-order-direction" id="teaOrderDirection"><button class="tea-direction-card selected" data-order-direction="outgoing"><strong>我请对方</strong><small>从我的零钱付款</small></button><button class="tea-direction-card" data-order-direction="incoming"><strong>对方请我</strong><small>对方下单，我收餐</small></button></div></section>
+        <section class="tea-checkout-card"><div class="tea-checkout-title" id="teaContactTitle">送给谁</div><div class="tea-contact-scroll" id="teaContactList"></div></section>
+        <section class="tea-checkout-card tea-address-card" id="teaAddressWrap"><div class="form-row col"><label>📍 配送地址（必填）</label><input id="teaAddressInput" autocomplete="street-address" placeholder="请输入小区／楼栋／门牌号"></div><div class="tea-address-hint">填写后会保存为常用地址，下次自动带入</div></section>
         <div class="tea-shop-layout"><aside class="tea-category-list" id="teaCategoryList"></aside><main class="tea-menu-list" id="teaMenuList"></main></div>
-        <section class="tea-checkout-card"><div class="tea-checkout-title">收货人</div><div class="tea-contact-scroll" id="teaContactList"></div></section>
-        <section class="tea-checkout-card" id="teaAddressWrap"><div class="form-row col"><label>配送地址</label><input id="teaAddressInput" placeholder="填写详细地址"></div></section>
         <section class="tea-checkout-card"><div class="form-row col"><label>订单备注</label><input id="teaNoteInput" placeholder="口味、配送等特殊要求"></div></section>
       </div>
       <div id="teaOrderTracking" class="hidden" style="padding:14px;"><div class="tea-order-summary" id="teaOrderSummary"></div><div class="tea-order-summary"><div id="teaTrackSteps"></div></div><button class="save-btn" id="teaOrderAgainBtn">再来一单</button></div>
@@ -746,7 +750,7 @@ svg { max-width:100%; max-height:100%; }
   <!-- 奶茶支付页 -->
   <div class="page hidden" id="page-teapay">
     <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaPay" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">微信支付</span><span></span></div>
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:58px;background:#f5f5f5;"><div style="font-size:14px;color:#777;">沐茶 MUTEA</div><div style="font-size:12px;color:#aaa;margin-top:7px;" id="teaPaySummary"></div><div style="font-size:38px;font-weight:700;margin:14px 0 30px;" id="teaPayAmount">¥0.00</div><div class="form-row" style="width:88%;"><label>付款方式</label><span style="color:#07c160;font-size:14px;">零钱余额</span></div><div class="form-row" style="width:88%;"><label>当前余额</label><span id="teaPayCurrentBalance" style="font-size:14px;"></span></div><button class="save-btn" id="teaConfirmPayBtn" style="width:88%;margin-top:40px;">确认支付</button></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:58px;background:#f5f5f5;"><div style="font-size:14px;color:#777;" id="teaPayStoreName">沐茶 MUTEA</div><div style="font-size:12px;color:#aaa;margin-top:7px;" id="teaPaySummary"></div><div style="font-size:38px;font-weight:700;margin:14px 0 30px;" id="teaPayAmount">¥0.00</div><div class="form-row" style="width:88%;"><label>付款方式</label><span id="teaPayMethod" style="color:#07c160;font-size:14px;">零钱余额</span></div><div class="form-row" id="teaPayBalanceRow" style="width:88%;"><label>当前余额</label><span id="teaPayCurrentBalance" style="font-size:14px;"></span></div><button class="save-btn" id="teaConfirmPayBtn" style="width:88%;margin-top:40px;">确认支付</button></div>
   </div>
 
   <div class="mask hidden" id="teaCustomizeSheet" style="align-items:flex-end;"><div class="tea-custom-sheet"><div class="tea-custom-name" id="teaCustomizeName"></div><div id="teaCustomizeOptions"><div class="tea-custom-label">糖度</div><div class="tea-custom-options"><button data-custom-sugar="不另外加糖">不另外加糖</button><button data-custom-sugar="少糖">少糖</button><button data-custom-sugar="正常糖">正常糖</button></div><div class="tea-custom-label">冰量</div><div class="tea-custom-options"><button data-custom-ice="去冰">去冰</button><button data-custom-ice="少冰">少冰</button><button data-custom-ice="正常冰">正常冰</button></div><div class="tea-custom-label">加料</div><div class="tea-custom-options"><button data-custom-topping="none">不加料</button><button data-custom-topping="pearl">黑糖珍珠 +¥2</button><button data-custom-topping="jelly">桂花冻 +¥2</button><button data-custom-topping="cream">云顶奶盖 +¥3</button></div></div><div class="tea-custom-actions"><button class="tea-custom-cancel" id="teaCustomizeCancel">取消</button><button class="tea-custom-confirm" id="teaCustomizeConfirm">加入购物车</button></div></div></div>
@@ -1030,10 +1034,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=36" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=36" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=36" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=36" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=36" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=37" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=37" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=37" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=37" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=37" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
