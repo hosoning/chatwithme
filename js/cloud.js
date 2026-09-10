@@ -23,12 +23,13 @@ function saveCloudConfig(cfg) {
   try { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cfg)); } catch (e) { console.error(e); }
 }
 
-let _fbApp = null, _fbDb = null;
+let _fbApp = null, _fbDb = null, _fbAuth = null, _fbAuthReady = null;
 
 function initFirebase() {
   try {
     if (!_fbApp) {
       _fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+      _fbAuth = firebase.auth();
       _fbDb = firebase.database();
     }
     return _fbDb;
@@ -36,6 +37,21 @@ function initFirebase() {
     console.error('Firebase 初始化失败', e);
     return null;
   }
+}
+
+async function ensureFirebaseAuth() {
+  initFirebase();
+  if (!_fbAuth) throw new Error('Firebase Auth SDK 尚未载入');
+  if (_fbAuth.currentUser) return _fbAuth.currentUser;
+  if (!_fbAuthReady) {
+    _fbAuthReady = _fbAuth.signInAnonymously()
+      .then(result => result.user)
+      .catch(error => {
+        _fbAuthReady = null;
+        throw error;
+      });
+  }
+  return _fbAuthReady;
 }
 
 function sanitizeRoomId(roomId) {
@@ -48,6 +64,7 @@ async function cloudUpload(fullDataObj) {
   const db = initFirebase();
   if (!db) return false;
   try {
+    await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
     await db.ref('tarot_rooms/' + key).set({
       data: JSON.stringify(fullDataObj),
@@ -63,6 +80,7 @@ async function cloudDownload() {
   const db = initFirebase();
   if (!db) return null;
   try {
+    await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
     const snapshot = await db.ref('tarot_rooms/' + key).once('value');
     const val = snapshot.val();
