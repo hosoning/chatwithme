@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tarot-wechat-v39';
+const CACHE_NAME = 'tarot-wechat-v40';
 const ASSETS = [
   './', './index.html',
   './js/tarot.js', './js/wordcards.js', './js/ai.js', './js/cloud.js', './js/app.js',
@@ -19,4 +19,12 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request))
   );
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
+    const existing = list[0];
+    if (existing) return existing.focus();
+    return clients.openWindow('./index.html');
+  }));
 });
