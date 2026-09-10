@@ -62,6 +62,7 @@ function safeLoadJSON(key, def) {
 function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } }
 function safeGetItem(key, def = null) { try { const v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
 function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) { console.error(e); } }
+function safeRemoveItem(key) { try { localStorage.removeItem(key); } catch (e) {} }
 
 /* ============ 状态 ============ */
 const STORE = {
@@ -77,6 +78,7 @@ const TEA_ADDRESS_KEY = 'tarot_tea_address_v1';
 const TEA_RECIPIENT_NAME_KEY = 'tarot_delivery_name_v1';
 const TEA_RECIPIENT_PHONE_KEY = 'tarot_delivery_phone_v1';
 const TEA_BRANCH_PREFIX = 'tarot_food_branch_v1_';
+const AUTO_MESSAGE_NEXT_KEY = 'tarot_auto_message_next_v1';
 
 function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
 function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
@@ -913,7 +915,20 @@ function addMessage(chatId, from, text, extra = {}) {
   persist();
   if (chatId === state.activeChatId) renderMessages();
   renderChatList();
+  if (from !== 'me') showMessageNotification(chatId, from, text, extra);
   return msg;
+}
+async function showMessageNotification(chatId, from, text, extra = {}) {
+  const cfg = getAIConfig();
+  if (!cfg.notificationsEnabled || document.visibilityState === 'visible' || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const sender = getContactById(from), group = isGroupChat(chatId) ? getGroupById(String(chatId).slice(2)) : null;
+  const title = group ? `${group.name || '群聊'} · ${sender?.name || '新消息'}` : (sender?.name || '新消息');
+  const body = extra.voiceUrl ? (extra.voiceTranscript || '[语音]') : String(text || '你收到一条新消息');
+  try {
+    const reg = await navigator.serviceWorker?.ready;
+    if (reg) await reg.showNotification(title, { body, icon:'icon/wechat-app-icon-192.png', badge:'icon/wechat-app-icon-192.png', tag:`chat-${chatId}`, data:{ chatId } });
+    else new Notification(title, { body, icon:'icon/wechat-app-icon-192.png', tag:`chat-${chatId}` });
+  } catch (e) { console.warn('系统通知发送失败', e); }
 }
 function sendImageMessage(dataUrl) {
   const chatId = state.activeChatId; if (!chatId) return;
@@ -1375,7 +1390,22 @@ async function aiAutoChangeAvatar() {
   const contact = state.contacts[secureRandomInt(state.contacts.length)];
   await requestAvatarChange(String(contact.id), String(contact.id));
 }
-setInterval(() => { try { if (secureRandomInt(100) < 3) aiAutoSendMessage(); } catch(e){ console.error(e); } }, 60000);
+function planNextAutoMessage(force=false) {
+  if (!getAIConfig().autoMsg) { safeRemoveItem(AUTO_MESSAGE_NEXT_KEY); return; }
+  const current = Number(safeGetItem(AUTO_MESSAGE_NEXT_KEY, 0));
+  if (!force && current > Date.now()) return;
+  safeSetItem(AUTO_MESSAGE_NEXT_KEY, String(Date.now() + (8 + secureRandomInt(28)) * 60000));
+}
+async function runAutoMessageSchedule() {
+  if (!getAIConfig().autoMsg) return;
+  const next = Number(safeGetItem(AUTO_MESSAGE_NEXT_KEY, 0));
+  if (!next) { planNextAutoMessage(true); return; }
+  if (Date.now() < next) return;
+  planNextAutoMessage(true);
+  await aiAutoSendMessage();
+}
+setInterval(() => { runAutoMessageSchedule().catch(console.error); }, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runAutoMessageSchedule().catch(console.error); });
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoChangeAvatar(); } catch(e){ console.error(e); } }, 150000);
 
@@ -2077,7 +2107,7 @@ const TEA_ORDER_PREFIX='tarot_food_order_v3_';
 let _teaDraft={cart:{},storeId:'mutea',branchName:'',method:'delivery',recipientName:'',recipientPhone:'',address:'',note:''},_teaCustomProductId=null,_teaTrackTimers=[];
 
 function teaOrderKey(storeId){return TEA_ORDER_PREFIX+(storeId||'mutea');}
-function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=TEA_STORES.map(s=>`<div class="mini-app-list-item" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><div><div style="font-size:16px;font-weight:600;">${escapeHtml(s.name)}</div><div style="font-size:13px;color:#999;margin-top:2px;">${escapeHtml(s.short)}</div></div></div>`).join('');}
+function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=`<div class="mini-programs-title">最近使用</div><div class="mini-programs-grid">${TEA_STORES.map(s=>`<button class="mini-program-tile" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><span>${escapeHtml(s.name)}</span></button>`).join('')}</div><div class="mini-program-tip">下拉聊天列表也可以快速打开最近使用的小程序</div>`;}
 function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>{renderMiniProgramStores();pushPage('page-miniprograms');});document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniProgramStoreList')?.addEventListener('click',e=>{const x=e.target.closest('[data-mini-store]');if(x)openTeaOrder(x.dataset.miniStore);});}
 function teaCartItems(){return Object.values(_teaDraft.cart).flat();}
 function teaCartCount(){return teaCartItems().length;}
@@ -2100,6 +2130,7 @@ function showNewTeaOrder(storeId=_teaDraft.storeId){const s=currentTeaStore(stor
 function openTeaOrder(storeId='mutea'){_teaDraft.storeId=storeId;pushPage('page-teaorder');const active=safeLoadJSON(teaOrderKey(storeId),storeId==='mutea'?safeLoadJSON(TEA_ACTIVE_ORDER_KEY,null):null);if(active&&!active.cleared)return renderTeaTracking(active);showNewTeaOrder(storeId);}
 function bindTeaOrder(){
  document.getElementById('backFromTeaOrder')?.addEventListener('click',()=>popPage());
+ document.getElementById('closeTeaMiniProgram')?.addEventListener('click',()=>popPage());
  document.getElementById('teaCategoryList')?.addEventListener('click',e=>{const b=e.target.closest('[data-tea-category]');if(b)renderTeaMenu(b.dataset.teaCategory);});
  document.getElementById('teaMenuList')?.addEventListener('click',e=>{const p=e.target.closest('[data-tea-plus]'),m=e.target.closest('[data-tea-minus]');if(p)openTeaCustomize(p.dataset.teaPlus);if(m)removeTea(m.dataset.teaMinus);});
  document.getElementById('teaCustomizeOptions')?.addEventListener('click',e=>{const b=e.target.closest('[data-custom-sugar],[data-custom-ice],[data-custom-topping]');if(!b)return;if(b.dataset.customSugar!=null)selectCustomOption(b,'data-custom-sugar');else if(b.dataset.customIce!=null)selectCustomOption(b,'data-custom-ice');else selectCustomOption(b,'data-custom-topping');});
@@ -2215,6 +2246,7 @@ function loadSettingsForm() {
   document.getElementById('cfgVoiceModel').value = cfg.voiceModel;
   document.getElementById('cfgVoiceName').value = cfg.voiceName;
   updateVoiceProviderFields();
+  document.getElementById('cfgNotifications').checked = Boolean(cfg.notificationsEnabled && window.Notification?.permission === 'granted');
   document.getElementById('cfgAutoMsg').checked = cfg.autoMsg;
   document.getElementById('cfgAutoMoment').checked = cfg.autoMoment;
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
@@ -2250,6 +2282,7 @@ function readAISettingsForm() {
     voiceApiKey: document.getElementById('cfgVoiceApiKey').value.trim(),
     voiceModel: document.getElementById('cfgVoiceProvider').value === 'minimax' && !/^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(document.getElementById('cfgVoiceModel').value.trim()) ? 'speech-2.8-hd' : document.getElementById('cfgVoiceModel').value.trim(),
     voiceName: document.getElementById('cfgVoiceName').value.trim(),
+    notificationsEnabled: document.getElementById('cfgNotifications').checked,
     autoMsg: document.getElementById('cfgAutoMsg').checked,
     autoMoment: document.getElementById('cfgAutoMoment').checked,
     autoAvatar: document.getElementById('cfgAutoAvatar').checked,
@@ -2258,8 +2291,15 @@ function readAISettingsForm() {
 }
 function bindSettingsSave() {
   document.getElementById('cfgVoiceProvider')?.addEventListener('change', updateVoiceProviderFields);
+  document.getElementById('cfgNotifications')?.addEventListener('change', async e => {
+    if (!e.target.checked) return;
+    if (!('Notification' in window)) { e.target.checked=false; alert('当前浏览器不支持系统通知'); return; }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { e.target.checked=false; alert('没有取得通知权限，请到系统设置中允许通知'); }
+  });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
     saveAIConfig(readAISettingsForm());
+    planNextAutoMessage(true);
     saveCurrentCloudForm();
     alert('已保存');
   });
@@ -2458,11 +2498,13 @@ async function init() {
   safeStep('bindMiniPrograms', bindMiniPrograms);
   safeStep('bindTeaOrder', bindTeaOrder);
   safeStep('resumeTeaOrderNotification', resumeTeaOrderNotification);
+  await safeStepAsync('runAutoMessageSchedule', runAutoMessageSchedule);
   safeStep('bindChatItemActionSheet', bindChatItemActionSheet);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
 document.addEventListener('DOMContentLoaded', init);
+window.addEventListener('pageshow', () => { runAutoMessageSchedule().catch(console.error); });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
