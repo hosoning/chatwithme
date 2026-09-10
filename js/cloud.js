@@ -55,18 +55,22 @@ async function ensureFirebaseAuth() {
   return _fbAuthReady;
 }
 
-async function registerPushDevice(contacts = [], autoMsg = false) {
+async function registerPushDevice(contacts = [], autoMsg = false, forceRefresh = false) {
   if (!('serviceWorker' in navigator) || !('Notification' in window) || Notification.permission !== 'granted') return false;
   if (!firebase.messaging || !(await firebase.messaging.isSupported())) return false;
   const user = await ensureFirebaseAuth();
   const registration = await navigator.serviceWorker.ready;
-  const token = await firebase.messaging().getToken({
+  const ref = _fbDb.ref(`push_devices/${user.uid}`);
+  const current = (await ref.once('value')).val() || {};
+  const messaging = firebase.messaging();
+  if (forceRefresh || (current.enabled === false && current.disabledAt)) {
+    try { await messaging.deleteToken(); } catch (e) { console.warn('清理旧推送 Token 失败，将继续重新注册', e); }
+  }
+  const token = await messaging.getToken({
     vapidKey: WEB_PUSH_VAPID_KEY,
     serviceWorkerRegistration: registration
   });
   if (!token) throw new Error('未能取得推送装置 Token');
-  const ref = _fbDb.ref(`push_devices/${user.uid}`);
-  const current = (await ref.once('value')).val() || {};
   const roster = (contacts || []).map(c => ({ id: String(c.id), name: String(c.name || '新消息') })).slice(0, 100);
   await ref.update({
     token,
@@ -74,6 +78,7 @@ async function registerPushDevice(contacts = [], autoMsg = false) {
     autoMsg: Boolean(autoMsg),
     contacts: roster,
     updatedAt: Date.now(),
+    disabledAt: null,
     nextPushAt: Number(current.nextPushAt) > Date.now() ? Number(current.nextPushAt) : Date.now() + 45 * 60000
   });
   return true;
