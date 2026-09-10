@@ -4,7 +4,7 @@ function getAIConfig() {
   const def = {
     textEnabled: false, endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini',
     voiceEnabled: false, voiceProvider: 'openai', voiceEndpoint: 'https://api.openai.com/v1/audio/speech', voiceGroupId: '', voiceApiKey: '', voiceModel: 'tts-1', voiceName: 'alloy',
-    autoMsg: false, autoMoment: false, autoAvatar: false, autoRedpacket: true
+    autoMsg: false, autoMoment: false, autoAvatar: false, autoRedpacket: true, notificationsEnabled: false
   };
   try {
     const raw = localStorage.getItem(AI_CFG_KEY);
