@@ -230,6 +230,7 @@ async function pickAvatarFromCards(cards, library, persona) {
   const replyContextByChat = Object.create(null);
   let settingsChatId = null;
   let wordCardContactId = null;
+  let wordCardListType = 'custom';
 
   function sleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Number(ms) || 0))); }
   function getGlobalDelay() {
@@ -336,7 +337,7 @@ async function pickAvatarFromCards(cards, library, persona) {
         <div class="settings-v2-editor" id="chatSettingDetailBodyV2"></div>
       </div>
       <div class="page hidden" id="page-chat-wordcards-v2">
-        <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromChatWordCardsV2" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-title">专属字卡</span><span style="width:25px"></span></div>
+        <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromChatWordCardsV2" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-title" id="wordCardV2Title">专属字卡</span><span style="width:25px"></span></div>
         <div class="settings-v2-editor"><div class="wordcard-v2-add"><input id="wordCardV2Input" placeholder="添加一条字卡"><button id="wordCardV2AddBtn">添加</button></div><div class="wordcard-v2-list" id="wordCardV2List"></div></div>
       </div>
     `);
@@ -350,7 +351,13 @@ async function pickAvatarFromCards(cards, library, persona) {
     document.getElementById('wordCardV2List')?.addEventListener('click', e => {
       const btn = e.target.closest('[data-delete-card]');
       if (!btn || !wordCardContactId) return;
-      WordCards.removeContactCard(wordCardContactId, btn.dataset.deleteCard);
+      if (wordCardListType === 'intimate') WordCards.removeIntimateCard(wordCardContactId, btn.dataset.deleteCard);
+      else WordCards.removeContactCard(wordCardContactId, btn.dataset.deleteCard);
+      const c = getContactById(wordCardContactId);
+      if (wordCardListType === 'intimate' && c?.intimateWordCardsEnabled && !WordCards.getIntimateList(wordCardContactId).length) {
+        c.intimateWordCardsEnabled = false;
+        persist();
+      }
       renderWordCardsV2();
       renderChatSettingsV2();
     });
@@ -386,12 +393,15 @@ async function pickAvatarFromCards(cards, library, persona) {
       const c = getContactById(settingsChatId);
       if (!c) return;
       const customCount = WordCards.getContactList(c.id).length;
+      const intimateCount = WordCards.getIntimateList(c.id).length;
       body.innerHTML = `
         <div class="settings-v2-profile">${avatarHtml(c.avatar, c.name, 52)}<div><div class="settings-v2-profile-name">${escapeHtml(c.name)}</div><div class="settings-v2-profile-sub">角色聊天设置</div></div></div>
         <div class="settings-v2-group">
           <div class="settings-v2-row" data-setting="persona"><span>角色设定</span><div class="settings-v2-right"><span class="settings-v2-value">${escapeHtml(c.persona || '未设置')}</span>${chevron()}</div></div>
           <div class="settings-v2-row" data-setting="wordcards"><span>专属字卡</span><div class="settings-v2-right"><span>${customCount ? `${customCount} 条` : '未添加'}</span>${chevron()}</div></div>
           <div class="settings-v2-row"><span>叠加专属字卡</span><label class="settings-v2-switch"><input id="wordCardModeSwitchV2" type="checkbox" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span></span></label></div>
+          <div class="settings-v2-row" data-setting="intimate-wordcards"><span>亲密字卡</span><div class="settings-v2-right"><span>${intimateCount ? `${intimateCount} 条` : '未添加'}</span>${chevron()}</div></div>
+          <div class="settings-v2-row"><span>只使用亲密字卡</span><label class="settings-v2-switch"><input id="intimateWordCardSwitchV2" type="checkbox" ${c.intimateWordCardsEnabled ? 'checked' : ''}><span></span></label></div>
         </div>
         <div class="settings-v2-group">
           <div class="settings-v2-row" data-setting="global-delay"><span>回复间隔</span><div class="settings-v2-right"><span>${formatDelay(getGlobalDelay())}</span>${chevron()}</div></div>
@@ -414,6 +424,17 @@ async function pickAvatarFromCards(cards, library, persona) {
       const c = getContactById(settingsChatId);
       if (c) { c.wordCardMode = e.target.checked ? 'custom' : 'global'; persist(); }
     }
+    if (e.target.id === 'intimateWordCardSwitchV2' && !isGroupChat(settingsChatId)) {
+      const c = getContactById(settingsChatId);
+      if (!c) return;
+      if (e.target.checked && !WordCards.getIntimateList(c.id).length) {
+        e.target.checked = false;
+        alert('请先添加亲密字卡');
+        return;
+      }
+      c.intimateWordCardsEnabled = e.target.checked;
+      persist();
+    }
   }
 
   function handleSettingsClick(e) {
@@ -422,6 +443,7 @@ async function pickAvatarFromCards(cards, library, persona) {
     const action = row.dataset.setting;
     if (action === 'persona') return openPersonaEditorV2();
     if (action === 'wordcards') return openWordCardsV2();
+    if (action === 'intimate-wordcards') return openWordCardsV2('intimate');
     if (action === 'global-delay') return openDelayEditorV2();
     if (action === 'group-name') return openGroupNameEditorV2();
     if (action === 'clear-chat') {
@@ -478,23 +500,28 @@ async function pickAvatarFromCards(cards, library, persona) {
     pushPage('page-chat-setting-detail-v2');
   }
 
-  function openWordCardsV2() {
+  function openWordCardsV2(type = 'custom') {
     if (isGroupChat(settingsChatId)) return;
     wordCardContactId = settingsChatId;
+    wordCardListType = type;
+    document.getElementById('wordCardV2Title').textContent = type === 'intimate' ? '亲密字卡' : '专属字卡';
+    document.getElementById('wordCardV2Input').placeholder = type === 'intimate' ? '添加一条亲密字卡' : '添加一条字卡';
     renderWordCardsV2();
     pushPage('page-chat-wordcards-v2');
   }
   function renderWordCardsV2() {
     const box = document.getElementById('wordCardV2List');
     if (!box || !wordCardContactId) return;
-    const list = WordCards.getContactList(wordCardContactId);
-    box.innerHTML = list.length ? list.map(t => `<div class="wordcard-v2-row"><span>${escapeHtml(t)}</span><button class="wordcard-v2-delete" data-delete-card="${escapeHtml(t)}">×</button></div>`).join('') : '<div class="wordcard-v2-empty">还没有专属字卡</div>';
+    const list = wordCardListType === 'intimate' ? WordCards.getIntimateList(wordCardContactId) : WordCards.getContactList(wordCardContactId);
+    const empty = wordCardListType === 'intimate' ? '还没有亲密字卡' : '还没有专属字卡';
+    box.innerHTML = list.length ? list.map(t => `<div class="wordcard-v2-row"><span>${escapeHtml(t)}</span><button class="wordcard-v2-delete" data-delete-card="${escapeHtml(t)}">×</button></div>`).join('') : `<div class="wordcard-v2-empty">${empty}</div>`;
   }
   function addWordCardV2() {
     const input = document.getElementById('wordCardV2Input');
     const text = input?.value.trim();
     if (!text || !wordCardContactId) return;
-    WordCards.addContactCard(wordCardContactId, text);
+    if (wordCardListType === 'intimate') WordCards.addIntimateCard(wordCardContactId, text);
+    else WordCards.addContactCard(wordCardContactId, text);
     input.value = '';
     renderWordCardsV2(); renderChatSettingsV2();
   }
