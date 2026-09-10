@@ -1,6 +1,7 @@
 const WordCards = {
   GLOBAL_KEY: 'tarot_wordcards_v1',
   CONTACT_PREFIX: 'tarot_wordcards_contact_',
+  INTIMATE_PREFIX: 'tarot_wordcards_intimate_',
 
   _defaults() {
     return ["嗯", "好的", "在的", "我在想...", "有点累", "开心", "今天很平静", "抱歉", "谢谢你", "没关系的", "我需要一点时间", "继续吧", "恭喜发财", "大吉大利", "小宁！","在公司","知道了","可以","不可以","抱抱","亲亲","爱你",
@@ -80,7 +81,37 @@ const WordCards = {
     return list;
   },
 
+  getIntimateList(contactId) {
+    try {
+      const raw = localStorage.getItem(this.INTIMATE_PREFIX + contactId);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error('角色亲密字卡读取失败', e);
+      return [];
+    }
+  },
+
+  saveIntimateList(contactId, list) {
+    try { localStorage.setItem(this.INTIMATE_PREFIX + contactId, JSON.stringify(list)); }
+    catch (e) { console.error('角色亲密字卡保存失败', e); }
+  },
+
+  addIntimateCard(contactId, text) {
+    const list = this.getIntimateList(contactId);
+    if (text && !list.includes(text)) { list.push(text); this.saveIntimateList(contactId, list); }
+    return list;
+  },
+
+  removeIntimateCard(contactId, text) {
+    const list = this.getIntimateList(contactId).filter(t => t !== text);
+    this.saveIntimateList(contactId, list);
+    return list;
+  },
+
   getForContact(contact) {
+    if (contact?.intimateWordCardsEnabled) return this.getIntimateList(contact.id);
     const global = this.getAll();
     if (contact && contact.wordCardMode === 'custom') {
       const custom = this.getContactList(contact.id);
