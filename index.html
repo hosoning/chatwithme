@@ -349,7 +349,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .tea-method-row{display:flex;background:#eceeed;border-radius:9px;padding:3px;margin:0 12px 12px}
 .tea-method-chip{flex:1;text-align:center;padding:9px;border-radius:7px;color:#666;font-size:14px}
 .tea-method-chip.selected{background:#fff;color:#14291e;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.mini-app-icon.food{font-size:25px;color:#fff}.tea-recipient-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
+.mini-app-icon.food{font-size:25px;color:#fff}.tea-recipient-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.tea-branch-select{width:100%;border:0;background:#f7f7f7;border-radius:8px;padding:10px;font-size:14px;color:#222}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
 .tea-shop-layout{display:grid;grid-template-columns:86px 1fr;align-items:start;background:#fff;min-height:410px}
 .tea-category-list{background:#f6f6f6;min-height:410px}
 .tea-category-list button{width:100%;border:0;background:transparent;padding:18px 7px;font-size:13px;color:#666;position:relative}
@@ -734,6 +734,7 @@ svg { max-width:100%; max-height:100%; }
       <div id="teaOrderForm">
         <section class="tea-store-hero" id="teaStoreHero"><h2 id="teaStoreName">沐茶 MUTEA</h2><p id="teaStoreMeta"></p><span class="tea-store-badge" id="teaStoreBadge"></span></section>
         <div class="tea-method-row" id="teaMethodRow"><div class="tea-method-chip selected" data-method="delivery">外送</div><div class="tea-method-chip" data-method="pickup">到店自取</div></div>
+        <section class="tea-checkout-card"><div class="tea-checkout-title">配送门店</div><select class="tea-branch-select" id="teaBranchSelect"></select><div class="tea-address-hint">会按配送地址匹配附近分店，也可以手动更换</div></section>
         <section class="tea-checkout-card"><div class="tea-checkout-title">收货人信息</div><div class="tea-recipient-grid"><div class="form-row col"><label>姓名</label><input id="teaRecipientName" autocomplete="name" placeholder="收货人"></div><div class="form-row col"><label>手机号</label><input id="teaRecipientPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="配送联系电话"></div></div></section>
         <section class="tea-checkout-card tea-address-card" id="teaAddressWrap"><div class="form-row col"><label>📍 配送地址（必填）</label><input id="teaAddressInput" autocomplete="street-address" placeholder="请输入小区／楼栋／门牌号"></div><div class="tea-address-hint">填写后会保存为常用地址，下次自动带入</div></section>
         <div class="tea-shop-layout"><aside class="tea-category-list" id="teaCategoryList"></aside><main class="tea-menu-list" id="teaMenuList"></main></div>
@@ -1031,10 +1032,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=38" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=38" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=38" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=38" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=38" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=39" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=39" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=39" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=39" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=39" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
