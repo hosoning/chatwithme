@@ -117,6 +117,20 @@ function sanitizeRoomId(roomId) {
   return String(roomId).replace(/[.#$\[\]\/]/g, '_');
 }
 
+function mergeCloudChats(remoteChats = {}, localChats = {}) {
+  const merged = { ...(remoteChats || {}) };
+  for (const [chatId, localMessages] of Object.entries(localChats || {})) {
+    const byId = new Map();
+    for (const message of [...(merged[chatId] || []), ...(localMessages || [])]) {
+      const key = String(message?.id ?? `${message?.ts || ''}:${message?.from || ''}:${message?.text || ''}`);
+      const existing = byId.get(key);
+      byId.set(key, existing ? { ...existing, ...message } : message);
+    }
+    merged[chatId] = [...byId.values()].sort((a, b) => Number(a?.ts || a?.id || 0) - Number(b?.ts || b?.id || 0));
+  }
+  return merged;
+}
+
 async function cloudUpload(fullDataObj) {
   const cfg = getCloudConfig();
   if (!cfg.enabled || !cfg.roomId) return false;
@@ -125,9 +139,11 @@ async function cloudUpload(fullDataObj) {
   try {
     await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
-    await db.ref('tarot_rooms/' + key).set({
-      data: JSON.stringify(fullDataObj),
-      updatedAt: Date.now()
+    await db.ref('tarot_rooms/' + key).transaction(current => {
+      let remote = {};
+      try { remote = current?.data ? JSON.parse(current.data) : {}; } catch (_) {}
+      const merged = { ...remote, ...fullDataObj, chats: mergeCloudChats(remote.chats, fullDataObj.chats) };
+      return { data: JSON.stringify(merged), updatedAt: Date.now() };
     });
     return true;
   } catch (e) { console.error('云端上传失败', e); return false; }
