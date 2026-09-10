@@ -141,14 +141,19 @@ function persist() {
   }, 2000);
 }
 
-async function tryCloudLoadOnStartup() {
+function mergeChatHistory(localChats = {}, cloudChats = {}) {
+  if (typeof mergeCloudChats === 'function') return mergeCloudChats(cloudChats, localChats);
+  return { ...(cloudChats || {}), ...(localChats || {}) };
+}
+
+async function tryCloudLoadOnStartup(overwrite = false) {
   const cfg = getCloudConfig();
   if (!cfg.enabled) return;
   const cloudData = await cloudDownload();
   if (!cloudData) return;
   if (cloudData.contacts) state.contacts = cloudData.contacts;
   if (cloudData.groups) state.groups = cloudData.groups;
-  if (cloudData.chats) state.chats = cloudData.chats;
+  if (cloudData.chats) state.chats = overwrite ? cloudData.chats : mergeChatHistory(state.chats, cloudData.chats);
   if (cloudData.moments) state.moments = cloudData.moments;
   if (cloudData.avatarLibrary) state.avatarLibrary = cloudData.avatarLibrary;
   if (cloudData.myAvatar) state.myAvatar = cloudData.myAvatar;
@@ -2240,7 +2245,7 @@ function bindCloudSync() {
   });
   document.getElementById('cloudDownloadBtn')?.addEventListener('click', async () => {
     saveCurrentCloudForm();
-    await tryCloudLoadOnStartup();
+    await tryCloudLoadOnStartup(true);
     alert('已从云端下载并覆盖本地数据，即将刷新');
     location.reload();
   });
