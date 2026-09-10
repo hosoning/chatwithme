@@ -10,6 +10,7 @@ admin.initializeApp({
 
 const db = admin.database();
 const now = Date.now();
+const forcePush = process.env.FORCE_PUSH === 'true';
 const hongKongHour = Number(new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Hong_Kong', hour: '2-digit', hour12: false
 }).format(new Date(now)));
@@ -19,11 +20,13 @@ function nextDelayMs() {
 }
 
 async function run() {
-  if (hongKongHour >= 2 && hongKongHour < 8) return;
+  if (!forcePush && hongKongHour >= 2 && hongKongHour < 8) return;
   const snapshot = await db.ref('push_devices').once('value');
   const devices = snapshot.val() || {};
+  console.log(`Found ${Object.keys(devices).length} registered push device(s).`);
+  let sent = 0;
   for (const [uid, device] of Object.entries(devices)) {
-    if (!device?.enabled || !device?.autoMsg || !device?.token || Number(device.nextPushAt || 0) > now) continue;
+    if (!device?.enabled || !device?.autoMsg || !device?.token || (!forcePush && Number(device.nextPushAt || 0) > now)) continue;
     const contacts = Array.isArray(device.contacts) ? device.contacts.filter(c => c?.id) : [];
     if (!contacts.length) continue;
     const contact = contacts[Math.floor(Math.random() * contacts.length)];
@@ -47,6 +50,7 @@ async function run() {
         nextPushAt: now + nextDelayMs(),
         lastPushAt: now
       });
+      sent += 1;
     } catch (error) {
       const code = String(error?.code || '');
       console.error(`Push failed for ${uid}:`, code || error?.message || error);
@@ -55,6 +59,7 @@ async function run() {
       }
     }
   }
+  console.log(`Sent ${sent} proactive push notification(s).`);
 }
 
 run().then(() => process.exit(0)).catch(error => {
