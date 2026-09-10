@@ -1404,6 +1404,19 @@ async function runAutoMessageSchedule() {
   planNextAutoMessage(true);
   await aiAutoSendMessage();
 }
+async function processPendingPushMessages() {
+  const cfg = getAIConfig();
+  if (!cfg.notificationsEnabled || !cfg.autoMsg || typeof getPendingPushMessages !== 'function') return;
+  const pending = await getPendingPushMessages();
+  for (const item of pending.slice(0, 5)) {
+    const contact = getContactById(item.contactId);
+    if (!contact) { await acknowledgePendingPushMessage(item.id); continue; }
+    try {
+      await replyWithTarot(String(contact.id), String(contact.id), '(你主动来找我聊天。自然说一句此刻想对我说的话，不要复述括号内容)', contact.persona);
+      await acknowledgePendingPushMessage(item.id);
+    } catch (e) { console.warn('处理后台主动消息失败', e); break; }
+  }
+}
 setInterval(() => { runAutoMessageSchedule().catch(console.error); }, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runAutoMessageSchedule().catch(console.error); });
 setInterval(() => { try { if (secureRandomInt(100) < 2) aiAutoPostMoment(); } catch(e){ console.error(e); } }, 120000);
@@ -2292,15 +2305,22 @@ function readAISettingsForm() {
 function bindSettingsSave() {
   document.getElementById('cfgVoiceProvider')?.addEventListener('change', updateVoiceProviderFields);
   document.getElementById('cfgNotifications')?.addEventListener('change', async e => {
-    if (!e.target.checked) return;
+    if (!e.target.checked) { if (typeof disablePushDevice === 'function') disablePushDevice(); return; }
     if (!('Notification' in window)) { e.target.checked=false; alert('当前浏览器不支持系统通知'); return; }
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') { e.target.checked=false; alert('没有取得通知权限，请到系统设置中允许通知'); }
+    if (permission !== 'granted') { e.target.checked=false; alert('没有取得通知权限，请到系统设置中允许通知'); return; }
+    try { await registerPushDevice(state.contacts, document.getElementById('cfgAutoMsg').checked); }
+    catch (err) { e.target.checked=false; alert(`后台推送注册失败：${err?.message || '未知错误'}`); }
   });
-  document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
-    saveAIConfig(readAISettingsForm());
+  document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
+    const nextCfg = readAISettingsForm();
+    saveAIConfig(nextCfg);
     planNextAutoMessage(true);
     saveCurrentCloudForm();
+    if (nextCfg.notificationsEnabled) {
+      try { await registerPushDevice(state.contacts, nextCfg.autoMsg); }
+      catch (e) { console.warn('后台推送同步失败', e); }
+    } else if (typeof disablePushDevice === 'function') disablePushDevice();
     alert('已保存');
   });
   document.getElementById('testVoiceBtn')?.addEventListener('click', async () => {
@@ -2499,12 +2519,19 @@ async function init() {
   safeStep('bindTeaOrder', bindTeaOrder);
   safeStep('resumeTeaOrderNotification', resumeTeaOrderNotification);
   await safeStepAsync('runAutoMessageSchedule', runAutoMessageSchedule);
+  if (getAIConfig().notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+    await safeStepAsync('registerPushDevice', () => registerPushDevice(state.contacts, getAIConfig().autoMsg));
+    await safeStepAsync('processPendingPushMessages', processPendingPushMessages);
+  }
   safeStep('bindChatItemActionSheet', bindChatItemActionSheet);
   safeStep('showPage', () => showPage('page-chatlist'));
 }
 
 document.addEventListener('DOMContentLoaded', init);
-window.addEventListener('pageshow', () => { runAutoMessageSchedule().catch(console.error); });
+window.addEventListener('pageshow', () => {
+  runAutoMessageSchedule().catch(console.error);
+  processPendingPushMessages().catch(console.error);
+});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
