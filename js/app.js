@@ -2309,7 +2309,7 @@ function bindSettingsSave() {
     if (!('Notification' in window)) { e.target.checked=false; alert('当前浏览器不支持系统通知'); return; }
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') { e.target.checked=false; alert('没有取得通知权限，请到系统设置中允许通知'); return; }
-    try { await registerPushDevice(state.contacts, document.getElementById('cfgAutoMsg').checked); }
+    try { await registerPushDevice(state.contacts, document.getElementById('cfgAutoMsg').checked, true); }
     catch (err) { e.target.checked=false; alert(`后台推送注册失败：${err?.message || '未知错误'}`); }
   });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
