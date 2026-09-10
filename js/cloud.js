@@ -11,6 +11,7 @@ const FIREBASE_CONFIG = {
 };
 
 const CLOUD_CFG_KEY = 'tarot_cloud_config_v1';
+const WEB_PUSH_VAPID_KEY = 'BPF6XZ5vE-GVkSA2jhxZhXCJY4-yVxSl5v_7jZ_DNq_UBKxCu8y36amCox9Ba9vqnBMuM159IF2uCTH63aROfwY';
 
 function getCloudConfig() {
   const def = { enabled: false, roomId: '' };
@@ -52,6 +53,59 @@ async function ensureFirebaseAuth() {
       });
   }
   return _fbAuthReady;
+}
+
+async function registerPushDevice(contacts = [], autoMsg = false) {
+  if (!('serviceWorker' in navigator) || !('Notification' in window) || Notification.permission !== 'granted') return false;
+  if (!firebase.messaging || !(await firebase.messaging.isSupported())) return false;
+  const user = await ensureFirebaseAuth();
+  const registration = await navigator.serviceWorker.ready;
+  const token = await firebase.messaging().getToken({
+    vapidKey: WEB_PUSH_VAPID_KEY,
+    serviceWorkerRegistration: registration
+  });
+  if (!token) throw new Error('未能取得推送装置 Token');
+  const ref = _fbDb.ref(`push_devices/${user.uid}`);
+  const current = (await ref.once('value')).val() || {};
+  const roster = (contacts || []).map(c => ({ id: String(c.id), name: String(c.name || '新消息') })).slice(0, 100);
+  await ref.update({
+    token,
+    enabled: true,
+    autoMsg: Boolean(autoMsg),
+    contacts: roster,
+    updatedAt: Date.now(),
+    nextPushAt: Number(current.nextPushAt) > Date.now() ? Number(current.nextPushAt) : Date.now() + 45 * 60000
+  });
+  return true;
+}
+
+async function disablePushDevice() {
+  try {
+    const user = await ensureFirebaseAuth();
+    await _fbDb.ref(`push_devices/${user.uid}`).update({ enabled: false, updatedAt: Date.now() });
+    return true;
+  } catch (e) {
+    console.warn('关闭后台推送失败', e);
+    return false;
+  }
+}
+
+async function getPendingPushMessages() {
+  try {
+    const user = await ensureFirebaseAuth();
+    const snapshot = await _fbDb.ref(`push_devices/${user.uid}/pending`).once('value');
+    const value = snapshot.val() || {};
+    return Object.entries(value).map(([id, item]) => ({ id, ...item })).sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  } catch (e) {
+    console.warn('读取后台主动消息失败', e);
+    return [];
+  }
+}
+
+async function acknowledgePendingPushMessage(id) {
+  if (!id) return;
+  const user = await ensureFirebaseAuth();
+  await _fbDb.ref(`push_devices/${user.uid}/pending/${id}`).remove();
 }
 
 function sanitizeRoomId(roomId) {
