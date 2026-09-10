@@ -231,6 +231,7 @@ async function pickAvatarFromCards(cards, library, persona) {
   let settingsChatId = null;
   let wordCardContactId = null;
   let wordCardListType = 'custom';
+  const intimateFollowupTimers = Object.create(null);
 
   function sleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Number(ms) || 0))); }
   function getGlobalDelay() {
@@ -247,6 +248,42 @@ async function pickAvatarFromCards(cards, library, persona) {
   function getReplyDelay(chatId) {
     if (replyContextByChat[chatId] != null) return replyContextByChat[chatId];
     return getGlobalDelay();
+  }
+  function intimateBurstPicks(pool, min, max, initial = []) {
+    if (!pool?.length) return [];
+    const target = min + secureRandomInt(max - min + 1);
+    const picks = initial.filter(x => pool.includes(x)).slice(0, target);
+    let bag = pool.filter(x => !picks.includes(x));
+    while (picks.length < target) {
+      if (!bag.length) bag = [...pool];
+      picks.push(bag.splice(secureRandomInt(bag.length), 1)[0]);
+    }
+    return picks;
+  }
+  async function sendIntimateBurst(chatId, fromId, picks, delayMs) {
+    const contact = getContactById(fromId);
+    for (let i = 0; i < picks.length; i++) {
+      if (!contact?.intimateWordCardsEnabled) break;
+      showTypingIndicator(chatId, contact);
+      if (i > 0) await sleep(delayMs);
+      const cards = drawCards(3), shieldCards = drawCards(3), shield = calcShield(shieldCards);
+      const text = picks[i];
+      const voiceUrl = !/[()（）]/.test(text) ? await synthesizeVoice(text) : null;
+      addMessage(chatId, fromId, text, { cards, shieldCards, shield, voiceUrl });
+      hideTypingIndicator();
+    }
+  }
+  function scheduleIntimateFollowup(chatId, fromId) {
+    clearTimeout(intimateFollowupTimers[chatId]);
+    const wait = 30000 + secureRandomInt(90001);
+    intimateFollowupTimers[chatId] = setTimeout(async () => {
+      delete intimateFollowupTimers[chatId];
+      const contact = getContactById(fromId);
+      if (!contact?.intimateWordCardsEnabled) return;
+      const pool = WordCards.getForContact(contact);
+      const picks = intimateBurstPicks(pool, 5, 8);
+      await sendIntimateBurst(chatId, fromId, picks, getReplyDelay(chatId));
+    }, wait);
   }
   function chevron() {
     return '<svg class="settings-v2-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -433,6 +470,7 @@ async function pickAvatarFromCards(cards, library, persona) {
         return;
       }
       c.intimateWordCardsEnabled = e.target.checked;
+      if (!e.target.checked) { clearTimeout(intimateFollowupTimers[settingsChatId]); delete intimateFollowupTimers[settingsChatId]; }
       persist();
     }
   }
@@ -590,11 +628,20 @@ async function pickAvatarFromCards(cards, library, persona) {
     };
     window.replyWithTarot = async function(chatId, fromId, text, persona) {
       const cards = drawCards(3), shieldCards = drawCards(3), shield = calcShield(shieldCards), contact = getContactById(fromId), pool = WordCards.getForContact(contact), delayMs = getReplyDelay(chatId);
+      clearTimeout(intimateFollowupTimers[chatId]); delete intimateFollowupTimers[chatId];
       showTypingIndicator(chatId, contact);
       try {
         await sleep(delayMs);
-        if (shouldSendRedPacket(cards)) { const amount=randomRedPacketAmount(), note=pool[secureRandomInt(pool.length)]||'恭喜发财'; addMessage(chatId,fromId,note,{type:'redpacket',cards,shieldCards,shield,redpacket:{amount,note,status:'unclaimed',claimedBy:null}}); return; }
-        const picks = await interpretAndReply(text,cards,pool,persona); const safePicks = Array.isArray(picks)&&picks.length?picks:[(pool&&pool.length?pool[secureRandomInt(pool.length)]:'嗯')];
+        if (!contact?.intimateWordCardsEnabled && shouldSendRedPacket(cards)) { const amount=randomRedPacketAmount(), note=pool[secureRandomInt(pool.length)]||'恭喜发财'; addMessage(chatId,fromId,note,{type:'redpacket',cards,shieldCards,shield,redpacket:{amount,note,status:'unclaimed',claimedBy:null}}); return; }
+        const picks = await interpretAndReply(text,cards,pool,persona);
+        if (contact?.intimateWordCardsEnabled) {
+          hideTypingIndicator();
+          const intimatePicks = intimateBurstPicks(pool, 3, 5, picks);
+          await sendIntimateBurst(chatId, fromId, intimatePicks, delayMs);
+          scheduleIntimateFollowup(chatId, fromId);
+          return;
+        }
+        const safePicks = Array.isArray(picks)&&picks.length?picks:[(pool&&pool.length?pool[secureRandomInt(pool.length)]:'嗯')];
         const voiceFirst=nextReplyStartsWithVoice(chatId);
         for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const useVoice=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(safePicks[i])&&((i%2===0)===voiceFirst); const voiceUrl=useVoice?await synthesizeVoice(safePicks[i]):null; addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl}); }
         if(typeof maybeContactOrderFood==='function')maybeContactOrderFood(chatId,fromId,text);
