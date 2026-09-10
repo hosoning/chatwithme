@@ -1,6 +1,11 @@
 name: ChatWithMe proactive push
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/chatwithme-push.yml'
+      - '.github/scripts/send-chat-push.cjs'
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -14,6 +19,7 @@ jobs:
     timeout-minutes: 5
     env:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FORCE_PUSH: ${{ github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
