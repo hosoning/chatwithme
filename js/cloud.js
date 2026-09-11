@@ -124,11 +124,24 @@ function mergeCloudChats(remoteChats = {}, localChats = {}) {
     for (const message of [...(merged[chatId] || []), ...(localMessages || [])]) {
       const key = String(message?.id ?? `${message?.ts || ''}:${message?.from || ''}:${message?.text || ''}`);
       const existing = byId.get(key);
-      byId.set(key, existing ? { ...existing, ...message } : message);
+      if (!existing) { byId.set(key, message); continue; }
+      // Deletion tombstones always win, otherwise the most recently edited copy wins.
+      if (existing.deletedAt || message?.deletedAt) {
+        byId.set(key, Number(existing.deletedAt || 0) >= Number(message?.deletedAt || 0) ? existing : message);
+      } else {
+        const existingRev = Number(existing.modifiedAt || existing.ts || 0);
+        const messageRev = Number(message?.modifiedAt || message?.ts || 0);
+        byId.set(key, messageRev >= existingRev ? { ...existing, ...message } : { ...message, ...existing });
+      }
     }
     merged[chatId] = [...byId.values()].sort((a, b) => Number(a?.ts || a?.id || 0) - Number(b?.ts || b?.id || 0));
   }
   return merged;
+}
+function mergeCloudItems(remoteItems = [], localItems = []) {
+  const byId = new Map();
+  for (const item of [...(remoteItems || []), ...(localItems || [])]) byId.set(String(item?.id ?? JSON.stringify(item)), item);
+  return [...byId.values()];
 }
 
 async function cloudUpload(fullDataObj) {
@@ -141,12 +154,24 @@ async function cloudUpload(fullDataObj) {
     const key = sanitizeRoomId(cfg.roomId);
     await db.ref('tarot_rooms/' + key).transaction(current => {
       let remote = {};
-      try { remote = current?.data ? JSON.parse(current.data) : {}; } catch (_) {}
-      const merged = { ...remote, ...fullDataObj, chats: mergeCloudChats(remote.chats, fullDataObj.chats) };
-      return { data: JSON.stringify(merged), updatedAt: Date.now() };
+      try {
+        remote = typeof current?.data === 'string' ? JSON.parse(current.data) : (current?.data || {});
+      } catch (_) {}
+      const merged = {
+        ...remote, ...fullDataObj,
+        contacts: mergeCloudItems(remote.contacts, fullDataObj.contacts),
+        groups: mergeCloudItems(remote.groups, fullDataObj.groups),
+        moments: mergeCloudItems(remote.moments, fullDataObj.moments),
+        avatarLibrary: mergeCloudItems(remote.avatarLibrary, fullDataObj.avatarLibrary),
+        chats: mergeCloudChats(remote.chats, fullDataObj.chats)
+      };
+      // Store structured data. The legacy JSON string hit Firebase's per-string size limit
+      // once avatars, stickers, and image messages accumulated.
+      return { schemaVersion: 2, data: JSON.parse(JSON.stringify(merged)), updatedAt: Date.now() };
     });
+    window.__lastCloudError = '';
     return true;
-  } catch (e) { console.error('云端上传失败', e); return false; }
+  } catch (e) { window.__lastCloudError = e?.message || String(e); console.error('云端上传失败', e); return false; }
 }
 
 async function cloudDownload() {
@@ -159,7 +184,8 @@ async function cloudDownload() {
     const key = sanitizeRoomId(cfg.roomId);
     const snapshot = await db.ref('tarot_rooms/' + key).once('value');
     const val = snapshot.val();
-    if (!val || !val.data) return null;
-    return JSON.parse(val.data);
-  } catch (e) { console.error('云端下载失败', e); return null; }
+    if (!val || !val.data) { window.__lastCloudError = '云端还没有资料'; return null; }
+    window.__lastCloudError = '';
+    return typeof val.data === 'string' ? JSON.parse(val.data) : val.data;
+  } catch (e) { window.__lastCloudError = e?.message || String(e); console.error('云端下载失败', e); return null; }
 }
