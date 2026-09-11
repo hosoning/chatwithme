@@ -21,6 +21,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .nav-title { font-size:17.5px; font-weight:600; color:#0a0a0a; letter-spacing:0.2px; }
 .icon-btn { width:25px !important; height:25px !important; cursor:pointer; flex-shrink:0; opacity:0.88; transition:opacity .15s; display:inline-block; touch-action:manipulation; }
 .icon-btn:active { opacity:0.5; }
+.chat-nav-actions{display:flex;align-items:center;gap:17px}.chat-search-field{height:36px;flex:1;background:#fff;border-radius:7px;display:flex;align-items:center;padding:0 9px;gap:6px}.chat-search-field svg{width:18px;height:18px;flex-shrink:0}.chat-search-field input{width:100%;height:100%;border:0;background:transparent;font-size:15px;outline:0;user-select:text!important;-webkit-user-select:text!important}.search-nav{gap:10px}.search-nav>button{border:0;background:transparent;color:#576b95;font-size:14px;flex-shrink:0}.chat-search-summary{padding:10px 16px;color:#999;font-size:12px;background:#f7f7f7;border-bottom:.5px solid #ddd}.chat-search-results{flex:1;overflow-y:auto;background:#fff}.chat-search-result{display:flex;gap:11px;padding:12px 16px;border-bottom:.5px solid #eee;align-items:flex-start}.chat-search-result .avatar{width:38px!important;height:38px!important}.chat-search-result-body{min-width:0;flex:1}.chat-search-result-name{font-size:13px;color:#777;margin-bottom:4px}.chat-search-result-text{font-size:15px;line-height:1.4;word-break:break-word}.chat-search-result-text mark{background:#ffe58a;color:inherit}.chat-search-result-time{font-size:11px;color:#aaa;margin-top:4px}.message-search-hit .bubble{animation:searchHit 1.8s ease}.cloud-sync-status{font-size:12px;color:#888;line-height:1.45;padding:0 4px 14px;word-break:break-word}.cloud-sync-status.success{color:#1a7f45}.cloud-sync-status.error{color:#d33}@keyframes searchHit{0%,100%{box-shadow:0 1px 2px rgba(0,0,0,.04)}25%,70%{box-shadow:0 0 0 4px rgba(7,193,96,.35)}}
 
 .chat-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .chat-item, .contact-item { display:flex; align-items:center; padding:13px 16px; background:#fff; border-bottom:0.5px solid #ececec; transition:background .1s; touch-action:manipulation; }
@@ -524,7 +525,7 @@ svg { max-width:100%; max-height:100%; }
     <div class="nav-bar">
       <svg class="icon-btn nav-back" id="backFromChat" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="nav-title" id="chatPeerName">角色</span>
-      <svg class="icon-btn" id="btnChatSettings" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      <div class="chat-nav-actions"><svg class="icon-btn" id="btnChatSearch" viewBox="0 0 24 24" aria-label="搜索聊天记录"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#000" stroke-width="1.7"/><path d="M15.5 15.5L21 21" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round"/></svg><svg class="icon-btn" id="btnChatSettings" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></div>
     </div>
     <div class="msg-list" id="msgList"></div>
     <div class="input-bar">
@@ -585,6 +586,13 @@ svg { max-width:100%; max-height:100%; }
     </div>
     <input type="file" id="sendPhotoFileInput" accept="image/*" class="hidden">
     <input type="file" id="sendCameraFileInput" accept="image/*" capture="environment" class="hidden">
+  </div>
+
+  <!-- 搜索聊天记录 -->
+  <div class="page hidden" id="page-chat-search">
+    <div class="nav-bar search-nav"><svg class="icon-btn nav-back" id="backFromChatSearch" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><div class="chat-search-field"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#999" stroke-width="1.7"/><path d="M15.5 15.5L21 21" fill="none" stroke="#999" stroke-width="1.7"/></svg><input id="chatSearchInput" type="search" placeholder="搜索聊天记录" autocomplete="off"></div><button id="chatSearchCancel">取消</button></div>
+    <div class="chat-search-summary" id="chatSearchSummary">输入文字搜索当前聊天</div>
+    <div class="chat-search-results" id="chatSearchResults"></div>
   </div>
 
   <!-- 朋友圈 -->
@@ -688,8 +696,9 @@ svg { max-width:100%; max-height:100%; }
       <div class="form-row col"><label>同步房间ID（自己设一个，换设备填同一个即可同步）</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div>
       <div class="sheet-actions" style="margin-bottom:14px;">
         <div class="sheet-btn cancel" id="cloudUploadBtn">立即上传到云端</div>
-        <div class="sheet-btn confirm" id="cloudDownloadBtn">从云端下载覆盖本地</div>
+        <div class="sheet-btn confirm" id="cloudDownloadBtn">从云端合并到本机</div>
       </div>
+      <div class="cloud-sync-status" id="cloudSyncStatus">尚未同步</div>
       <button class="save-btn" id="saveSettingsBtn">保存设置</button>
     </div>
   </div>
@@ -766,6 +775,7 @@ svg { max-width:100%; max-height:100%; }
     <button class="message-action-item" id="messageCardsBtn"><span class="message-action-icon">◇</span><span>查看牌</span></button>
     <button class="message-action-item" id="messageMultiBtn"><span class="message-action-icon">☷</span><span>复选</span></button>
     <button class="message-action-item hidden" id="messageActionRecallBtn"><span class="message-action-icon">↶</span><span>撤回</span></button>
+    <button class="message-action-item" id="messageDeleteBtn"><span class="message-action-icon">⌫</span><span>删除</span></button>
   </div>
   <div class="forward-picker hidden" id="forwardPickerPage"><div class="nav-bar"><svg class="icon-btn" id="forwardPickerClose" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">选择聊天</span><span style="width:25px"></span></div><div class="forward-target-list" id="forwardTargetList"></div></div>
   <div class="forward-picker hidden" id="chatRecordViewer"><div class="nav-bar"><svg class="icon-btn" id="chatRecordViewerClose" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">聊天记录</span><span style="width:25px"></span></div><div class="forward-target-list" id="chatRecordViewerList"></div></div>
@@ -1037,10 +1047,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=42" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=45" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=46" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=44" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=46" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=47" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=47" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=47" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=47" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=47" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
