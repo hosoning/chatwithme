@@ -135,32 +135,54 @@ function persist() {
         contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
         avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
         chatBg: state.chatBg, momentsCover: state.momentsCover,
-        wordCards: WordCards.getAll(), stickers: getStickers()
+        wordCards: collectWordCardData(), stickers: getStickers()
       });
     }
   }, 2000);
+}
+
+function collectWordCardData() {
+  const contact = {}, intimate = {};
+  for (const c of state.contacts || []) {
+    const id = String(c.id);
+    contact[id] = WordCards.getContactList(id);
+    intimate[id] = WordCards.getIntimateList(id);
+  }
+  return { global: WordCards.getAll(), contact, intimate };
+}
+function restoreWordCardData(data) {
+  if (Array.isArray(data)) { WordCards.save(data); return; }
+  if (!data || typeof data !== 'object') return;
+  if (Array.isArray(data.global)) WordCards.save(data.global);
+  for (const [id, list] of Object.entries(data.contact || {})) if (Array.isArray(list)) WordCards.saveContactList(id, list);
+  for (const [id, list] of Object.entries(data.intimate || {})) if (Array.isArray(list)) WordCards.saveIntimateList(id, list);
 }
 
 function mergeChatHistory(localChats = {}, cloudChats = {}) {
   if (typeof mergeCloudChats === 'function') return mergeCloudChats(cloudChats, localChats);
   return { ...(cloudChats || {}), ...(localChats || {}) };
 }
+function mergeById(cloudItems = [], localItems = []) {
+  const merged = new Map();
+  for (const item of [...(cloudItems || []), ...(localItems || [])]) merged.set(String(item?.id ?? JSON.stringify(item)), item);
+  return [...merged.values()];
+}
 
-async function tryCloudLoadOnStartup(overwrite = false) {
+async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
   const cfg = getCloudConfig();
   if (!cfg.enabled) return;
-  const cloudData = await cloudDownload();
+  const cloudData = downloadedData || await cloudDownload();
   if (!cloudData) return;
-  if (cloudData.contacts) state.contacts = cloudData.contacts;
-  if (cloudData.groups) state.groups = cloudData.groups;
+  if (cloudData.contacts) state.contacts = overwrite ? cloudData.contacts : mergeById(cloudData.contacts, state.contacts);
+  if (cloudData.groups) state.groups = overwrite ? cloudData.groups : mergeById(cloudData.groups, state.groups);
   if (cloudData.chats) state.chats = overwrite ? cloudData.chats : mergeChatHistory(state.chats, cloudData.chats);
-  if (cloudData.moments) state.moments = cloudData.moments;
-  if (cloudData.avatarLibrary) state.avatarLibrary = cloudData.avatarLibrary;
-  if (cloudData.myAvatar) state.myAvatar = cloudData.myAvatar;
-  if (cloudData.myName) state.myName = cloudData.myName;
-  if (cloudData.chatBg) state.chatBg = cloudData.chatBg;
-  if (cloudData.momentsCover) state.momentsCover = cloudData.momentsCover;
-  if (cloudData.wordCards) WordCards.save(cloudData.wordCards);
+  if (cloudData.moments) state.moments = overwrite ? cloudData.moments : mergeById(cloudData.moments, state.moments);
+  if (cloudData.avatarLibrary) state.avatarLibrary = overwrite ? cloudData.avatarLibrary : mergeById(cloudData.avatarLibrary, state.avatarLibrary);
+  if (cloudData.myAvatar && (overwrite || !state.myAvatar)) state.myAvatar = cloudData.myAvatar;
+  if (cloudData.myName && (overwrite || !state.myName || state.myName === '我')) state.myName = cloudData.myName;
+  if (cloudData.chatBg && (overwrite || !state.chatBg)) state.chatBg = cloudData.chatBg;
+  if (cloudData.momentsCover && (overwrite || !state.momentsCover)) state.momentsCover = cloudData.momentsCover;
+  if (cloudData.wordCards) restoreWordCardData(cloudData.wordCards);
   if (cloudData.stickers) saveStickers(cloudData.stickers);
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
@@ -388,25 +410,30 @@ function bindChatBackground() {
 }
 
 /* ============ 朋友圈封面 + 头像 + 名字 ============ */
+let momentsFilterContactId = null;
 function renderMomentsProfile() {
+  const profile = momentsFilterContactId && momentsFilterContactId !== 'me' ? getContactById(momentsFilterContactId) : null;
+  const profileName = profile?.name || state.myName || '我';
+  const profileAvatar = profile?.avatar || (!profile ? state.myAvatar : null);
   const coverEl = document.getElementById('momentsCoverImg');
   if (coverEl) coverEl.style.backgroundImage = state.momentsCover ? `url('${state.momentsCover}')` : '';
   const nameEl = document.getElementById('momentsMyName');
-  if (nameEl) nameEl.textContent = state.myName || '我';
+  if (nameEl) nameEl.textContent = profileName;
+  document.getElementById('btnPostMoment')?.classList.toggle('hidden', Boolean(profile));
   const avatarEl = document.getElementById('momentsMyAvatar');
   if (avatarEl) {
-    avatarEl.style.backgroundImage = state.myAvatar ? `url('${state.myAvatar}')` : '';
-    avatarEl.style.backgroundColor = state.myAvatar ? 'transparent' : hashColor(state.myName || '我');
+    avatarEl.style.backgroundImage = profileAvatar ? `url('${profileAvatar}')` : '';
+    avatarEl.style.backgroundColor = profileAvatar ? 'transparent' : hashColor(profileName);
     avatarEl.style.backgroundSize = 'cover'; avatarEl.style.backgroundPosition = 'center';
-    if (!state.myAvatar) {
-      avatarEl.textContent = (state.myName || '我').slice(0,1);
+    if (!profileAvatar) {
+      avatarEl.textContent = profileName.slice(0,1);
       avatarEl.style.display = 'flex'; avatarEl.style.alignItems = 'center'; avatarEl.style.justifyContent = 'center';
       avatarEl.style.color = '#fff'; avatarEl.style.fontSize = '22px'; avatarEl.style.fontWeight = '600';
     } else avatarEl.textContent = '';
   }
 }
 function bindMomentsProfile() {
-  document.getElementById('momentsCoverImg')?.addEventListener('click', () => document.getElementById('momentsCoverFileInput')?.click());
+  document.getElementById('momentsCoverImg')?.addEventListener('click', () => { if (!momentsFilterContactId || momentsFilterContactId === 'me') document.getElementById('momentsCoverFileInput')?.click(); });
   document.getElementById('momentsCoverFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -414,7 +441,11 @@ function bindMomentsProfile() {
     reader.readAsDataURL(file);
     e.target.value = '';
   });
-  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); });
+  document.getElementById('momentsMyAvatar')?.addEventListener('click', () => { if (!momentsFilterContactId || momentsFilterContactId === 'me') { popPage(); setTimeout(() => switchTab('me', 'page-me'), 0); } });
+}
+function openContactMoments(contactId) {
+  momentsFilterContactId = String(contactId || 'me');
+  renderMoments(); renderMomentsProfile(); pushPage('page-moments');
 }
 function bindDiscoverPlaceholders() {
   document.getElementById('rowScan')?.addEventListener('click', () => alert('扫一扫功能暂未开放'));
@@ -450,7 +481,7 @@ function renderChatList() {
   });
   if (!items.length) { box.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#999;font-size:14px;">还没有角色，点右上角 + 添加一个吧</div>`; updateChatListNavTitle(); return; }
   box.innerHTML = items.map(it => {
-    const msgs = state.chats[it.id] || [];
+    const msgs = (state.chats[it.id] || []).filter(m => !m.deletedAt);
     const last = msgs[msgs.length - 1];
     let lastText = '开始一段对话...';
     if (last) {
@@ -557,6 +588,45 @@ function openChat(chatId) {
   applyChatBackground();
 }
 
+function searchableMessageText(msg) {
+  if (!msg || msg.deletedAt || msg.recalled) return '';
+  return [messageSummary(msg), msg.voiceTranscript || '', msg.quote?.text || ''].filter(Boolean).join(' ');
+}
+function renderChatSearchResults() {
+  const input = document.getElementById('chatSearchInput');
+  const results = document.getElementById('chatSearchResults');
+  const summary = document.getElementById('chatSearchSummary');
+  if (!input || !results || !summary) return;
+  const query = input.value.trim();
+  if (!query) { summary.textContent = '输入文字搜索当前聊天'; results.innerHTML = ''; return; }
+  const hits = (state.chats[state.activeChatId] || []).filter(m => searchableMessageText(m).toLocaleLowerCase().includes(query.toLocaleLowerCase())).reverse();
+  summary.textContent = `找到 ${hits.length} 条相关消息`;
+  results.innerHTML = hits.map(m => {
+    const name = messageSenderName(m), contact = m.from === 'me' ? null : getContactById(m.from);
+    const avatar = m.from === 'me' ? state.myAvatar : contact?.avatar;
+    const raw = searchableMessageText(m).slice(0, 220);
+    const escaped = escapeHtml(raw);
+    const marked = escaped.replace(new RegExp(escapeRegExp(escapeHtml(query)), 'gi'), x => `<mark>${x}</mark>`);
+    return `<div class="chat-search-result" data-search-message="${m.id}">${avatarHtml(avatar,name,38)}<div class="chat-search-result-body"><div class="chat-search-result-name">${escapeHtml(name)}</div><div class="chat-search-result-text">${marked}</div><div class="chat-search-result-time">${formatMsgDividerTime(m.ts)}</div></div></div>`;
+  }).join('') || '<div class="moments-empty">没有找到相关消息</div>';
+}
+function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function openChatSearch() {
+  document.getElementById('chatSearchInput').value = '';
+  renderChatSearchResults(); pushPage('page-chat-search');
+  setTimeout(() => document.getElementById('chatSearchInput')?.focus(), 320);
+}
+function bindChatSearch() {
+  document.getElementById('btnChatSearch')?.addEventListener('click', openChatSearch);
+  document.getElementById('backFromChatSearch')?.addEventListener('click', () => popPage());
+  document.getElementById('chatSearchCancel')?.addEventListener('click', () => popPage());
+  document.getElementById('chatSearchInput')?.addEventListener('input', renderChatSearchResults);
+  document.getElementById('chatSearchResults')?.addEventListener('click', e => {
+    const row = e.target.closest('[data-search-message]'); if (!row) return;
+    pendingSearchMessageId = row.dataset.searchMessage; popPage(); setTimeout(renderMessages, 300);
+  });
+}
+
 function formatMsgDividerTime(ts) {
   const d = new Date(ts);
   const now = new Date();
@@ -616,7 +686,7 @@ function renderMessages() {
   const box = document.getElementById('msgList');
   if (!box) return;
   const chatId = state.activeChatId;
-  const msgs = state.chats[chatId] || [];
+  const msgs = (state.chats[chatId] || []).filter(m => !m.deletedAt);
   const group = isGroupChat(chatId);
   let lastTs = null;
 
@@ -678,11 +748,17 @@ function renderMessages() {
     const senderLabel = (group && !isMe) ? `<div class="sender-label">${escapeHtml(name)}</div>` : '';
     return dividerHtml + `<div class="msg-col ${isMe ? 'me' : ''}">
       ${senderLabel}
-      <div class="msg-row ${isMe ? 'me' : ''}" data-id="${m.id}">${multiSelectMode ? `<span class="msg-select-circle ${selectedMessageIds.has(String(m.id)) ? 'selected' : ''}"></span>` : ''}${avatarHtml(avatarDataUrl, name, 40)}${bubbleHtml}</div>
+      <div class="msg-row ${isMe ? 'me' : ''}${String(pendingSearchMessageId) === String(m.id) ? ' message-search-hit' : ''}" data-id="${m.id}">${multiSelectMode ? `<span class="msg-select-circle ${selectedMessageIds.has(String(m.id)) ? 'selected' : ''}"></span>` : ''}<span class="message-avatar-link" data-moment-contact="${isMe ? 'me' : escapeHtml(String(m.from))}">${avatarHtml(avatarDataUrl, name, 40)}</span>${bubbleHtml}</div>
     </div>`;
   }).join('');
   box.classList.toggle('message-selecting', multiSelectMode);
-  if (!multiSelectMode) box.scrollTop = box.scrollHeight;
+  if (!multiSelectMode && pendingSearchMessageId == null) box.scrollTop = box.scrollHeight;
+  if (pendingSearchMessageId != null) {
+    const target = [...box.querySelectorAll('.msg-row')].find(row => String(row.dataset.id) === String(pendingSearchMessageId));
+    target?.scrollIntoView({ block:'center', behavior:'smooth' });
+    const hitId = pendingSearchMessageId;
+    setTimeout(() => { if (String(pendingSearchMessageId) === String(hitId)) { pendingSearchMessageId = null; target?.classList.remove('message-search-hit'); } }, 1900);
+  }
 }
 
 /* ============ 消息长按逻辑 ============ */
@@ -724,6 +800,8 @@ function bindMsgListDelegation() {
       updateMultiSelectBar(); return;
     }
     if (longPressFired) { longPressFired = false; return; }
+    const avatar = e.target.closest('[data-moment-contact]');
+    if (avatar) { openContactMoments(avatar.dataset.momentContact); return; }
     const transcribeEl = e.target.closest('[data-transcribe]');
     if (transcribeEl) {
       const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === transcribeEl.dataset.transcribe);
@@ -775,6 +853,7 @@ async function playVoiceMessage(msg) {
 let activeMessageActionId = null;
 let pendingQuote = null;
 let multiSelectMode = false;
+let pendingSearchMessageId = null;
 const selectedMessageIds = new Set();
 function getActiveActionMessage() { return (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(activeMessageActionId)); }
 function messageSummary(msg) {
@@ -790,7 +869,10 @@ function messageSenderName(msg) { return msg?.from === 'me' ? (state.myName || '
 function openMessageActionSheet(msgId) {
   activeMessageActionId = String(msgId);
   const msg = getActiveActionMessage(); if (!msg || msg.recalled) return;
-  document.getElementById('messageTranscribeBtn')?.classList.toggle('hidden', !(msg.voiceUrl && msg.from !== 'me'));
+  const transcribeBtn = document.getElementById('messageTranscribeBtn');
+  transcribeBtn?.classList.toggle('hidden', !msg.voiceUrl);
+  const transcribeLabel = transcribeBtn?.querySelector('span:last-child');
+  if (transcribeLabel) transcribeLabel.textContent = msg.voiceTranscriptVisible ? '取消转文字' : (msg.from === 'me' && !msg.voiceTranscript ? '填写文字' : '转文字');
   document.getElementById('messageCardsBtn')?.classList.toggle('hidden', !(msg.cards?.length || msg.shieldCards?.length));
   document.getElementById('messageActionRecallBtn')?.classList.toggle('hidden', msg.from !== 'me');
   document.getElementById('messageActionSheet')?.classList.remove('hidden');
@@ -807,8 +889,25 @@ function openMessageActionSheet(msgId) {
 function closeMessageActionSheet() { document.getElementById('messageActionSheet')?.classList.add('hidden'); document.getElementById('messageActionPopover')?.classList.add('hidden'); }
 function showActiveVoiceTranscript() {
   const msg = getActiveActionMessage(); if (!msg?.voiceUrl) return;
-  msg.voiceTranscript = msg.voiceTranscript || (msg.from === 'me' ? '' : msg.text || '');
-  msg.voiceTranscriptVisible = true; persist(); closeMessageActionSheet(); renderMessages();
+  if (msg.voiceTranscriptVisible) {
+    msg.voiceTranscriptVisible = false;
+  } else {
+    msg.voiceTranscript = msg.voiceTranscript || (msg.from === 'me' ? '' : msg.text || '');
+    if (msg.from === 'me' && !msg.voiceTranscript) {
+      const typed = prompt('这条语音没有自动转写，你可以手动填写文字：', '');
+      if (typed === null) { closeMessageActionSheet(); return; }
+      msg.voiceTranscript = typed.trim();
+    }
+    msg.voiceTranscriptVisible = true;
+  }
+  msg.modifiedAt = Date.now(); persist(); closeMessageActionSheet(); renderMessages();
+}
+function deleteActiveMessage() {
+  const msg = getActiveActionMessage();
+  if (!msg || !confirm('删除这条消息？')) return;
+  msg.deletedAt = Date.now();
+  msg.modifiedAt = msg.deletedAt;
+  persist(); closeMessageActionSheet(); renderMessages(); renderChatList();
 }
 function renderPendingQuote() {
   const bar = document.getElementById('quoteCompose'), text = document.getElementById('quoteComposeText'); if (!bar || !text) return;
@@ -838,7 +937,7 @@ function exitMultiSelect() {
   renderMessages();
 }
 function selectedRecordPayload() {
-  return (state.chats[state.activeChatId] || []).filter(m => selectedMessageIds.has(String(m.id))).map(m => ({
+  return (state.chats[state.activeChatId] || []).filter(m => !m.deletedAt && selectedMessageIds.has(String(m.id))).map(m => ({
     senderName: messageSenderName(m), text: messageSummary(m), ts: m.ts
   }));
 }
@@ -898,6 +997,7 @@ function bindMessageRecall() {
   document.getElementById('messageActionCancel')?.addEventListener('click', closeMessageActionSheet);
   document.getElementById('messageActionSheet')?.addEventListener('click', closeMessageActionSheet);
   document.getElementById('messageTranscribeBtn')?.addEventListener('click', showActiveVoiceTranscript);
+  document.getElementById('messageDeleteBtn')?.addEventListener('click', deleteActiveMessage);
   document.getElementById('messageQuoteBtn')?.addEventListener('click', quoteActiveMessage);
   document.getElementById('messageMultiBtn')?.addEventListener('click', enterMultiSelect);
   document.getElementById('messageCardsBtn')?.addEventListener('click', () => { const id = activeMessageActionId; closeMessageActionSheet(); openTarotSheet(id); });
@@ -1494,7 +1594,7 @@ function renderMomentSocial(m) {
 function renderMoments() {
   const box = document.getElementById('momentsList');
   if (!box) return;
-  const sorted = [...state.moments].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || b.ts-a.ts);
+  const sorted = state.moments.filter(m => !momentsFilterContactId || String(m.contactId) === String(momentsFilterContactId)).sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || b.ts-a.ts);
   box.innerHTML = sorted.map(m => {
     const liked = (m.likes || []).map(String).includes('me');
     return `<div class="moment-item" data-id="${m.id}">
@@ -2182,7 +2282,7 @@ function exportData() {
     contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
     chatBg: state.chatBg, momentsCover: state.momentsCover,
-    wordCards: WordCards.getAll(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
+    wordCards: collectWordCardData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2203,7 +2303,7 @@ function importData(file) {
       if (data.myName) state.myName = data.myName;
       if (data.chatBg) state.chatBg = data.chatBg;
       if (data.momentsCover) state.momentsCover = data.momentsCover;
-      if (data.wordCards) WordCards.save(data.wordCards);
+      if (data.wordCards) restoreWordCardData(data.wordCards);
       if (data.stickers) saveStickers(data.stickers);
       if (data.aiConfig) saveAIConfig(data.aiConfig);
       persist();
@@ -2223,7 +2323,7 @@ function bindNavButtons() {
   document.getElementById('backFromChat')?.addEventListener('click', () => popPage());
   document.getElementById('backFromMoments')?.addEventListener('click', () => popPage());
   document.getElementById('backFromSettings')?.addEventListener('click', () => popPage());
-  document.getElementById('rowMoments')?.addEventListener('click', () => { renderMoments(); renderMomentsProfile(); pushPage('page-moments'); });
+  document.getElementById('rowMoments')?.addEventListener('click', () => { momentsFilterContactId = null; renderMoments(); renderMomentsProfile(); pushPage('page-moments'); });
   document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); pushPage('page-settings'); });
   document.getElementById('btnChatSettings')?.addEventListener('click', openChatSettings);
   document.getElementById('chatSettingsClose')?.addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
@@ -2237,17 +2337,32 @@ function loadCloudSettingsForm() {
   document.getElementById('cfgRoomId').value = cfg.roomId;
 }
 function saveCurrentCloudForm() { saveCloudConfig({ enabled: document.getElementById('cfgCloudEnabled').checked, roomId: document.getElementById('cfgRoomId').value.trim() }); }
+function setCloudSyncStatus(text, type = '') {
+  const el = document.getElementById('cloudSyncStatus'); if (!el) return;
+  el.textContent = text; el.className = `cloud-sync-status ${type}`.trim();
+}
+function cloudPayload() {
+  return { contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), stickers: getStickers() };
+}
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
     saveCurrentCloudForm();
-    const ok = await cloudUpload({ contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: WordCards.getAll(), stickers: getStickers() });
-    alert(ok ? '已上传到云端' : '上传失败，请检查房间ID是否已填写、开关是否已打开');
+    const cfg = getCloudConfig();
+    if (!cfg.enabled || !cfg.roomId) { setCloudSyncStatus('请先打开云端同步并填写房间 ID', 'error'); return; }
+    setCloudSyncStatus('正在上传…');
+    const ok = await cloudUpload(cloudPayload());
+    setCloudSyncStatus(ok ? `上传成功 · ${new Date().toLocaleString()}` : `上传失败：${window.__lastCloudError || '请检查网络或 Firebase 设置'}`, ok ? 'success' : 'error');
   });
   document.getElementById('cloudDownloadBtn')?.addEventListener('click', async () => {
     saveCurrentCloudForm();
-    await tryCloudLoadOnStartup(true);
-    alert('已从云端下载并覆盖本地数据，即将刷新');
-    location.reload();
+    const cfg = getCloudConfig();
+    if (!cfg.enabled || !cfg.roomId) { setCloudSyncStatus('请先打开云端同步并填写房间 ID', 'error'); return; }
+    setCloudSyncStatus('正在从云端合并…');
+    const cloudData = await cloudDownload();
+    if (!cloudData) { setCloudSyncStatus(`下载失败：${window.__lastCloudError || '云端没有资料'}`, 'error'); return; }
+    await tryCloudLoadOnStartup(false, cloudData);
+    renderChatList(); renderContactList(); renderMoments();
+    setCloudSyncStatus(`合并成功 · ${new Date().toLocaleString()}`, 'success');
   });
 }
 function loadSettingsForm() {
@@ -2490,6 +2605,7 @@ async function init() {
   safeStep('bindListDelegation-contacts', () => bindListDelegation('contactListItems'));
   safeStep('bindMsgListDelegation', bindMsgListDelegation);
   safeStep('bindMessageRecall', bindMessageRecall);
+  safeStep('bindChatSearch', bindChatSearch);
   safeStep('bindMomentsDelegation', bindMomentsDelegation);
   safeStep('bindMomentsProfile', bindMomentsProfile);
   safeStep('bindMomentDetailPage', bindMomentDetailPage);
