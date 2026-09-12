@@ -2314,7 +2314,9 @@ function importData(file) {
 }
 function bindExportImport() {
   document.getElementById('rowExport')?.addEventListener('click', exportData);
+  document.getElementById('settingsExportBtn')?.addEventListener('click', exportData);
   document.getElementById('rowImport')?.addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('settingsImportBtn')?.addEventListener('click', () => document.getElementById('importFileInput').click());
   document.getElementById('importFileInput')?.addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
 }
 
@@ -2325,6 +2327,16 @@ function bindNavButtons() {
   document.getElementById('backFromSettings')?.addEventListener('click', () => popPage());
   document.getElementById('rowMoments')?.addEventListener('click', () => { momentsFilterContactId = null; renderMoments(); renderMomentsProfile(); pushPage('page-moments'); });
   document.getElementById('rowSettings')?.addEventListener('click', () => { loadSettingsForm(); pushPage('page-settings'); });
+  document.querySelectorAll('[data-settings-page]').forEach(row => row.addEventListener('click', () => pushPage(row.dataset.settingsPage)));
+  document.querySelectorAll('.settings-sub-back').forEach(btn => btn.addEventListener('click', () => { loadSettingsSummaries(); popPage(); }));
+  document.getElementById('settingsSearchInput')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLocaleLowerCase(); let visible = 0;
+    document.querySelectorAll('[data-settings-page]').forEach(row => {
+      const show = !q || `${row.textContent} ${row.dataset.settingsKeywords || ''}`.toLocaleLowerCase().includes(q);
+      row.classList.toggle('hidden', !show); if (show) visible++;
+    });
+    document.getElementById('settingsSearchEmpty')?.classList.toggle('hidden', visible > 0);
+  });
   document.getElementById('btnChatSettings')?.addEventListener('click', openChatSettings);
   document.getElementById('chatSettingsClose')?.addEventListener('click', () => document.getElementById('chatSettingsSheet').classList.add('hidden'));
   document.getElementById('rpDetailClose')?.addEventListener('click', () => document.getElementById('redPacketOpenSheet').classList.add('hidden'));
@@ -2335,11 +2347,42 @@ function loadCloudSettingsForm() {
   const cfg = getCloudConfig();
   document.getElementById('cfgCloudEnabled').checked = cfg.enabled;
   document.getElementById('cfgRoomId').value = cfg.roomId;
+  const verified = safeLoadJSON('tarot_cloud_verified_v1', null);
+  if (verified?.updatedAt) showCloudVerification(verified);
+}
+function loadSettingsSummaries() {
+  const ai = getAIConfig(), cloud = getCloudConfig();
+  const aiSummary = document.getElementById('settingsAISummary');
+  const voiceSummary = document.getElementById('settingsVoiceSummary');
+  const behaviorSummary = document.getElementById('settingsBehaviorSummary');
+  const cloudSummary = document.getElementById('settingsCloudSummary');
+  if (aiSummary) aiSummary.textContent = ai.textEnabled ? (ai.model || '已启用') : '字卡模式';
+  if (voiceSummary) voiceSummary.textContent = ai.voiceEnabled ? `${ai.voiceProvider === 'minimax' ? 'MiniMax' : 'OpenAI'} · 已启用` : '已关闭';
+  const activeCount = [ai.notificationsEnabled, ai.autoMsg, ai.autoMoment, ai.autoAvatar, ai.autoRedpacket].filter(Boolean).length;
+  if (behaviorSummary) behaviorSummary.textContent = `${activeCount} 项已开启`;
+  const verified = safeLoadJSON('tarot_cloud_verified_v1', null);
+  if (cloudSummary) cloudSummary.textContent = verified?.updatedAt ? `已验证 · ${new Date(verified.updatedAt).toLocaleString()}` : (cloud.enabled ? '已启用 · 尚未验证' : '未启用');
 }
 function saveCurrentCloudForm() { saveCloudConfig({ enabled: document.getElementById('cfgCloudEnabled').checked, roomId: document.getElementById('cfgRoomId').value.trim() }); }
 function setCloudSyncStatus(text, type = '') {
   const el = document.getElementById('cloudSyncStatus'); if (!el) return;
   el.textContent = text; el.className = `cloud-sync-status ${type}`.trim();
+}
+function cloudDataStats(data) {
+  return {
+    contacts: (data?.contacts || []).length,
+    messages: Object.values(data?.chats || {}).reduce((n, list) => n + (list || []).filter(m => !m.deletedAt).length, 0),
+    moments: (data?.moments || []).length
+  };
+}
+function showCloudVerification(info, type = 'verified') {
+  const card = document.getElementById('cloudStatusCard'); if (!card) return;
+  card.classList.remove('verified', 'error'); if (type) card.classList.add(type);
+  document.getElementById('cloudStatusIcon').textContent = type === 'error' ? '!' : '✓';
+  document.getElementById('cloudStatusTitle').textContent = type === 'error' ? '云端验证失败' : '云端备份已验证';
+  const stats = info.stats || {};
+  document.getElementById('cloudStatusDetail').textContent = type === 'error' ? (info.error || '无法回读核对') : `${new Date(info.updatedAt).toLocaleString()} · ${stats.contacts || 0} 个角色 · ${stats.messages || 0} 条消息 · ${stats.moments || 0} 条朋友圈 · 校验码 ${info.fingerprint || '—'}`;
+  loadSettingsSummaries();
 }
 function cloudPayload() {
   return { contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), stickers: getStickers() };
@@ -2349,9 +2392,24 @@ function bindCloudSync() {
     saveCurrentCloudForm();
     const cfg = getCloudConfig();
     if (!cfg.enabled || !cfg.roomId) { setCloudSyncStatus('请先打开云端同步并填写房间 ID', 'error'); return; }
-    setCloudSyncStatus('正在上传…');
+    const btn = document.getElementById('cloudUploadBtn'); btn.disabled = true; btn.textContent = '正在上传…';
+    setCloudSyncStatus('正在上传，完成后会自动回读校验…');
     const ok = await cloudUpload(cloudPayload());
-    setCloudSyncStatus(ok ? `上传成功 · ${new Date().toLocaleString()}` : `上传失败：${window.__lastCloudError || '请检查网络或 Firebase 设置'}`, ok ? 'success' : 'error');
+    if (ok) {
+      btn.textContent = '正在验证…';
+      const downloaded = await cloudDownload();
+      const receipt = window.__lastCloudReceipt, meta = window.__lastCloudDownloadMeta;
+      const verified = Boolean(downloaded && receipt?.fingerprint && meta?.fingerprint === receipt.fingerprint && meta?.calculatedFingerprint === receipt.fingerprint);
+      if (verified) {
+        const info = { updatedAt: meta.updatedAt || receipt.updatedAt, fingerprint: receipt.fingerprint, stats: cloudDataStats(downloaded) };
+        safeSaveJSON('tarot_cloud_verified_v1', info); showCloudVerification(info); setCloudSyncStatus('上传、服务器储存与回读校验全部成功', 'success');
+      } else {
+        const error = '上传已完成，但回读内容未通过校验，请再试一次'; showCloudVerification({ error }, 'error'); setCloudSyncStatus(error, 'error');
+      }
+    } else {
+      const error = window.__lastCloudError || '请检查网络或 Firebase 设置'; showCloudVerification({ error }, 'error'); setCloudSyncStatus(`上传失败：${error}`, 'error');
+    }
+    btn.disabled = false; btn.textContent = '上传并验证';
   });
   document.getElementById('cloudDownloadBtn')?.addEventListener('click', async () => {
     saveCurrentCloudForm();
@@ -2362,7 +2420,10 @@ function bindCloudSync() {
     if (!cloudData) { setCloudSyncStatus(`下载失败：${window.__lastCloudError || '云端没有资料'}`, 'error'); return; }
     await tryCloudLoadOnStartup(false, cloudData);
     renderChatList(); renderContactList(); renderMoments();
-    setCloudSyncStatus(`合并成功 · ${new Date().toLocaleString()}`, 'success');
+    const meta = window.__lastCloudDownloadMeta, info = { updatedAt: meta?.updatedAt || Date.now(), fingerprint: meta?.fingerprint, stats: cloudDataStats(cloudData) };
+    const verified = meta?.fingerprint === meta?.calculatedFingerprint;
+    if (verified) { safeSaveJSON('tarot_cloud_verified_v1', info); showCloudVerification(info); }
+    setCloudSyncStatus(`${verified ? '校验并' : ''}合并成功 · ${new Date().toLocaleString()}`, 'success');
   });
 }
 function loadSettingsForm() {
@@ -2385,6 +2446,7 @@ function loadSettingsForm() {
   document.getElementById('cfgAutoAvatar').checked = cfg.autoAvatar;
   document.getElementById('cfgAutoRedpacket').checked = cfg.autoRedpacket;
   loadCloudSettingsForm();
+  loadSettingsSummaries();
 }
 function updateVoiceProviderFields(e) {
   const provider = document.getElementById('cfgVoiceProvider')?.value;
@@ -2432,7 +2494,7 @@ function bindSettingsSave() {
     try { await registerPushDevice(state.contacts, document.getElementById('cfgAutoMsg').checked, true); }
     catch (err) { e.target.checked=false; alert(`后台推送注册失败：${err?.message || '未知错误'}`); }
   });
-  document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
+  document.querySelectorAll('.settings-save-btn').forEach(saveBtn => saveBtn.addEventListener('click', async () => {
     const nextCfg = readAISettingsForm();
     saveAIConfig(nextCfg);
     planNextAutoMessage(true);
@@ -2441,8 +2503,9 @@ function bindSettingsSave() {
       try { await registerPushDevice(state.contacts, nextCfg.autoMsg); }
       catch (e) { console.warn('后台推送同步失败', e); }
     } else if (typeof disablePushDevice === 'function') disablePushDevice();
-    alert('已保存');
-  });
+    loadSettingsSummaries();
+    const old = saveBtn.textContent; saveBtn.textContent = '已保存'; setTimeout(() => { saveBtn.textContent = old; }, 1200);
+  }));
   document.getElementById('testVoiceBtn')?.addEventListener('click', async () => {
     const btn = document.getElementById('testVoiceBtn');
     const status = document.getElementById('testVoiceStatus');
