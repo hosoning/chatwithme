@@ -26,6 +26,32 @@ function saveCloudConfig(cfg) {
 
 let _fbApp = null, _fbDb = null, _fbAuth = null, _fbAuthReady = null;
 
+function canonicalCloudValue(value) {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) {
+    if (!value.length) return undefined;
+    return value.map(item => canonicalCloudValue(item) ?? null);
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      const next = canonicalCloudValue(value[key]);
+      if (next !== undefined && !(typeof next === 'object' && !Array.isArray(next) && !Object.keys(next).length)) out[key] = next;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return value;
+}
+function cloudFingerprint(value) {
+  const text = JSON.stringify(canonicalCloudValue(value) || {});
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+}
+
 function initFirebase() {
   try {
     if (!_fbApp) {
@@ -152,6 +178,7 @@ async function cloudUpload(fullDataObj) {
   try {
     await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
+    let receipt = null;
     await db.ref('tarot_rooms/' + key).transaction(current => {
       let remote = {};
       try {
@@ -167,8 +194,11 @@ async function cloudUpload(fullDataObj) {
       };
       // Store structured data. The legacy JSON string hit Firebase's per-string size limit
       // once avatars, stickers, and image messages accumulated.
-      return { schemaVersion: 2, data: JSON.parse(JSON.stringify(merged)), updatedAt: Date.now() };
+      const cleanData = JSON.parse(JSON.stringify(merged));
+      receipt = { fingerprint: cloudFingerprint(cleanData), updatedAt: Date.now() };
+      return { schemaVersion: 2, data: cleanData, fingerprint: receipt.fingerprint, updatedAt: firebase.database.ServerValue.TIMESTAMP };
     });
+    window.__lastCloudReceipt = receipt;
     window.__lastCloudError = '';
     return true;
   } catch (e) { window.__lastCloudError = e?.message || String(e); console.error('云端上传失败', e); return false; }
@@ -186,6 +216,13 @@ async function cloudDownload() {
     const val = snapshot.val();
     if (!val || !val.data) { window.__lastCloudError = '云端还没有资料'; return null; }
     window.__lastCloudError = '';
-    return typeof val.data === 'string' ? JSON.parse(val.data) : val.data;
+    const data = typeof val.data === 'string' ? JSON.parse(val.data) : val.data;
+    window.__lastCloudDownloadMeta = {
+      schemaVersion: Number(val.schemaVersion || 1),
+      updatedAt: Number(val.updatedAt || 0),
+      fingerprint: val.fingerprint || cloudFingerprint(data),
+      calculatedFingerprint: cloudFingerprint(data)
+    };
+    return data;
   } catch (e) { window.__lastCloudError = e?.message || String(e); console.error('云端下载失败', e); return null; }
 }
