@@ -245,6 +245,11 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .settings-card .menu-row:first-child { padding-top:0; }
 .settings-card .menu-row:last-child { border-bottom:none; padding-bottom:0; }
 
+/* ===== 设置：微信结构 + iOS 分组 ===== */
+.settings-home-scroll,.settings-detail-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#f2f2f7;padding:14px 14px calc(30px + env(safe-area-inset-bottom))}
+.settings-search{height:38px;border-radius:10px;background:#fff;display:flex;align-items:center;gap:7px;padding:0 11px;color:#a0a0a6;margin-bottom:18px}.settings-search svg{width:18px;height:18px;flex-shrink:0}.settings-search input{height:100%;width:100%;border:0;outline:0;background:transparent;font-size:15px;user-select:text!important;-webkit-user-select:text!important}.settings-section-label{font-size:13px;color:#8e8e93;margin:18px 4px 7px}.settings-menu-group,.settings-form-group{background:#fff;border-radius:12px;overflow:hidden;margin-bottom:14px}.settings-menu-row{width:100%;min-height:60px;border:0;background:#fff;display:flex;align-items:center;text-align:left;padding:9px 13px;position:relative;color:#111}.settings-menu-row+.settings-menu-row::before,.settings-form-group .form-row+.form-row::before{content:'';position:absolute;top:0;left:54px;right:0;height:.5px;background:#dedede}.settings-menu-icon{width:30px;height:30px;border-radius:7px;margin-right:11px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0}.settings-menu-icon.ai{background:#5856d6}.settings-menu-icon.voice{background:#34c759;font-size:22px}.settings-menu-icon.notify{background:#ff3b30;font-size:12px}.settings-menu-icon.cloud{background:#0a84ff;font-size:18px}.settings-menu-icon.export{background:#ff9500;font-size:20px}.settings-menu-icon.import{background:#5ac8fa;font-size:20px}.settings-menu-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}.settings-menu-copy b{font-size:16px;font-weight:400}.settings-menu-copy small{font-size:12px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.settings-menu-row .chevron{color:#8e8e93}.settings-search-empty{text-align:center;color:#999;padding:36px 10px;font-size:14px}
+.settings-detail-scroll{padding-top:8px}.settings-detail-scroll .settings-group-title{font-size:13px;color:#8e8e93;margin:18px 4px 7px;text-transform:none;letter-spacing:0;font-weight:400}.settings-form-group .form-row{position:relative;border-radius:0;margin:0;box-shadow:none;min-height:48px;padding:10px 13px;font-size:15px}.settings-form-group .form-row+.form-row::before{left:13px}.settings-form-group .form-row.col{gap:5px;align-items:stretch}.settings-form-group .form-row.col label{font-size:12px;color:#777}.settings-form-group .form-row input,.settings-form-group .form-row select{border:0;background:transparent;border-radius:0;padding:3px 0;height:30px;font-size:15px;outline:0}.settings-form-group .form-row input:focus{background:transparent}.settings-hint{color:#8e8e93;font-size:12px;line-height:1.45;margin:-5px 4px 15px}.settings-primary-btn,.settings-secondary-btn{width:100%;height:46px;border:0;border-radius:12px;font-size:16px;margin-top:10px;touch-action:manipulation}.settings-primary-btn{background:#07c160;color:#fff}.settings-secondary-btn{background:#fff;color:#576b95}.settings-primary-btn:disabled,.settings-secondary-btn:disabled{opacity:.55}.tts-test-btn{margin-top:10px!important}.tts-test-status{text-align:left;padding:8px 4px 2px}.tts-test-player{width:100%;margin:8px 0 5px}.cloud-status-card{background:#fff;border-radius:14px;padding:16px;display:flex;align-items:center;gap:13px;margin:6px 0 20px}.cloud-status-icon{width:44px;height:44px;border-radius:22px;background:#eef1f5;color:#8e8e93;display:flex;align-items:center;justify-content:center;font-size:21px;flex-shrink:0}.cloud-status-card b{font-size:16px;font-weight:500}.cloud-status-card p{font-size:12px;color:#8e8e93;margin-top:4px;line-height:1.4}.cloud-status-card.verified .cloud-status-icon{background:#e7f8ee;color:#07a957}.cloud-status-card.error .cloud-status-icon{background:#fff0ef;color:#d64545}.cloud-sync-status{text-align:center;padding:10px 4px 0}.settings-detail-scroll .settings-menu-group{margin-top:0}
+
 .sender-label { font-size:12.5px; color:#9a9a9a; margin-bottom:3px; margin-left:49px; }
 .msg-col { display:flex; flex-direction:column; }
 .msg-col.me { align-items:flex-end; }
@@ -502,7 +507,7 @@ svg { max-width:100%; max-height:100%; }
         <div class="list-row" id="rowWallet"><span>钱包</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       </div>
       <div class="list-block">
-        <div class="list-row" id="rowSettings"><span>AI / 语音 设置</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="list-row" id="rowSettings"><span>设置</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="list-row" id="rowWordCards"><span>字卡管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="list-row" id="rowAvatarLib"><span>头像库管理</span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#c7c7cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       </div>
@@ -645,16 +650,36 @@ svg { max-width:100%; max-height:100%; }
     </div>
   </div>
 
-  <!-- 设置 -->
+  <!-- 设置总览 -->
   <div class="page hidden" id="page-settings">
     <div class="nav-bar">
       <svg class="icon-btn nav-back" id="backFromSettings" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="nav-title">AI / 语音 设置</span><span></span>
+      <span class="nav-title">设置</span><span></span>
     </div>
-    <div class="settings-scroll">
-      <div class="settings-group-title">文本回复模型</div>
-      <div class="form-row"><label>启用AI回复</label><label class="switch"><input type="checkbox" id="cfgTextEnabled"><span class="slider"></span></label></div>
-      <div class="form-row col"><label>API Endpoint</label><input id="cfgEndpoint" placeholder="https://api.openai.com/v1/chat/completions"></div>
+    <div class="settings-home-scroll">
+      <div class="settings-search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 15.5L21 21" fill="none" stroke="currentColor" stroke-width="1.7"/></svg><input id="settingsSearchInput" type="search" placeholder="搜索设置"></div>
+      <div class="settings-section-label">回复</div>
+      <div class="settings-menu-group">
+        <button class="settings-menu-row" data-settings-page="page-settings-ai" data-settings-keywords="ai 模型 api 回复"><span class="settings-menu-icon ai">AI</span><span class="settings-menu-copy"><b>AI 回复</b><small id="settingsAISummary">字卡模式</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="settings-menu-row" data-settings-page="page-settings-voice" data-settings-keywords="语音 tts minimax 音色"><span class="settings-menu-icon voice">◖</span><span class="settings-menu-copy"><b>语音回复</b><small id="settingsVoiceSummary">MiniMax</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      </div>
+      <div class="settings-section-label">功能</div>
+      <div class="settings-menu-group">
+        <button class="settings-menu-row" data-settings-page="page-settings-behavior" data-settings-keywords="通知 主动消息 朋友圈 头像 红包"><span class="settings-menu-icon notify">●</span><span class="settings-menu-copy"><b>通知与主动功能</b><small id="settingsBehaviorSummary">消息、朋友圈与红包</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="settings-menu-row" data-settings-page="page-settings-cloud" data-settings-keywords="云端 同步 备份 导入 导出"><span class="settings-menu-icon cloud">☁</span><span class="settings-menu-copy"><b>云端与备份</b><small id="settingsCloudSummary">检查同步状态</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      </div>
+      <div class="settings-search-empty hidden" id="settingsSearchEmpty">没有找到相关设置</div>
+    </div>
+  </div>
+
+  <div class="page hidden" id="page-settings-ai">
+    <div class="nav-bar"><svg class="icon-btn nav-back settings-sub-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">AI 回复</span><span></span></div>
+    <div class="settings-scroll settings-detail-scroll">
+      <div class="settings-group-title">回复模式</div>
+      <div class="settings-form-group"><div class="form-row"><label>启用 AI 回复</label><label class="switch"><input type="checkbox" id="cfgTextEnabled"><span class="slider"></span></label></div></div>
+      <div class="settings-hint">关闭后仍会使用随机字卡回复，不会调用文字模型。</div>
+      <div class="settings-group-title">模型连接</div>
+      <div class="settings-form-group"><div class="form-row col"><label>API Endpoint</label><input id="cfgEndpoint" placeholder="https://api.openai.com/v1/chat/completions"></div>
       <div class="form-row col"><label>API Key</label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
       <div class="form-row col"><label>模型名称</label>
         <input id="cfgModel" list="modelPresets" placeholder="gpt-4o-mini">
@@ -663,9 +688,16 @@ svg { max-width:100%; max-height:100%; }
           <option value="claude-3-5-sonnet-20241022"></option><option value="claude-3-opus-20240229"></option>
           <option value="deepseek-chat"></option>
         </datalist>
-      </div>
-      <div class="settings-group-title">语音回复模型 (TTS)</div>
-      <div class="form-row"><label>启用语音回复</label><label class="switch"><input type="checkbox" id="cfgVoiceEnabled"><span class="slider"></span></label></div>
+      </div></div>
+      <button class="settings-primary-btn settings-save-btn">保存</button>
+    </div>
+  </div>
+
+  <div class="page hidden" id="page-settings-voice">
+    <div class="nav-bar"><svg class="icon-btn nav-back settings-sub-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">语音回复</span><span></span></div>
+    <div class="settings-scroll settings-detail-scroll">
+      <div class="settings-group-title">语音回复</div>
+      <div class="settings-form-group"><div class="form-row"><label>启用语音回复</label><label class="switch"><input type="checkbox" id="cfgVoiceEnabled"><span class="slider"></span></label></div>
       <div class="form-row col"><label>服务商</label>
         <select id="cfgVoiceProvider">
           <option value="openai">OpenAI 兼容</option>
@@ -681,25 +713,40 @@ svg { max-width:100%; max-height:100%; }
       </div>
       <div class="form-row col"><label id="cfgVoiceNameLabel">音色</label><input id="cfgVoiceName" list="voicePresets" placeholder="填写国际版控制台生成的 voice_id">
         <datalist id="voicePresets"><option value="alloy"></option><option value="echo"></option><option value="fable"></option><option value="onyx"></option><option value="nova"></option><option value="shimmer"></option></datalist>
-      </div>
-      <button class="save-btn tts-test-btn" id="testVoiceBtn" type="button">测试李泽言语音</button>
+      </div></div>
+      <button class="settings-secondary-btn tts-test-btn" id="testVoiceBtn" type="button">测试李泽言语音</button>
       <div class="tts-test-status" id="testVoiceStatus">测试前请先填写 API Key 和 Voice ID</div>
       <audio class="tts-test-player hidden" id="testVoicePlayer" controls playsinline></audio>
-      <div class="settings-group-title">行为开关</div>
-      <div class="form-row"><label>新消息系统通知</label><label class="switch"><input type="checkbox" id="cfgNotifications"><span class="slider"></span></label></div>
+      <button class="settings-primary-btn settings-save-btn">保存</button>
+    </div>
+  </div>
+
+  <div class="page hidden" id="page-settings-behavior">
+    <div class="nav-bar"><svg class="icon-btn nav-back settings-sub-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">通知与主动功能</span><span></span></div>
+    <div class="settings-scroll settings-detail-scroll">
+      <div class="settings-group-title">通知</div><div class="settings-form-group"><div class="form-row"><label>新消息系统通知</label><label class="switch"><input type="checkbox" id="cfgNotifications"><span class="slider"></span></label></div></div>
+      <div class="settings-group-title">主动功能</div><div class="settings-form-group">
       <div class="form-row"><label>允许AI主动发消息</label><label class="switch"><input type="checkbox" id="cfgAutoMsg"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI主动发朋友圈</label><label class="switch"><input type="checkbox" id="cfgAutoMoment"><span class="slider"></span></label></div>
       <div class="form-row"><label>允许AI主动换头像</label><label class="switch"><input type="checkbox" id="cfgAutoAvatar"><span class="slider"></span></label></div>
-      <div class="form-row"><label>允许AI抽到幸运牌时发红包</label><label class="switch"><input type="checkbox" id="cfgAutoRedpacket"><span class="slider"></span></label></div>
-      <div class="settings-group-title">云端同步（防止刷新丢数据）</div>
-      <div class="form-row"><label>启用云端同步</label><label class="switch"><input type="checkbox" id="cfgCloudEnabled"><span class="slider"></span></label></div>
-      <div class="form-row col"><label>同步房间ID（自己设一个，换设备填同一个即可同步）</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div>
-      <div class="sheet-actions" style="margin-bottom:14px;">
-        <div class="sheet-btn cancel" id="cloudUploadBtn">立即上传到云端</div>
-        <div class="sheet-btn confirm" id="cloudDownloadBtn">从云端合并到本机</div>
-      </div>
+      <div class="form-row"><label>幸运牌红包</label><label class="switch"><input type="checkbox" id="cfgAutoRedpacket"><span class="slider"></span></label></div></div>
+      <button class="settings-primary-btn settings-save-btn">保存</button>
+    </div>
+  </div>
+
+  <div class="page hidden" id="page-settings-cloud">
+    <div class="nav-bar"><svg class="icon-btn nav-back settings-sub-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title">云端与备份</span><span></span></div>
+    <div class="settings-scroll settings-detail-scroll">
+      <div class="cloud-status-card" id="cloudStatusCard"><div class="cloud-status-icon" id="cloudStatusIcon">☁</div><div><b id="cloudStatusTitle">尚未验证云端</b><p id="cloudStatusDetail">上传后会自动回读核对</p></div></div>
+      <div class="settings-group-title">云端同步</div>
+      <div class="settings-form-group"><div class="form-row"><label>启用云端同步</label><label class="switch"><input type="checkbox" id="cfgCloudEnabled"><span class="slider"></span></label></div>
+      <div class="form-row col"><label>同步房间 ID</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div></div>
+      <div class="settings-hint">同一房间 ID 会合并资料，不会用旧云端内容覆盖本机消息。</div>
+      <button class="settings-primary-btn" id="cloudUploadBtn">上传并验证</button>
+      <button class="settings-secondary-btn" id="cloudDownloadBtn">从云端合并到本机</button>
       <div class="cloud-sync-status" id="cloudSyncStatus">尚未同步</div>
-      <button class="save-btn" id="saveSettingsBtn">保存设置</button>
+      <div class="settings-group-title">本机备份</div>
+      <div class="settings-menu-group"><button class="settings-menu-row" id="settingsExportBtn"><span class="settings-menu-icon export">↥</span><span class="settings-menu-copy"><b>导出备份文件</b><small>保存完整资料到文件</small></span></button><button class="settings-menu-row" id="settingsImportBtn"><span class="settings-menu-icon import">↧</span><span class="settings-menu-copy"><b>导入备份文件</b><small>从已有文件恢复</small></span></button></div>
     </div>
   </div>
 
@@ -1047,10 +1094,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=47" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=47" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=47" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=47" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=47" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=48" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=48" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=48" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=48" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=48" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
