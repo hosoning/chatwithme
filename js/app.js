@@ -115,6 +115,14 @@ const state = {
 };
 
 let _cloudSyncTimer = null;
+function chatsWithoutLocalCallAudio() {
+  const clean = {};
+  for (const [chatId, messages] of Object.entries(state.chats || {})) clean[chatId] = (messages || []).map(m => {
+    if (!m.callAudioUrl) return m;
+    const copy = { ...m }; delete copy.callAudioUrl; return copy;
+  });
+  return clean;
+}
 function persist() {
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
@@ -132,7 +140,7 @@ function persist() {
     const cfg = getCloudConfig();
     if (cfg.enabled) {
       cloudUpload({
-        contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
+        contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
         avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
         chatBg: state.chatBg, momentsCover: state.momentsCover,
         wordCards: collectWordCardData(), stickers: getStickers()
@@ -726,11 +734,13 @@ function renderMessages() {
       </div>`;
     } else if (m.type === 'call') {
       const isVideo = m.callType === 'video';
-      const hasLog = m.callChatLog && m.callChatLog.length;
-      bubbleHtml = `<div class="bubble call" ${hasLog ? `data-calllog="${m.id}"` : ''}>
+      const hasDetails = (m.callChatLog && m.callChatLog.length) || m.callAudioUrl;
+      bubbleHtml = `<div class="bubble call" ${hasDetails ? `data-calllog="${m.id}"` : ''}>
         <svg viewBox="0 0 24 24">${isVideo ? '<rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="#0a0a0a" stroke-width="1.6"/><path d="M16 10l5-3v10l-5-3z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>' : '<path d="M5 4c1 4 2 7 5 9s5 4 9 5l1-3c-2-1-3-2-5-3l-2 2c-2-1-4-3-5-5l2-2c-1-2-2-3-3-5z" fill="none" stroke="#0a0a0a" stroke-width="1.6" stroke-linejoin="round"/>'}</svg>
-        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}</div></div>
+        <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}${m.callAudioUrl ? ' · 有录音' : ''}</div></div>
       </div>`;
+    } else if (m.type === 'game') {
+      bubbleHtml = `<div class="bubble game-event" data-game-open="${escapeHtml(m.gameId || '')}"><div class="game-event-head">${escapeHtml(m.gameTitle || '双人游戏')}</div><div class="game-event-body">${escapeHtml(m.text)}</div><div class="game-event-foot">点击继续游戏</div></div>`;
     } else if (m.voiceUrl) {
       const voiceSeconds = m.durationSec || Math.max(1, Math.round((m.text || '').length / 4));
       const transcript = m.voiceTranscript || '';
@@ -826,7 +836,9 @@ function bindMsgListDelegation() {
     const locEl = e.target.closest('[data-location]');
     if (locEl) { openViewLocation(locEl.dataset.location); return; }
     const callLogEl = e.target.closest('[data-calllog]');
-    if (callLogEl) openCallLogView(callLogEl.dataset.calllog);
+    if (callLogEl) { openCallLogView(callLogEl.dataset.calllog); return; }
+    const gameEl = e.target.closest('[data-game-open]');
+    if (gameEl?.dataset.gameOpen) openPartyGame(gameEl.dataset.gameOpen, state.activeChatId);
   });
 }
 
@@ -905,6 +917,7 @@ function showActiveVoiceTranscript() {
 function deleteActiveMessage() {
   const msg = getActiveActionMessage();
   if (!msg || !confirm('删除这条消息？')) return;
+  if (msg.callAudioUrl) deleteStoredVoice(msg.callAudioUrl).catch(console.warn);
   msg.deletedAt = Date.now();
   msg.modifiedAt = msg.deletedAt;
   persist(); closeMessageActionSheet(); renderMessages(); renderChatList();
@@ -1019,6 +1032,7 @@ function addMessage(chatId, from, text, extra = {}) {
   }
   persist();
   if (chatId === state.activeChatId) renderMessages();
+  if (String(chatId) === String(_partyGameContactId) && !document.getElementById('page-partygame')?.classList.contains('hidden')) renderPartyGameChatPreview();
   renderChatList();
   if (from !== 'me') showMessageNotification(chatId, from, text, extra);
   return msg;
@@ -1280,15 +1294,41 @@ function bindViewLocation() {
 }
 
 /* ============ 查看通话中的文字记录 ============ */
-function openCallLogView(msgId) {
+let _callLogViewMessageId = null;
+let _callLogObjectUrl = null;
+async function openCallLogView(msgId) {
   const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
-  if (!msg || !msg.callChatLog) return;
+  if (!msg) return;
+  _callLogViewMessageId = msgId;
   const box = document.getElementById('callLogViewList');
-  box.innerHTML = msg.callChatLog.map(e => `<div class="call-log-view-line"><span class="who">${e.from === 'me' ? (state.myName||'我') : '对方'}：</span>${escapeHtml(e.text)}</div>`).join('') || '<div style="color:#999;text-align:center;padding:20px;">没有对话记录</div>';
+  box.innerHTML = (msg.callChatLog || []).map(e => `<div class="call-log-view-line"><span class="who">${e.from === 'me' ? (state.myName||'我') : '对方'}：</span>${escapeHtml(e.text)}</div>`).join('') || '<div style="color:#999;text-align:center;padding:20px;">没有文字对话</div>';
+  const wrap = document.getElementById('callRecordingWrap'), player = document.getElementById('callRecordingPlayer'), note = document.getElementById('callRecordingNote');
+  if (_callLogObjectUrl) { URL.revokeObjectURL(_callLogObjectUrl); _callLogObjectUrl = null; }
+  player.removeAttribute('src'); player.load();
+  wrap.classList.toggle('hidden', !msg.callAudioUrl);
+  if (msg.callAudioUrl) {
+    note.textContent = '载入录音中…';
+    try {
+      const blob = await getStoredVoiceBlob(msg.callAudioUrl);
+      if (!blob) throw new Error('录音不存在');
+      _callLogObjectUrl = URL.createObjectURL(blob); player.src = _callLogObjectUrl;
+      note.textContent = `录音 ${(blob.size / 1024 / 1024).toFixed(1)} MB · 只保存在这台设备，不随云端同步`;
+    } catch (_) { note.textContent = '这段录音已不在本机，文字记录仍然保留。'; }
+  }
   document.getElementById('callLogViewSheet').classList.remove('hidden');
 }
 function bindCallLogView() {
-  document.getElementById('callLogViewClose')?.addEventListener('click', () => document.getElementById('callLogViewSheet').classList.add('hidden'));
+  document.getElementById('callLogViewClose')?.addEventListener('click', () => {
+    document.getElementById('callLogViewSheet').classList.add('hidden');
+    document.getElementById('callRecordingPlayer')?.pause();
+    if (_callLogObjectUrl) { URL.revokeObjectURL(_callLogObjectUrl); _callLogObjectUrl = null; }
+  });
+  document.getElementById('callRecordingDelete')?.addEventListener('click', async () => {
+    const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(_callLogViewMessageId));
+    if (!msg?.callAudioUrl || !confirm('删除这段通话录音？通话时长和文字记录会保留。')) return;
+    await deleteStoredVoice(msg.callAudioUrl).catch(console.warn);
+    msg.callAudioUrl = null; msg.modifiedAt = Date.now(); persist(); renderMessages(); openCallLogView(msg.id);
+  });
 }
 
 /* ============ 通话系统 ============ */
@@ -1301,6 +1341,77 @@ let _callActiveContact = null;
 let _callActiveType = 'voice';
 let _callChatLog = [];
 let _callRecognizer = null;
+let _callRecorder = null;
+let _callRecordedChunks = [];
+let _callAudioContext = null;
+let _callMixDestination = null;
+let _callMicSource = null;
+let _callClosing = false;
+
+async function startCallRecording() {
+  _callRecordedChunks = [];
+  if (!_callLocalStream?.getAudioTracks().length || !window.MediaRecorder || !window.AudioContext && !window.webkitAudioContext) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    _callAudioContext = new AudioCtx();
+    await _callAudioContext.resume();
+    _callMixDestination = _callAudioContext.createMediaStreamDestination();
+    _callMicSource = _callAudioContext.createMediaStreamSource(new MediaStream(_callLocalStream.getAudioTracks()));
+    _callMicSource.connect(_callMixDestination);
+    const mimeType = getSupportedAudioMimeType();
+    _callRecorder = mimeType ? new MediaRecorder(_callMixDestination.stream, { mimeType, audioBitsPerSecond: 48000 }) : new MediaRecorder(_callMixDestination.stream, { audioBitsPerSecond: 48000 });
+    _callRecorder.ondataavailable = e => { if (e.data?.size) _callRecordedChunks.push(e.data); };
+    _callRecorder.start(1000);
+    const label = document.getElementById('callTypeLabel');
+    if (label) label.textContent = `${_callActiveType === 'video' ? '视频通话' : '语音通话'} · 录音中`;
+  } catch (e) {
+    console.warn('通话录音启动失败', e); _callRecorder = null;
+  }
+}
+function stopCallRecording() {
+  return new Promise(resolve => {
+    const recorder = _callRecorder;
+    if (!recorder || recorder.state === 'inactive') { resolve(null); return; }
+    recorder.onstop = () => {
+      const blob = _callRecordedChunks.length ? new Blob(_callRecordedChunks, { type: recorder.mimeType || 'audio/mp4' }) : null;
+      _callRecorder = null; _callRecordedChunks = []; resolve(blob?.size ? blob : null);
+    };
+    try { recorder.stop(); } catch (_) { resolve(null); }
+  });
+}
+async function playCallRemoteVoice(voiceRef) {
+  if (!voiceRef) return;
+  const url = await resolveVoiceUrl(voiceRef);
+  const audio = new Audio(url);
+  const cleanup = () => {
+    if (String(url).startsWith('blob:')) URL.revokeObjectURL(url);
+    deleteStoredVoice(voiceRef).catch(()=>{});
+  };
+  audio.addEventListener('ended', cleanup, { once:true });
+  audio.addEventListener('error', cleanup, { once:true });
+  if (_callAudioContext && _callMixDestination) {
+    try {
+      const source = _callAudioContext.createMediaElementSource(audio);
+      source.connect(_callAudioContext.destination);
+      source.connect(_callMixDestination);
+    } catch (_) {}
+  }
+  await audio.play().catch(cleanup);
+}
+async function pruneCallRecordings(maxBytes = 200 * 1024 * 1024) {
+  const records = Object.values(state.chats || {}).flat().filter(m => m.type === 'call' && m.callAudioUrl).sort((a,b) => Number(a.ts)-Number(b.ts));
+  let total = 0; const sized = [];
+  for (const msg of records) {
+    const blob = await getStoredVoiceBlob(msg.callAudioUrl).catch(()=>null);
+    if (blob) { total += blob.size; sized.push({ msg, size:blob.size }); }
+  }
+  for (const item of sized) {
+    if (total <= maxBytes) break;
+    await deleteStoredVoice(item.msg.callAudioUrl).catch(()=>{});
+    item.msg.callAudioUrl = null; item.msg.callAudioPruned = true; item.msg.modifiedAt = Date.now(); total -= item.size;
+  }
+  if (sized.some(x => x.msg.callAudioPruned)) persist();
+}
 
 function initCallRecognizer() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1332,7 +1443,7 @@ async function sendDuringCall(text) {
   const cfg = getAIConfig();
   if (cfg.voiceEnabled && contactVoiceReplyEnabled(contact)) {
     const voiceUrl = await synthesizeVoice(replyText);
-    if (voiceUrl) { const audio = new Audio(await resolveVoiceUrl(voiceUrl)); audio.play().catch(()=>{}); }
+    if (voiceUrl) playCallRemoteVoice(voiceUrl);
   }
 }
 function renderCallRemoteMedia(contact, type) {
@@ -1388,6 +1499,7 @@ async function openCallOverlay(type, contact) {
     catch (e) { console.warn('麦克风获取失败', e); _callLocalStream = null; }
   }
   _callRecognizer = initCallRecognizer();
+  await startCallRecording();
   document.getElementById('callOverlay').classList.remove('hidden');
   clearInterval(_callTimer);
   setTimeout(() => { const s = document.getElementById('callStatus'); if (s) s.textContent = '通话中 00:00'; }, 1500);
@@ -1403,8 +1515,11 @@ async function openCallOverlay(type, contact) {
     }
   }, 1000);
 }
-function closeCallOverlay() {
+async function closeCallOverlay() {
+  if (_callClosing) return;
+  _callClosing = true;
   clearInterval(_callTimer);
+  const recordedBlobPromise = stopCallRecording();
   if (_callLocalStream) { _callLocalStream.getTracks().forEach(t => t.stop()); _callLocalStream = null; }
   if (_callRecognizer) { try { _callRecognizer.stop(); } catch(e) {} _callRecognizer = null; }
   document.getElementById('callOverlay').classList.add('hidden');
@@ -1413,9 +1528,16 @@ function closeCallOverlay() {
   if (chatId && _callSeconds >= 1) {
     const m = Math.floor(_callSeconds/60), s = _callSeconds%60;
     const durationText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    addMessage(chatId, 'me', '', { type:'call', callType: _callActiveType, callDurationText: durationText, callChatLog: _callChatLog.length ? [..._callChatLog] : null });
+    const recordedBlob = await recordedBlobPromise;
+    let callAudioUrl = null;
+    if (recordedBlob) callAudioUrl = await persistVoiceBlob(recordedBlob).catch(e => { console.warn('通话录音保存失败', e); return null; });
+    addMessage(chatId, 'me', '', { type:'call', callType: _callActiveType, callDurationText: durationText, callChatLog: _callChatLog.length ? [..._callChatLog] : null, callAudioUrl });
+    if (callAudioUrl) pruneCallRecordings().catch(console.warn);
   }
+  _callMicSource?.disconnect?.(); _callMicSource = null; _callMixDestination = null;
+  if (_callAudioContext) { _callAudioContext.close().catch(()=>{}); _callAudioContext = null; }
   _callSeconds = 0; _callActiveContact = null; _callChatLog = [];
+  _callClosing = false;
 }
 function minimizeCall() {
   document.getElementById('callOverlay').classList.add('hidden');
@@ -2193,6 +2315,135 @@ function bindWallet() {
   });
 }
 
+/* ============ 小程式：双人随机游戏（无 AI） ============ */
+const PARTY_GAMES = [
+  { id:'undercover', title:'谁是卧底·双人版', icon:'🕵️', color:'#5b4b8a', subtitle:'相近词语、随机身份，猜出谁拿到了卧底词' },
+  { id:'heartcards', title:'心动抽卡', icon:'💗', color:'#d66b86', subtitle:'轮流抽一张互动卡，边玩边聊' },
+  { id:'dicebluff', title:'骰子吹牛', icon:'🎲', color:'#287c67', subtitle:'看自己的点数，决定要不要说真话' },
+  { id:'compatibility', title:'默契大考验', icon:'💞', color:'#7658c9', subtitle:'各自选择，揭晓你们有没有想到一起' }
+];
+const UNDERCOVER_PAIRS = [
+  { normal:'咖啡', odd:'奶茶', normalHints:['早上会想喝','味道有点苦','店里常闻到'], oddHints:['可以加很多小料','甜一点比较好','经常有珍珠'] },
+  { normal:'拥抱', odd:'牵手', normalHints:['距离会很近','通常会用两只手','很适合安慰人'], oddHints:['走路时可以做','一只手就够了','在人多时不会走散'] },
+  { normal:'猫', odd:'狗', normalHints:['有时候不太理人','很会自己找地方睡','脚步通常很轻'], oddHints:['见面会很热情','喜欢一起出门','尾巴藏不住心情'] },
+  { normal:'电影', odd:'电视剧', normalHints:['通常一次看完','会去电影院','两个小时左右'], oddHints:['可以追很多天','常常有很多集','容易看到停不下来'] },
+  { normal:'海边', odd:'泳池', normalHints:['会听到浪声','脚底可能有沙','风通常很大'], oddHints:['水比较平静','旁边会有救生员','有清楚的边界'] },
+  { normal:'蛋糕', odd:'雪糕', normalHints:['生日经常出现','可以插蜡烛','要切开来吃'], oddHints:['天气热时最好','会慢慢融化','通常是冰的'] },
+  { normal:'旅行', odd:'约会', normalHints:['可能要收拾行李','会离开熟悉的地方','通常不只几个小时'], oddHints:['会特别挑衣服','可以临时决定','两个人见面就算'] },
+  { normal:'亲吻', odd:'贴贴', normalHints:['会闭上眼睛','时间可长可短','嘴唇会碰到'], oddHints:['不一定要面对面','可以维持很久','很适合撒娇'] }
+];
+const HEART_CARDS = [
+  '说一个现在最想听对方讲的话','给对方取一个只用十分钟的新称呼','发一条语音，说什么都可以','选一个：抱一下／牵手／贴贴','说出最近一次偷偷想起对方的时刻','让对方决定下一顿吃什么','夸对方一个平常很少提到的地方','发一个最符合现在心情的表情','问一个一直有点好奇的小问题','说一句只有你们两个看得懂的话','选择：一起宅着／临时出门／去旅行','告诉对方今天最想被怎样安慰','让对方从三个称呼中选一个','描述理想中一起度过的半天','认真说一句谢谢，不准只发谢谢','分享一件今天没来得及说的小事'
+];
+const COMPATIBILITY_QUESTIONS = [
+  { q:'临时空出半天，你们更想？', a:['留在家里','去吃东西','随便散步','马上小旅行'] },
+  { q:'最适合两个人一起看的天气？', a:['下雨','大晴天','阴天','下雪'] },
+  { q:'吵架以后，最好怎么和好？', a:['先抱一下','把事情说清楚','吃完东西再说','给彼此一点时间'] },
+  { q:'晚上突然饿了会选择？', a:['叫外卖','一起煮','吃零食','忍到早餐'] },
+  { q:'收到哪一种小礼物最开心？', a:['花','食物','实用品','亲手写的东西'] },
+  { q:'旅行时比较重要的是？', a:['住得舒服','吃得好','景点够多','两个人不赶时间'] },
+  { q:'最想保留的共同习惯？', a:['每天聊天','一起吃饭','睡前说话','偶尔准备惊喜'] },
+  { q:'两个人一起迷路时会？', a:['看地图','问路','继续乱走','先找地方坐下'] },
+  { q:'约会迟到十五分钟怎么办？', a:['没关系','要解释','请喝东西','下次补回来'] },
+  { q:'如果养一只宠物，会选？', a:['猫','狗','兔子','什么都不养'] },
+  { q:'最喜欢哪一种陪伴？', a:['安静待着','一直聊天','一起做事','各忙各的但在旁边'] },
+  { q:'睡前最后一件事更可能是？', a:['聊天','看手机','听东西','直接睡着'] }
+];
+let _partyGameId = null;
+let _partyGameContactId = null;
+function partyGameMeta(id=_partyGameId) { return PARTY_GAMES.find(g => g.id === id) || PARTY_GAMES[0]; }
+function partyGameKey(gameId=_partyGameId, contactId=_partyGameContactId) { return `tarot_party_${gameId}_v1_${contactId}`; }
+function loadPartyGameState() { return safeLoadJSON(partyGameKey(), {}); }
+function savePartyGameState(data) { safeSaveJSON(partyGameKey(), data || {}); }
+function pickPartyContact(preferred) {
+  if (preferred && !isGroupChat(String(preferred)) && getContactById(preferred)) return String(preferred);
+  const ranked = state.contacts.map(c => ({ id:String(c.id), ts:Math.max(0,...(state.chats[String(c.id)] || []).map(m => Number(m.ts)||0)) })).sort((a,b)=>b.ts-a.ts);
+  return ranked[0]?.id || (state.contacts[0] ? String(state.contacts[0].id) : null);
+}
+function partyGameEvent(from, text) {
+  if (!_partyGameContactId) return;
+  const g = partyGameMeta();
+  addMessage(_partyGameContactId, from, text, { type:'game', gameId:g.id, gameTitle:g.title });
+  renderPartyGameChatPreview();
+}
+function renderPartyGameChatPreview() {
+  const box = document.getElementById('partyGameChatPreview'); if (!box) return;
+  const c = getContactById(_partyGameContactId);
+  const rows = (state.chats[_partyGameContactId] || []).filter(m => !m.deletedAt).slice(-6);
+  box.innerHTML = rows.length ? rows.map(m => `<div class="party-game-chat-line"><b>${m.from === 'me' ? (state.myName||'我') : (c?.name||'对方')}</b>${escapeHtml(m.type === 'game' ? m.text : messageSummary(m))}</div>`).join('') : '<div class="party-game-chat-empty">游戏消息和聊天会出现在这里</div>';
+}
+function gameActions(buttons) { return `<div class="party-game-actions">${buttons.map(b => `<button class="${b.secondary?'secondary':''}" data-game-action="${b.action}"${b.value !== undefined ? ` data-game-value="${escapeHtml(String(b.value))}"` : ''}>${escapeHtml(b.label)}</button>`).join('')}</div>`; }
+function renderUndercoverGame(s) {
+  if (!s.pair) return `<div class="party-game-status">系统会随机决定谁拿到卧底词。你只会先看见自己的词，再根据对方的描述判断。</div>${gameActions([{action:'undercover-new',label:'开始一局'}])}`;
+  if (!s.revealed) return `<div class="party-game-label">你的词语</div><div class="party-game-secret">${escapeHtml(s.myWord)}</div><div class="party-game-status">对方的描述：${escapeHtml(s.opponentHint)}\n你认为谁是卧底？</div>${gameActions([{action:'undercover-guess',value:'me',label:'是我'},{action:'undercover-guess',value:'them',label:'是对方'}])}`;
+  return `<div class="party-game-status">${escapeHtml(s.result)}\n普通词：${escapeHtml(s.pair.normal)}　卧底词：${escapeHtml(s.pair.odd)}</div>${gameActions([{action:'undercover-new',label:'再来一局'}])}`;
+}
+function renderHeartCardsGame(s) {
+  const c = getContactById(_partyGameContactId), turnName = s.turn === 'them' ? (c?.name||'对方') : (state.myName||'我');
+  if (!s.card) return `<div class="party-game-status">轮流抽卡。抽到之后可以直接在下方聊天完成任务。</div><div class="party-game-score">已完成 ${s.done||0} 张</div>${gameActions([{action:'heart-draw',label:`${turnName}抽一张`}])}`;
+  return `<div class="party-game-label">${escapeHtml(turnName)}抽到</div><div class="party-game-secret" style="font-size:18px;line-height:1.5">${escapeHtml(s.card)}</div>${gameActions([{action:'heart-finish',label:'完成'},{action:'heart-skip',label:'换一张',secondary:true}])}`;
+}
+function renderDiceBluffGame(s) {
+  const c = getContactById(_partyGameContactId), score=`你 ${s.meScore||0}：${s.themScore||0} ${c?.name||'对方'}`;
+  if (!s.phase || s.phase === 'new') return `<div class="party-game-status">双方轮流摇骰子，可以照实报点数，也可以吹牛。先得 3 分获胜。</div><div class="party-game-score">${escapeHtml(score)}</div>${gameActions([{action:'dice-new',label:'摇骰子'}])}`;
+  if (s.phase === 'userDeclare') return `<div class="party-game-label">只有你看得见</div><div class="party-game-secret">🎲 ${s.userRoll}</div><div class="party-game-status">你要报几点？</div><div class="party-game-score">${escapeHtml(score)}</div>${gameActions([1,2,3,4,5,6].map(n=>({action:'dice-declare',value:n,label:String(n)})))}`;
+  return `<div class="party-game-status">${escapeHtml(c?.name||'对方')}声称自己摇到了</div><div class="party-game-secret">🎲 ${s.opponentClaim}</div><div class="party-game-score">${escapeHtml(score)}${s.lastResult?'\n'+escapeHtml(s.lastResult):''}</div>${gameActions([{action:'dice-judge',value:'trust',label:'相信'},{action:'dice-judge',value:'doubt',label:'质疑'}])}`;
+}
+function renderCompatibilityGame(s) {
+  if (!s.question) return `<div class="party-game-status">你们会分别选择同一道题，选完才揭晓答案。</div><div class="party-game-score">默契 ${s.matches||0} / ${s.rounds||0}</div>${gameActions([{action:'compat-new',label:'开始测试'}])}`;
+  return `<div class="party-game-status">${escapeHtml(s.question.q)}</div><div class="party-game-score">默契 ${s.matches||0} / ${s.rounds||0}</div>${gameActions(s.question.a.map((x,i)=>({action:'compat-pick',value:i,label:x})))}`;
+}
+function renderPartyGame() {
+  const g = partyGameMeta(), board = document.getElementById('partyGameBoard'); if (!board) return;
+  document.getElementById('partyGameNavTitle').textContent = g.title;
+  document.getElementById('partyGameTitle').textContent = g.title;
+  document.getElementById('partyGameSubtitle').textContent = g.subtitle;
+  document.getElementById('partyGameHero').style.background = g.color;
+  const s = loadPartyGameState();
+  board.innerHTML = g.id === 'undercover' ? renderUndercoverGame(s) : g.id === 'heartcards' ? renderHeartCardsGame(s) : g.id === 'dicebluff' ? renderDiceBluffGame(s) : renderCompatibilityGame(s);
+  renderPartyGameChatPreview();
+}
+function openPartyGame(gameId, preferredContactId=null) {
+  const g = PARTY_GAMES.find(x => x.id === gameId); if (!g) return;
+  if (!state.contacts.length) { alert('请先添加一个角色，再邀请对方一起玩'); return; }
+  _partyGameId = g.id; _partyGameContactId = pickPartyContact(preferredContactId);
+  const select = document.getElementById('partyGameContact');
+  select.innerHTML = state.contacts.map(c=>`<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.name)}</option>`).join(''); select.value = _partyGameContactId;
+  renderPartyGame(); pushPage('page-partygame');
+}
+function startUndercoverRound() {
+  const pair = UNDERCOVER_PAIRS[secureRandomInt(UNDERCOVER_PAIRS.length)], undercoverMe = Boolean(secureRandomInt(2));
+  const myWord = undercoverMe ? pair.odd : pair.normal, opponentWord = undercoverMe ? pair.normal : pair.odd;
+  const hints = opponentWord === pair.normal ? pair.normalHints : pair.oddHints;
+  savePartyGameState({ pair, undercoverMe, myWord, opponentHint:hints[secureRandomInt(hints.length)], revealed:false });
+  partyGameEvent('me', '开始了一局谁是卧底'); renderPartyGame();
+}
+function handlePartyGameAction(action, value) {
+  let s = loadPartyGameState(), c = getContactById(_partyGameContactId), fromThem = String(c?.id);
+  if (action === 'undercover-new') startUndercoverRound();
+  else if (action === 'undercover-guess') { const correct=(value==='me')===Boolean(s.undercoverMe);s.revealed=true;s.result=correct?'猜对了！':'猜错了。';savePartyGameState(s);partyGameEvent('me',`我猜卧底是${value==='me'?'我自己':(c?.name||'你')}`);partyGameEvent(fromThem,`${s.result} 我拿到的是「${s.undercoverMe?s.pair.normal:s.pair.odd}」`);renderPartyGame(); }
+  else if (action === 'heart-draw' || action === 'heart-skip') { const card=HEART_CARDS[secureRandomInt(HEART_CARDS.length)],turn=s.turn||'me';s.card=card;s.turn=turn;savePartyGameState(s);partyGameEvent(turn==='them'?fromThem:'me',`抽到心动卡：${card}`);renderPartyGame(); }
+  else if (action === 'heart-finish') { const who=s.turn||'me';partyGameEvent(who==='them'?fromThem:'me','完成了这张心动卡');s={done:(s.done||0)+1,turn:who==='me'?'them':'me',card:null};savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'dice-new') { s={...s,phase:'userDeclare',userRoll:1+secureRandomInt(6),lastResult:''};savePartyGameState(s);partyGameEvent('me','摇了骰子，点数暂时保密');renderPartyGame(); }
+  else if (action === 'dice-declare') { const claim=Number(value),lied=claim!==s.userRoll,doubt=secureRandomInt(100)<45,themCorrect=doubt?lied:!lied;if(themCorrect)s.themScore=(s.themScore||0)+1;else s.meScore=(s.meScore||0)+1;partyGameEvent('me',`我说自己摇到了 ${claim} 点`);partyGameEvent(fromThem,doubt?`我不信，是 ${s.userRoll} 点吧`:'我相信你');const roll=1+secureRandomInt(6),willLie=secureRandomInt(100)<48,opponentClaim=willLie?((roll+secureRandomInt(5))%6)+1:roll;s={...s,phase:'opponentClaim',opponentRoll:roll,opponentClaim,lastResult:`你的骰子是 ${s.userRoll}；这一轮${themCorrect?(c?.name||'对方'):'你'}得分`};savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'dice-judge') { const lied=s.opponentClaim!==s.opponentRoll,correct=value==='doubt'?lied:!lied;if(correct)s.meScore=(s.meScore||0)+1;else s.themScore=(s.themScore||0)+1;partyGameEvent('me',value==='doubt'?'我质疑你':'我相信你');partyGameEvent(fromThem,`实际是 ${s.opponentRoll} 点，${correct?'你猜对了':'你猜错了'}`);const winner=(s.meScore||0)>=3?'你':(s.themScore||0)>=3?(c?.name||'对方'):null;if(winner){partyGameEvent(winner==='你'?'me':fromThem,`${winner}赢下了这场骰子吹牛`);s={phase:'new',meScore:0,themScore:0,lastResult:`${winner}获胜`};}else s={...s,phase:'new',lastResult:`实际 ${s.opponentRoll} 点，${correct?'你':'对方'}得分`};savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'compat-new') { let idx=secureRandomInt(COMPATIBILITY_QUESTIONS.length);if(idx===s.lastIndex)idx=(idx+1)%COMPATIBILITY_QUESTIONS.length;s={...s,question:COMPATIBILITY_QUESTIONS[idx],lastIndex:idx};savePartyGameState(s);partyGameEvent('me','发起了一题默契大考验');renderPartyGame(); }
+  else if (action === 'compat-pick') { const mine=Number(value),theirs=secureRandomInt(s.question.a.length),match=mine===theirs;s.rounds=(s.rounds||0)+1;if(match)s.matches=(s.matches||0)+1;partyGameEvent('me',`我的答案：${s.question.a[mine]}`);partyGameEvent(fromThem,`我的答案：${s.question.a[theirs]}。${match?'这次想到一起了':'这次不一样'}`);s.question=null;savePartyGameState(s);renderPartyGame(); }
+}
+function sendPartyGameChat() {
+  const input=document.getElementById('partyGameChatInput'),text=input?.value.trim();if(!text||!_partyGameContactId)return;
+  addMessage(_partyGameContactId,'me',text);input.value='';renderPartyGameChatPreview();
+  state.pendingBatch[_partyGameContactId]=state.pendingBatch[_partyGameContactId]||[];state.pendingBatch[_partyGameContactId].push(text);clearTimeout(state.batchTimer[_partyGameContactId]);state.batchTimer[_partyGameContactId]=setTimeout(()=>processSingleBatch(_partyGameContactId),900);
+}
+function bindPartyGames() {
+  document.getElementById('backFromPartyGame')?.addEventListener('click',()=>popPage());
+  document.getElementById('closePartyGame')?.addEventListener('click',()=>popPage());
+  document.getElementById('partyGameContact')?.addEventListener('change',e=>{_partyGameContactId=String(e.target.value);renderPartyGame();});
+  document.getElementById('partyGameBoard')?.addEventListener('click',e=>{const b=e.target.closest('[data-game-action]');if(b)handlePartyGameAction(b.dataset.gameAction,b.dataset.gameValue);});
+  document.getElementById('partyGameChatSend')?.addEventListener('click',sendPartyGameChat);
+  document.getElementById('partyGameChatInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')sendPartyGameChat();});
+}
+
 /* ============ 小程式：附近外卖 ============ */
 const TEA_STORES=[
  {id:'mutea',name:'沐茶 MUTEA',short:'全港分店 · 鲜果茶 · 轻乳茶',emoji:'🧋',color:'#15291f',mark:'MUTEA',hours:'营业至 22:30',eta:'25–35 分钟',freeAt:38,categories:['人气推荐','轻乳茶','鲜果茶','原叶纯茶'],branches:['元朗形点店','屯门市广场店','荃湾广场店','沙田新城市店','旺角朗豪坊店','尖沙咀海港城店','观塘APM店','铜锣湾时代广场店']},
@@ -2225,8 +2476,8 @@ const TEA_ORDER_PREFIX='tarot_food_order_v3_';
 let _teaDraft={cart:{},storeId:'mutea',branchName:'',method:'delivery',recipientName:'',recipientPhone:'',address:'',note:''},_teaCustomProductId=null,_teaTrackTimers=[];
 
 function teaOrderKey(storeId){return TEA_ORDER_PREFIX+(storeId||'mutea');}
-function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=`<div class="mini-programs-title">最近使用</div><div class="mini-programs-grid">${TEA_STORES.map(s=>`<button class="mini-program-tile" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><span>${escapeHtml(s.name)}</span></button>`).join('')}</div><div class="mini-program-tip">下拉聊天列表也可以快速打开最近使用的小程序</div>`;}
-function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>{renderMiniProgramStores();pushPage('page-miniprograms');});document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniProgramStoreList')?.addEventListener('click',e=>{const x=e.target.closest('[data-mini-store]');if(x)openTeaOrder(x.dataset.miniStore);});}
+function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=`<div class="mini-programs-title">双人游戏</div><div class="mini-programs-grid">${PARTY_GAMES.map(g=>`<button class="mini-program-tile" data-party-game="${g.id}"><div class="mini-app-icon game" style="background:${g.color}">${g.icon}</div><span>${escapeHtml(g.title)}</span></button>`).join('')}</div><div class="mini-programs-title" style="margin-top:24px">外卖点单</div><div class="mini-programs-grid">${TEA_STORES.map(s=>`<button class="mini-program-tile" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><span>${escapeHtml(s.name)}</span></button>`).join('')}</div><div class="mini-program-tip">每个图标都是独立小程序，进度会分别保存</div>`;}
+function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>{renderMiniProgramStores();pushPage('page-miniprograms');});document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniProgramStoreList')?.addEventListener('click',e=>{const x=e.target.closest('[data-mini-store]'),g=e.target.closest('[data-party-game]');if(x)openTeaOrder(x.dataset.miniStore);else if(g)openPartyGame(g.dataset.partyGame);});}
 function teaCartItems(){return Object.values(_teaDraft.cart).flat();}
 function teaCartCount(){return teaCartItems().length;}
 function teaSubtotal(){return teaCartItems().reduce((sum,x)=>sum+(TEA_MENU.find(p=>p.id===x.productId)?.price||0)+(TEA_TOPPINGS[x.topping]?.price||0),0);}
@@ -2279,7 +2530,7 @@ function renderTeaTracking(order){
 /* ============ 导出 / 导入 ============ */
 function exportData() {
   const data = {
-    contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments,
+    contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
     chatBg: state.chatBg, momentsCover: state.momentsCover,
     wordCards: collectWordCardData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
@@ -2385,7 +2636,7 @@ function showCloudVerification(info, type = 'verified') {
   loadSettingsSummaries();
 }
 function cloudPayload() {
-  return { contacts: state.contacts, groups: state.groups, chats: state.chats, moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), stickers: getStickers() };
+  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), stickers: getStickers() };
 }
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
@@ -2700,6 +2951,7 @@ async function init() {
   safeStep('bindPostMoment', bindPostMoment);
   safeStep('bindWallet', bindWallet);
   safeStep('bindMiniPrograms', bindMiniPrograms);
+  safeStep('bindPartyGames', bindPartyGames);
   safeStep('bindTeaOrder', bindTeaOrder);
   safeStep('resumeTeaOrderNotification', resumeTeaOrderNotification);
   await safeStepAsync('runAutoMessageSchedule', runAutoMessageSchedule);
