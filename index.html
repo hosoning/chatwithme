@@ -22,6 +22,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .icon-btn { width:25px !important; height:25px !important; cursor:pointer; flex-shrink:0; opacity:0.88; transition:opacity .15s; display:inline-block; touch-action:manipulation; }
 .icon-btn:active { opacity:0.5; }
 .chat-nav-actions{display:flex;align-items:center;gap:17px}.chat-search-field{height:36px;flex:1;background:#fff;border-radius:7px;display:flex;align-items:center;padding:0 9px;gap:6px}.chat-search-field svg{width:18px;height:18px;flex-shrink:0}.chat-search-field input{width:100%;height:100%;border:0;background:transparent;font-size:15px;outline:0;user-select:text!important;-webkit-user-select:text!important}.search-nav{gap:10px}.search-nav>button{border:0;background:transparent;color:#576b95;font-size:14px;flex-shrink:0}.chat-search-summary{padding:10px 16px;color:#999;font-size:12px;background:#f7f7f7;border-bottom:.5px solid #ddd}.chat-search-results{flex:1;overflow-y:auto;background:#fff}.chat-search-result{display:flex;gap:11px;padding:12px 16px;border-bottom:.5px solid #eee;align-items:flex-start}.chat-search-result .avatar{width:38px!important;height:38px!important}.chat-search-result-body{min-width:0;flex:1}.chat-search-result-name{font-size:13px;color:#777;margin-bottom:4px}.chat-search-result-text{font-size:15px;line-height:1.4;word-break:break-word}.chat-search-result-text mark{background:#ffe58a;color:inherit}.chat-search-result-time{font-size:11px;color:#aaa;margin-top:4px}.message-search-hit .bubble{animation:searchHit 1.8s ease}.cloud-sync-status{font-size:12px;color:#888;line-height:1.45;padding:0 4px 14px;word-break:break-word}.cloud-sync-status.success{color:#1a7f45}.cloud-sync-status.error{color:#d33}@keyframes searchHit{0%,100%{box-shadow:0 1px 2px rgba(0,0,0,.04)}25%,70%{box-shadow:0 0 0 4px rgba(7,193,96,.35)}}
+#page-chat>.nav-bar #chatPeerName{position:absolute;left:50%;transform:translateX(-50%);max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;pointer-events:none}
 
 .chat-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .chat-item, .contact-item { display:flex; align-items:center; padding:13px 16px; background:#fff; border-bottom:0.5px solid #ececec; transition:background .1s; touch-action:manipulation; }
@@ -62,6 +63,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .voice-record-overlay{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:70;width:170px;padding:18px 12px;border-radius:12px;background:rgba(25,25,25,.84);color:#fff;text-align:center;pointer-events:none}.voice-record-overlay.cancel{background:rgba(214,65,55,.9)}.voice-record-time{font-size:27px;font-variant-numeric:tabular-nums}.voice-record-wave{height:22px;margin:9px auto;display:flex;align-items:center;justify-content:center;gap:3px}.voice-record-wave i{display:block;width:3px;height:9px;border-radius:2px;background:#fff;animation:voiceWave .65s ease-in-out infinite alternate}.voice-record-wave i:nth-child(2){animation-delay:.12s;height:17px}.voice-record-wave i:nth-child(3){animation-delay:.24s;height:12px}.voice-record-wave i:nth-child(4){animation-delay:.36s;height:20px}.voice-record-hint{font-size:12px}.hold-talk-btn.cancel{background:#ddd;color:#d33}@keyframes voiceWave{to{transform:scaleY(.45);opacity:.55}}
 .call-bubble-text { display:flex; flex-direction:column; gap:1px; }
 .call-bubble-duration { font-size:12px; opacity:.65; }
+.call-recording-wrap{margin:12px 0 4px;padding:12px;border-radius:10px;background:#f5f5f5}.call-recording-wrap audio{width:100%;height:38px}.call-recording-note{font-size:11px;color:#999;line-height:1.4;margin-top:8px}.call-recording-delete{width:100%;border:0;background:transparent;color:#fa5151;font-size:14px;padding:12px 0 2px}
 .msg-row.me .bubble.image, .msg-row:not(.me) .bubble.image { background:transparent !important; }
 .bubble.image { padding:0; box-shadow:none; }
 .bubble.image::before { display:none; }
@@ -358,6 +360,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .tea-method-chip{flex:1;text-align:center;padding:9px;border-radius:7px;color:#666;font-size:14px}
 .tea-method-chip.selected{background:#fff;color:#14291e;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .mini-app-icon.food{font-size:25px;color:#fff}.tea-recipient-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:10px}.tea-branch-select{width:100%;border:0;background:#f7f7f7;border-radius:8px;padding:10px;font-size:14px;color:#222}.tea-address-card{border:1px solid #dcebe2;background:#f7fbf8}.tea-address-card label{font-weight:650;color:#173c2a}.tea-address-hint{font-size:11px;color:#8b9a90;margin-top:7px}
+.mini-app-icon.game{font-size:25px;color:#fff}.party-game-page{background:#f3f3f3}.party-game-scroll{flex:1;overflow-y:auto;padding:14px 14px 118px}.party-game-hero{border-radius:16px;color:#fff;padding:19px 18px;margin-bottom:12px;box-shadow:0 8px 20px rgba(0,0,0,.12)}.party-game-hero h2{font-size:21px;margin-bottom:5px}.party-game-hero p{font-size:12px;opacity:.82}.party-game-card{background:#fff;border-radius:14px;padding:15px;margin-bottom:12px}.party-game-label{font-size:12px;color:#999;margin-bottom:8px}.party-game-contact{width:100%;border:0;border-radius:8px;background:#f5f5f5;padding:11px;font-size:15px;color:#222}.party-game-board{text-align:center}.party-game-status{font-size:15px;line-height:1.55;color:#333;white-space:pre-wrap;margin:5px 0 15px}.party-game-secret{background:#f7f7f7;border-radius:12px;padding:18px 10px;margin:10px 0;font-size:25px;font-weight:700}.party-game-actions{display:flex;flex-wrap:wrap;gap:9px;justify-content:center}.party-game-actions button,.party-game-primary{border:0;border-radius:9px;background:#07c160;color:#fff;padding:11px 16px;font-size:14px;min-width:82px}.party-game-actions button.secondary{background:#ededed;color:#333}.party-game-score{font-size:12px;color:#888;margin:10px 0}.party-game-chat-preview{padding:11px 13px}.party-game-chat-line{font-size:13px;line-height:1.45;padding:5px 0;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.party-game-chat-line b{color:#576b95;margin-right:5px}.party-game-chat-empty{font-size:12px;color:#aaa;text-align:center;padding:8px}.party-game-chat{position:absolute;left:0;right:0;bottom:0;background:#f7f7f7;border-top:.5px solid #ddd;padding:9px 12px calc(9px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center}.party-game-chat input{height:40px;flex:1;min-width:0;border:0;border-radius:8px;background:#fff;padding:0 12px;font-size:15px;user-select:text!important;-webkit-user-select:text!important}.party-game-chat button{height:36px;border:0;border-radius:6px;background:#07c160;color:#fff;padding:0 14px;font-size:14px}.bubble.game-event{width:238px;background:#fff!important;padding:0!important;overflow:hidden}.msg-row.me .bubble.game-event::before{border-left-color:#fff!important}.game-event-head{padding:11px 12px 8px;font-weight:600;font-size:14px}.game-event-body{padding:0 12px 10px;font-size:13px;line-height:1.45;color:#555}.game-event-foot{border-top:.5px solid #eee;padding:7px 12px;color:#999;font-size:11px}
 .tea-shop-layout{display:grid;grid-template-columns:86px 1fr;align-items:start;background:#fff;min-height:410px}
 .tea-category-list{background:#f6f6f6;min-height:410px}
 .tea-category-list button{width:100%;border:0;background:transparent;padding:18px 7px;font-size:13px;color:#666;position:relative}
@@ -788,6 +791,18 @@ svg { max-width:100%; max-height:100%; }
     <div class="mini-programs-scroll" id="miniProgramStoreList"></div>
   </div>
 
+  <!-- 双人小游戏（四个独立入口，共用轻量页面外壳） -->
+  <div class="page hidden party-game-page" id="page-partygame">
+    <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromPartyGame" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title" id="partyGameNavTitle">双人游戏</span><div class="mini-nav-capsule"><button type="button" aria-label="更多">•••</button><button type="button" id="closePartyGame" aria-label="关闭"><span class="mini-nav-dot"></span></button></div></div>
+    <div class="party-game-scroll">
+      <section class="party-game-hero" id="partyGameHero"><h2 id="partyGameTitle"></h2><p id="partyGameSubtitle"></p></section>
+      <section class="party-game-card"><div class="party-game-label">一起玩的人</div><select class="party-game-contact" id="partyGameContact"></select></section>
+      <section class="party-game-card party-game-board" id="partyGameBoard"></section>
+      <section class="party-game-card party-game-chat-preview" id="partyGameChatPreview"></section>
+    </div>
+    <div class="party-game-chat"><input id="partyGameChatInput" placeholder="一边玩，一边发消息…"><button id="partyGameChatSend">发送</button></div>
+  </div>
+
   <!-- 外卖点单页 -->
   <div class="page hidden" id="page-teaorder">
     <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromTeaOrder" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2"/></svg><span class="nav-title" id="teaNavTitle">附近外卖</span><div class="mini-nav-capsule"><button type="button" aria-label="更多">•••</button><button type="button" id="closeTeaMiniProgram" aria-label="关闭"><span class="mini-nav-dot"></span></button></div></div>
@@ -1005,7 +1020,8 @@ svg { max-width:100%; max-height:100%; }
   <!-- 查看通话中的文字记录 -->
   <div class="mask hidden" id="callLogViewSheet">
     <div class="sheet">
-      <div class="sheet-title">通话中的对话</div>
+      <div class="sheet-title">通话记录</div>
+      <div class="call-recording-wrap hidden" id="callRecordingWrap"><audio id="callRecordingPlayer" controls playsinline></audio><div class="call-recording-note" id="callRecordingNote">录音只保存在这台设备，不随云端同步。</div><button class="call-recording-delete" id="callRecordingDelete">删除录音</button></div>
       <div id="callLogViewList"></div>
       <div class="sheet-close" id="callLogViewClose">关闭</div>
     </div>
@@ -1094,10 +1110,10 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=48" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=48" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/ai.js?v=48" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=48" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=48" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=49" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=49" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/ai.js?v=49" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=49" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=49" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
