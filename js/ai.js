@@ -85,6 +85,28 @@ async function resolveVoiceUrl(ref) {
   if (!blob) throw new Error('语音文件不存在');
   return URL.createObjectURL(blob);
 }
+async function getStoredVoiceBlob(ref) {
+  if (!String(ref || '').startsWith('idb-audio:')) return null;
+  const id = String(ref).slice('idb-audio:'.length), db = await openVoiceDb();
+  const blob = await new Promise((resolve, reject) => {
+    const req = db.transaction(VOICE_DB_STORE, 'readonly').objectStore(VOICE_DB_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error || new Error('语音读取失败'));
+  });
+  db.close();
+  return blob;
+}
+async function deleteStoredVoice(ref) {
+  if (!String(ref || '').startsWith('idb-audio:')) return;
+  const id = String(ref).slice('idb-audio:'.length), db = await openVoiceDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(VOICE_DB_STORE, 'readwrite');
+    tx.objectStore(VOICE_DB_STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('语音删除失败'));
+  });
+  db.close();
+}
 // MiniMax's T2A v2 API — request/response shape per MiniMax's docs as of this writing.
 // If MiniMax changes their contract, this is the one place to adjust: the endpoint,
 // the voice_setting/audio_setting body shape, or how the audio comes back (currently
