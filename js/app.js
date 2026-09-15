@@ -740,7 +740,7 @@ function renderMessages() {
         <div class="call-bubble-text"><div>${isVideo ? '视频通话' : '语音通话'}</div><div class="call-bubble-duration">${m.callDurationText}${m.callAudioUrl ? ' · 有录音' : ''}</div></div>
       </div>`;
     } else if (m.type === 'game') {
-      bubbleHtml = `<div class="bubble game-event" data-game-open="${escapeHtml(m.gameId || '')}"><div class="game-event-head">${escapeHtml(m.gameTitle || '双人游戏')}</div><div class="game-event-body">${escapeHtml(m.text)}</div><div class="game-event-foot">点击继续游戏</div></div>`;
+      bubbleHtml = `<div class="bubble game-event" data-game-open="${escapeHtml(m.gameId || '')}"><div class="game-event-head">${escapeHtml(m.gameTitle || '双人游戏')}</div><div class="game-event-body">${escapeHtml(m.text)}</div><div class="game-event-foot">本局记录已合并 · 点击继续游戏</div></div>`;
     } else if (m.voiceUrl) {
       const voiceSeconds = m.durationSec || Math.max(1, Math.round((m.text || '').length / 4));
       const transcript = m.voiceTranscript || '';
@@ -2318,9 +2318,10 @@ function bindWallet() {
 /* ============ 小程式：双人随机游戏（无 AI） ============ */
 const PARTY_GAMES = [
   { id:'undercover', title:'谁是卧底·双人版', icon:'🕵️', color:'#5b4b8a', subtitle:'相近词语、随机身份，猜出谁拿到了卧底词' },
-  { id:'heartcards', title:'心动抽卡', icon:'💗', color:'#d66b86', subtitle:'轮流抽一张互动卡，边玩边聊' },
-  { id:'dicebluff', title:'骰子吹牛', icon:'🎲', color:'#287c67', subtitle:'看自己的点数，决定要不要说真话' },
-  { id:'compatibility', title:'默契大考验', icon:'💞', color:'#7658c9', subtitle:'各自选择，揭晓你们有没有想到一起' }
+  { id:'heartcards', title:'心动抽卡', icon:'💗', color:'#d66b86', subtitle:'轮流抽卡，对方会按卡片随机回应' },
+  { id:'dicebluff', title:'大话骰', icon:'🎲', color:'#287c67', subtitle:'五颗骰子起步，叫点、加码或开骰' },
+  { id:'compatibility', title:'默契大考验', icon:'💞', color:'#7658c9', subtitle:'各自选择，揭晓你们有没有想到一起' },
+  { id:'gomoku', title:'五子棋', icon:'⚫', color:'#9a6a35', subtitle:'九路棋盘，本机随机对弈，不使用 AI' }
 ];
 const UNDERCOVER_PAIRS = [
   { normal:'咖啡', odd:'奶茶', normalHints:['早上会想喝','味道有点苦','店里常闻到'], oddHints:['可以加很多小料','甜一点比较好','经常有珍珠'] },
@@ -2333,7 +2334,18 @@ const UNDERCOVER_PAIRS = [
   { normal:'亲吻', odd:'贴贴', normalHints:['会闭上眼睛','时间可长可短','嘴唇会碰到'], oddHints:['不一定要面对面','可以维持很久','很适合撒娇'] }
 ];
 const HEART_CARDS = [
-  '说一个现在最想听对方讲的话','给对方取一个只用十分钟的新称呼','发一条语音，说什么都可以','选一个：抱一下／牵手／贴贴','说出最近一次偷偷想起对方的时刻','让对方决定下一顿吃什么','夸对方一个平常很少提到的地方','发一个最符合现在心情的表情','问一个一直有点好奇的小问题','说一句只有你们两个看得懂的话','选择：一起宅着／临时出门／去旅行','告诉对方今天最想被怎样安慰','让对方从三个称呼中选一个','描述理想中一起度过的半天','认真说一句谢谢，不准只发谢谢','分享一件今天没来得及说的小事'
+  { prompt:'现在最想和我做什么？', replies:['什么都不做，安静待一会儿。','出去吃点东西。','先抱一会儿再说。'] },
+  { prompt:'选一个：抱一下／牵手／贴贴', replies:['抱一下。','牵手，走慢一点。','贴贴，不准躲。'] },
+  { prompt:'今天最想对我说的一句话', replies:['有想到你。','今天也想好好陪你。','你来找我，我很开心。'] },
+  { prompt:'下一顿想和我吃什么？', replies:['去吃火锅。','找一家没吃过的店。','在家慢慢吃也很好。'] },
+  { prompt:'说一个最近偷偷想起我的时刻', replies:['路上看到很像你的背影时。','睡前放下手机以后。','吃到好吃的东西时。'] },
+  { prompt:'选一种约会：宅着／散步／小旅行', replies:['宅着，一整天都不要赶时间。','晚上一起散步。','去一个没去过的地方。'] },
+  { prompt:'现在想被怎样安慰？', replies:['抱着我，先不用讲道理。','听我慢慢说完。','陪我吃点甜的。'] },
+  { prompt:'夸我一个平常很少提到的地方', replies:['你认真听人说话的时候很好看。','你记得小事这点很可爱。','你有自己的想法，我很喜欢。'] },
+  { prompt:'给我取一个十分钟限定的新称呼', replies:['小黏糕。','宝宝队长。','今天叫你小朋友。'] },
+  { prompt:'描述理想中一起度过的半天', replies:['睡到自然醒，吃饭，再慢慢走回家。','去海边吹风，天黑了再走。','找间安静的店，一直聊到关门。'] },
+  { prompt:'分享一件今天还没说的小事', replies:['刚才看到一个东西，第一反应是你会喜欢。','今天有一点累，但现在好多了。','其实刚刚一直在等你找我。'] },
+  { prompt:'认真说一句谢谢，不准只说谢谢', replies:['谢谢你愿意一直听我讲。','谢谢你今天也有来找我。','谢谢你把我放在心上。'] }
 ];
 const COMPATIBILITY_QUESTIONS = [
   { q:'临时空出半天，你们更想？', a:['留在家里','去吃东西','随便散步','马上小旅行'] },
@@ -2353,6 +2365,7 @@ let _partyGameId = null;
 let _partyGameContactId = null;
 function partyGameMeta(id=_partyGameId) { return PARTY_GAMES.find(g => g.id === id) || PARTY_GAMES[0]; }
 function partyGameKey(gameId=_partyGameId, contactId=_partyGameContactId) { return `tarot_party_${gameId}_v1_${contactId}`; }
+function partyGameSessionKey() { return `${partyGameKey()}_session`; }
 function loadPartyGameState() { return safeLoadJSON(partyGameKey(), {}); }
 function savePartyGameState(data) { safeSaveJSON(partyGameKey(), data || {}); }
 function pickPartyContact(preferred) {
@@ -2360,10 +2373,28 @@ function pickPartyContact(preferred) {
   const ranked = state.contacts.map(c => ({ id:String(c.id), ts:Math.max(0,...(state.chats[String(c.id)] || []).map(m => Number(m.ts)||0)) })).sort((a,b)=>b.ts-a.ts);
   return ranked[0]?.id || (state.contacts[0] ? String(state.contacts[0].id) : null);
 }
-function partyGameEvent(from, text) {
+function resetPartyGameSession() { safeRemoveItem(partyGameSessionKey()); }
+function partyGameEvent(from, text, options={}) {
   if (!_partyGameContactId) return;
-  const g = partyGameMeta();
-  addMessage(_partyGameContactId, from, text, { type:'game', gameId:g.id, gameTitle:g.title });
+  const g = partyGameMeta(), c = getContactById(_partyGameContactId);
+  let session = options.reset ? null : safeLoadJSON(partyGameSessionKey(), null);
+  const rows = state.chats[_partyGameContactId] || [];
+  let msg = session?.messageId ? rows.find(m => String(m.id) === String(session.messageId) && !m.deletedAt) : null;
+  if (!msg) {
+    session = { messageId:null, history:[], startedAt:Date.now() };
+    msg = addMessage(_partyGameContactId, 'me', '', { type:'game', gameId:g.id, gameTitle:g.title });
+    session.messageId = msg.id;
+  }
+  const speaker = from === 'me' ? (state.myName || '我') : (c?.name || '对方');
+  session.history = [...(session.history || []), `${speaker}：${text}`].slice(-8);
+  msg.text = session.history.join('\n');
+  msg.gameTitle = g.title;
+  msg.gameId = g.id;
+  msg.modifiedAt = Date.now();
+  safeSaveJSON(partyGameSessionKey(), session);
+  persist();
+  if (String(_partyGameContactId) === String(state.activeChatId)) renderMessages();
+  renderChatList();
   renderPartyGameChatPreview();
 }
 function renderPartyGameChatPreview() {
@@ -2380,14 +2411,25 @@ function renderUndercoverGame(s) {
 }
 function renderHeartCardsGame(s) {
   const c = getContactById(_partyGameContactId), turnName = s.turn === 'them' ? (c?.name||'对方') : (state.myName||'我');
-  if (!s.card) return `<div class="party-game-status">轮流抽卡。抽到之后可以直接在下方聊天完成任务。</div><div class="party-game-score">已完成 ${s.done||0} 张</div>${gameActions([{action:'heart-draw',label:`${turnName}抽一张`}])}`;
-  return `<div class="party-game-label">${escapeHtml(turnName)}抽到</div><div class="party-game-secret" style="font-size:18px;line-height:1.5">${escapeHtml(s.card)}</div>${gameActions([{action:'heart-finish',label:'完成'},{action:'heart-skip',label:'换一张',secondary:true}])}`;
+  if (!s.card) return `<div class="party-game-status">轮流抽卡。抽到对方时，系统会从卡片预设回答中随机选择，不需要 AI。</div><div class="party-game-score">已完成 ${s.done||0} 张</div>${gameActions([{action:'heart-draw',label:`${turnName}抽一张`}])}`;
+  const card = typeof s.card === 'string' ? { prompt:s.card, replies:['我选这个。'] } : s.card;
+  if (s.answer) return `<div class="party-game-label">${escapeHtml(turnName)}抽到</div><div class="party-game-secret" style="font-size:18px;line-height:1.5">${escapeHtml(card.prompt)}</div><div class="party-game-status">${escapeHtml(c?.name||'对方')}：${escapeHtml(s.answer)}</div>${gameActions([{action:'heart-next',label:'下一张'}])}`;
+  const primary = s.turn === 'them' ? {action:'heart-answer',label:'看他的回答'} : {action:'heart-finish',label:'我完成了'};
+  return `<div class="party-game-label">${escapeHtml(turnName)}抽到</div><div class="party-game-secret" style="font-size:18px;line-height:1.5">${escapeHtml(card.prompt)}</div>${gameActions([primary,{action:'heart-skip',label:'换一张',secondary:true}])}`;
 }
 function renderDiceBluffGame(s) {
-  const c = getContactById(_partyGameContactId), score=`你 ${s.meScore||0}：${s.themScore||0} ${c?.name||'对方'}`;
-  if (!s.phase || s.phase === 'new') return `<div class="party-game-status">双方轮流摇骰子，可以照实报点数，也可以吹牛。先得 3 分获胜。</div><div class="party-game-score">${escapeHtml(score)}</div>${gameActions([{action:'dice-new',label:'摇骰子'}])}`;
-  if (s.phase === 'userDeclare') return `<div class="party-game-label">只有你看得见</div><div class="party-game-secret">🎲 ${s.userRoll}</div><div class="party-game-status">你要报几点？</div><div class="party-game-score">${escapeHtml(score)}</div>${gameActions([1,2,3,4,5,6].map(n=>({action:'dice-declare',value:n,label:String(n)})))}`;
-  return `<div class="party-game-status">${escapeHtml(c?.name||'对方')}声称自己摇到了</div><div class="party-game-secret">🎲 ${s.opponentClaim}</div><div class="party-game-score">${escapeHtml(score)}${s.lastResult?'\n'+escapeHtml(s.lastResult):''}</div>${gameActions([{action:'dice-judge',value:'trust',label:'相信'},{action:'dice-judge',value:'doubt',label:'质疑'}])}`;
+  const c = getContactById(_partyGameContactId), score=`你 ${s.meDiceCount ?? 5} 颗 · ${c?.name||'对方'} ${s.themDiceCount ?? 5} 颗`;
+  if (!s.version || s.winner) return `<div class="party-game-status">标准大话骰：双方各五颗骰子，轮流叫“几颗几点”；只能加码，也可以随时开骰。叫错的人或错误开骰的人失去一颗。这里 1 点不作万能。</div>${s.winner?`<div class="party-game-secret" style="font-size:20px">${escapeHtml(s.winner)}获胜</div>`:''}${gameActions([{action:'dice-new',label:s.winner?'再来一场':'开始一场'}])}`;
+  const dice=(s.meDice||[]).map(n=>['⚀','⚁','⚂','⚃','⚄','⚅'][n-1]).join(' '), bid=s.bid?`${s.bid.qty} 颗 ${s.bid.face} 点`:'尚未叫点';
+  if (!s.roundActive) return `<div class="party-game-status">${escapeHtml(s.lastResult||'本轮结束')}</div><div class="party-game-score">${escapeHtml(score)}</div>${gameActions([{action:'dice-round',label:'下一轮'}])}`;
+  const total=(s.meDiceCount||0)+(s.themDiceCount||0), minQty=s.bid?.qty||1, qtyOptions=Array.from({length:total},(_,i)=>i+1).filter(n=>n>=minQty).map(n=>`<option value="${n}">${n} 颗</option>`).join(''), faceOptions=[1,2,3,4,5,6].map(n=>`<option value="${n}">${n} 点</option>`).join('');
+  return `<div class="party-game-label">你的骰子（对方看不见）</div><div class="liar-dice">${dice}</div><div class="party-game-status">当前叫点：${escapeHtml(bid)}</div><div class="party-game-score">${escapeHtml(score)}</div>${s.turn==='me'?`<div class="liar-bid-controls"><select id="liarBidQty">${qtyOptions}</select><select id="liarBidFace">${faceOptions}</select></div>${gameActions([{action:'liar-bid',label:s.bid?'加码':'叫点'},...(s.bid?[{action:'liar-challenge',label:'开骰',secondary:true}]:[])])}`:'<div class="party-game-status">对方正在决定…</div>'}`;
+}
+function renderGomokuGame(s) {
+  if (!Array.isArray(s.board)) return `<div class="party-game-status">你执黑先手，对方由本机规则随机落子；会挡住明显的五连，但不会调用 AI 或 API。</div>${gameActions([{action:'gomoku-new',label:'开始对局'}])}`;
+  const cells=s.board.map((v,i)=>`<button class="gomoku-cell" data-game-action="gomoku-place" data-game-value="${i}" ${v||!s.active?'disabled':''}>${v?`<span class="gomoku-stone ${v===1?'black':'white'}"></span>`:''}</button>`).join('');
+  const result=s.winner===1?'你赢了':s.winner===2?`${getContactById(_partyGameContactId)?.name||'对方'}赢了`:s.active?'轮到你（黑棋）':'和棋';
+  return `<div class="party-game-status">${escapeHtml(result)}</div><div class="gomoku-board">${cells}</div>${!s.active?gameActions([{action:'gomoku-new',label:'再来一局'}]):''}`;
 }
 function renderCompatibilityGame(s) {
   if (!s.question) return `<div class="party-game-status">你们会分别选择同一道题，选完才揭晓答案。</div><div class="party-game-score">默契 ${s.matches||0} / ${s.rounds||0}</div>${gameActions([{action:'compat-new',label:'开始测试'}])}`;
@@ -2400,7 +2442,7 @@ function renderPartyGame() {
   document.getElementById('partyGameSubtitle').textContent = g.subtitle;
   document.getElementById('partyGameHero').style.background = g.color;
   const s = loadPartyGameState();
-  board.innerHTML = g.id === 'undercover' ? renderUndercoverGame(s) : g.id === 'heartcards' ? renderHeartCardsGame(s) : g.id === 'dicebluff' ? renderDiceBluffGame(s) : renderCompatibilityGame(s);
+  board.innerHTML = g.id === 'undercover' ? renderUndercoverGame(s) : g.id === 'heartcards' ? renderHeartCardsGame(s) : g.id === 'dicebluff' ? renderDiceBluffGame(s) : g.id === 'gomoku' ? renderGomokuGame(s) : renderCompatibilityGame(s);
   renderPartyGameChatPreview();
 }
 function openPartyGame(gameId, preferredContactId=null) {
@@ -2416,19 +2458,62 @@ function startUndercoverRound() {
   const myWord = undercoverMe ? pair.odd : pair.normal, opponentWord = undercoverMe ? pair.normal : pair.odd;
   const hints = opponentWord === pair.normal ? pair.normalHints : pair.oddHints;
   savePartyGameState({ pair, undercoverMe, myWord, opponentHint:hints[secureRandomInt(hints.length)], revealed:false });
-  partyGameEvent('me', '开始了一局谁是卧底'); renderPartyGame();
+  partyGameEvent('me', '开始了一局谁是卧底', {reset:true}); renderPartyGame();
+}
+function rollPartyDice(count) { return Array.from({length:count},()=>1+secureRandomInt(6)); }
+function isHigherLiarBid(next, current) { return !current || next.qty > current.qty || (next.qty === current.qty && next.face > current.face); }
+function startLiarRound(s) {
+  s.round=(s.round||0)+1;s.meDice=rollPartyDice(s.meDiceCount);s.themDice=rollPartyDice(s.themDiceCount);s.bid=null;s.roundActive=true;s.turn=secureRandomInt(2)?'me':'them';s.lastResult='';
+  partyGameEvent('me',`第 ${s.round} 轮摇骰：你 ${s.meDiceCount} 颗，对方 ${s.themDiceCount} 颗`);
+  if(s.turn==='them') liarOpponentAct(s);
+  return s;
+}
+function resolveLiarChallenge(s, challenger) {
+  const total=[...(s.meDice||[]),...(s.themDice||[])].filter(n=>n===s.bid.face).length, bidTrue=total>=s.bid.qty, bidder=s.bid.by;
+  const loser=bidTrue?challenger:bidder, c=getContactById(_partyGameContactId), loserName=loser==='me'?'你':(c?.name||'对方');
+  if(loser==='me')s.meDiceCount--;else s.themDiceCount--;
+  s.roundActive=false;s.lastResult=`开骰：${s.bid.face} 点共有 ${total} 颗，${loserName}失去一颗`;
+  partyGameEvent(challenger==='me'?'me':String(c?.id),`开骰！${s.bid.face} 点共有 ${total} 颗，${loserName}失去一颗`);
+  if(s.meDiceCount<=0)s.winner=c?.name||'对方';else if(s.themDiceCount<=0)s.winner='你';
+  if(s.winner)partyGameEvent(s.winner==='你'?'me':String(c?.id),`${s.winner}赢下了这场大话骰`);
+}
+function liarOpponentAct(s) {
+  if(!s.roundActive)return;
+  const c=getContactById(_partyGameContactId), own=(s.themDice||[]).filter(n=>n===s.bid?.face).length, expected=own+(s.meDiceCount||0)/6;
+  if(s.bid && (s.bid.qty>expected+0.7 || secureRandomInt(100)<12)){resolveLiarChallenge(s,'them');return;}
+  const total=s.meDiceCount+s.themDiceCount, choices=[];
+  for(let qty=1;qty<=total;qty++)for(let face=1;face<=6;face++){const b={qty,face,by:'them'};if(isHigherLiarBid(b,s.bid))choices.push(b);}
+  if(!choices.length){resolveLiarChallenge(s,'them');return;}
+  const frequent=[1,2,3,4,5,6].sort((a,b)=>(s.themDice.filter(n=>n===b).length)-(s.themDice.filter(n=>n===a).length))[0];
+  const preferred=choices.filter(b=>b.face===frequent && b.qty<=Math.max(1,s.themDice.filter(n=>n===frequent).length+Math.ceil(s.meDiceCount/6)));
+  const pool=preferred.length?preferred:choices.slice(0,Math.min(5,choices.length));s.bid=pool[secureRandomInt(pool.length)];
+  s.turn='me';partyGameEvent(String(c?.id),`叫 ${s.bid.qty} 颗 ${s.bid.face} 点`);
+}
+function gomokuWins(board, player) {
+  const dirs=[[1,0],[0,1],[1,1],[1,-1]];
+  return board.some((v,i)=>v===player&&dirs.some(([dr,dc])=>{const r=Math.floor(i/9),col=i%9;for(let k=1;k<5;k++){const rr=r+dr*k,cc=col+dc*k;if(rr<0||rr>=9||cc<0||cc>=9||board[rr*9+cc]!==player)return false;}return true;}));
+}
+function gomokuSystemMove(board) {
+  const empty=board.map((v,i)=>v?null:i).filter(i=>i!==null);
+  for(const player of [2,1])for(const i of empty){board[i]=player;const win=gomokuWins(board,player);board[i]=0;if(win)return i;}
+  const scored=empty.map(i=>{const r=Math.floor(i/9),c=i%9;let score=8-(Math.abs(r-4)+Math.abs(c-4));for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const rr=r+dr,cc=c+dc;if(rr>=0&&rr<9&&cc>=0&&cc<9&&board[rr*9+cc])score+=4;}return{i,score:score+secureRandomInt(4)};}).sort((a,b)=>b.score-a.score);
+  const top=scored.filter(x=>x.score>=scored[0].score-1);return top[secureRandomInt(top.length)].i;
 }
 function handlePartyGameAction(action, value) {
   let s = loadPartyGameState(), c = getContactById(_partyGameContactId), fromThem = String(c?.id);
   if (action === 'undercover-new') startUndercoverRound();
   else if (action === 'undercover-guess') { const correct=(value==='me')===Boolean(s.undercoverMe);s.revealed=true;s.result=correct?'猜对了！':'猜错了。';savePartyGameState(s);partyGameEvent('me',`我猜卧底是${value==='me'?'我自己':(c?.name||'你')}`);partyGameEvent(fromThem,`${s.result} 我拿到的是「${s.undercoverMe?s.pair.normal:s.pair.odd}」`);renderPartyGame(); }
-  else if (action === 'heart-draw' || action === 'heart-skip') { const card=HEART_CARDS[secureRandomInt(HEART_CARDS.length)],turn=s.turn||'me';s.card=card;s.turn=turn;savePartyGameState(s);partyGameEvent(turn==='them'?fromThem:'me',`抽到心动卡：${card}`);renderPartyGame(); }
-  else if (action === 'heart-finish') { const who=s.turn||'me';partyGameEvent(who==='them'?fromThem:'me','完成了这张心动卡');s={done:(s.done||0)+1,turn:who==='me'?'them':'me',card:null};savePartyGameState(s);renderPartyGame(); }
-  else if (action === 'dice-new') { s={...s,phase:'userDeclare',userRoll:1+secureRandomInt(6),lastResult:''};savePartyGameState(s);partyGameEvent('me','摇了骰子，点数暂时保密');renderPartyGame(); }
-  else if (action === 'dice-declare') { const claim=Number(value),lied=claim!==s.userRoll,doubt=secureRandomInt(100)<45,themCorrect=doubt?lied:!lied;if(themCorrect)s.themScore=(s.themScore||0)+1;else s.meScore=(s.meScore||0)+1;partyGameEvent('me',`我说自己摇到了 ${claim} 点`);partyGameEvent(fromThem,doubt?`我不信，是 ${s.userRoll} 点吧`:'我相信你');const roll=1+secureRandomInt(6),willLie=secureRandomInt(100)<48,opponentClaim=willLie?((roll+secureRandomInt(5))%6)+1:roll;s={...s,phase:'opponentClaim',opponentRoll:roll,opponentClaim,lastResult:`你的骰子是 ${s.userRoll}；这一轮${themCorrect?(c?.name||'对方'):'你'}得分`};savePartyGameState(s);renderPartyGame(); }
-  else if (action === 'dice-judge') { const lied=s.opponentClaim!==s.opponentRoll,correct=value==='doubt'?lied:!lied;if(correct)s.meScore=(s.meScore||0)+1;else s.themScore=(s.themScore||0)+1;partyGameEvent('me',value==='doubt'?'我质疑你':'我相信你');partyGameEvent(fromThem,`实际是 ${s.opponentRoll} 点，${correct?'你猜对了':'你猜错了'}`);const winner=(s.meScore||0)>=3?'你':(s.themScore||0)>=3?(c?.name||'对方'):null;if(winner){partyGameEvent(winner==='你'?'me':fromThem,`${winner}赢下了这场骰子吹牛`);s={phase:'new',meScore:0,themScore:0,lastResult:`${winner}获胜`};}else s={...s,phase:'new',lastResult:`实际 ${s.opponentRoll} 点，${correct?'你':'对方'}得分`};savePartyGameState(s);renderPartyGame(); }
-  else if (action === 'compat-new') { let idx=secureRandomInt(COMPATIBILITY_QUESTIONS.length);if(idx===s.lastIndex)idx=(idx+1)%COMPATIBILITY_QUESTIONS.length;s={...s,question:COMPATIBILITY_QUESTIONS[idx],lastIndex:idx};savePartyGameState(s);partyGameEvent('me','发起了一题默契大考验');renderPartyGame(); }
+  else if (action === 'heart-draw' || action === 'heart-skip') { const card=HEART_CARDS[secureRandomInt(HEART_CARDS.length)],turn=s.turn||'me';s={...s,card,answer:null,turn};savePartyGameState(s);partyGameEvent(turn==='them'?fromThem:'me',`抽到：${card.prompt}`);renderPartyGame(); }
+  else if (action === 'heart-answer') { const card=typeof s.card==='string'?{prompt:s.card,replies:['我选这个。']}:s.card;s.answer=card.replies[secureRandomInt(card.replies.length)];savePartyGameState(s);partyGameEvent(fromThem,s.answer);renderPartyGame(); }
+  else if (action === 'heart-finish' || action === 'heart-next') { const who=s.turn||'me';if(action==='heart-finish')partyGameEvent('me','完成了这张心动卡');s={done:(s.done||0)+1,turn:who==='me'?'them':'me',card:null,answer:null};savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'dice-new') { s={version:2,meDiceCount:5,themDiceCount:5,round:0,winner:null};partyGameEvent('me','开始了一场大话骰',{reset:true});startLiarRound(s);savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'dice-round') { startLiarRound(s);savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'liar-bid') { const bid={qty:Number(document.getElementById('liarBidQty')?.value),face:Number(document.getElementById('liarBidFace')?.value),by:'me'};if(!isHigherLiarBid(bid,s.bid)){alert('新的叫点必须比当前更高');return;}s.bid=bid;s.turn='them';partyGameEvent('me',`叫 ${bid.qty} 颗 ${bid.face} 点`);liarOpponentAct(s);savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'liar-challenge') { if(!s.bid)return;resolveLiarChallenge(s,'me');savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'compat-new') { let idx=secureRandomInt(COMPATIBILITY_QUESTIONS.length);if(idx===s.lastIndex)idx=(idx+1)%COMPATIBILITY_QUESTIONS.length;s={...s,question:COMPATIBILITY_QUESTIONS[idx],lastIndex:idx};savePartyGameState(s);partyGameEvent('me','发起了一题默契大考验',{reset:!(s.rounds||0)});renderPartyGame(); }
   else if (action === 'compat-pick') { const mine=Number(value),theirs=secureRandomInt(s.question.a.length),match=mine===theirs;s.rounds=(s.rounds||0)+1;if(match)s.matches=(s.matches||0)+1;partyGameEvent('me',`我的答案：${s.question.a[mine]}`);partyGameEvent(fromThem,`我的答案：${s.question.a[theirs]}。${match?'这次想到一起了':'这次不一样'}`);s.question=null;savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'gomoku-new') { s={board:Array(81).fill(0),active:true,winner:0,moves:0};savePartyGameState(s);partyGameEvent('me','开始了一局五子棋（我执黑）',{reset:true});renderPartyGame(); }
+  else if (action === 'gomoku-place') { const i=Number(value);if(!s.active||s.board[i])return;s.board[i]=1;s.moves++;partyGameEvent('me',`黑棋落在 ${String.fromCharCode(65+i%9)}${Math.floor(i/9)+1}`);if(gomokuWins(s.board,1)){s.active=false;s.winner=1;partyGameEvent('me','五子连线，我赢了');}else if(s.moves>=81){s.active=false;}else{const j=gomokuSystemMove(s.board);s.board[j]=2;s.moves++;partyGameEvent(fromThem,`白棋落在 ${String.fromCharCode(65+j%9)}${Math.floor(j/9)+1}`);if(gomokuWins(s.board,2)){s.active=false;s.winner=2;partyGameEvent(fromThem,'五子连线，这局我赢了');}else if(s.moves>=81)s.active=false;}savePartyGameState(s);renderPartyGame(); }
 }
 function sendPartyGameChat() {
   const input=document.getElementById('partyGameChatInput'),text=input?.value.trim();if(!text||!_partyGameContactId)return;
