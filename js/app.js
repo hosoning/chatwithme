@@ -143,7 +143,7 @@ function persist() {
         contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
         avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
         chatBg: state.chatBg, momentsCover: state.momentsCover,
-        wordCards: collectWordCardData(), stickers: getStickers()
+        wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers()
       });
     }
   }, 2000);
@@ -191,6 +191,7 @@ async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
   if (cloudData.chatBg && (overwrite || !state.chatBg)) state.chatBg = cloudData.chatBg;
   if (cloudData.momentsCover && (overwrite || !state.momentsCover)) state.momentsCover = cloudData.momentsCover;
   if (cloudData.wordCards) restoreWordCardData(cloudData.wordCards);
+  if (cloudData.dictionary) DictionaryBank.restoreUserData(cloudData.dictionary, !overwrite);
   if (cloudData.stickers) saveStickers(cloudData.stickers);
   safeSaveJSON(STORE.contacts, state.contacts);
   safeSaveJSON(STORE.groups, state.groups);
@@ -2618,7 +2619,7 @@ function exportData() {
     contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
     chatBg: state.chatBg, momentsCover: state.momentsCover,
-    wordCards: collectWordCardData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
+    wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2640,6 +2641,7 @@ function importData(file) {
       if (data.chatBg) state.chatBg = data.chatBg;
       if (data.momentsCover) state.momentsCover = data.momentsCover;
       if (data.wordCards) restoreWordCardData(data.wordCards);
+      if (data.dictionary) DictionaryBank.restoreUserData(data.dictionary);
       if (data.stickers) saveStickers(data.stickers);
       if (data.aiConfig) saveAIConfig(data.aiConfig);
       persist();
@@ -2721,7 +2723,7 @@ function showCloudVerification(info, type = 'verified') {
   loadSettingsSummaries();
 }
 function cloudPayload() {
-  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), stickers: getStickers() };
+  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers() };
 }
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
