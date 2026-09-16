@@ -2364,9 +2364,10 @@ const COMPATIBILITY_QUESTIONS = [
 ];
 let _partyGameId = null;
 let _partyGameContactId = null;
+const _gomokuTimers = Object.create(null);
 function partyGameMeta(id=_partyGameId) { return PARTY_GAMES.find(g => g.id === id) || PARTY_GAMES[0]; }
 function partyGameKey(gameId=_partyGameId, contactId=_partyGameContactId) { return `tarot_party_${gameId}_v1_${contactId}`; }
-function partyGameSessionKey() { return `${partyGameKey()}_session`; }
+function partyGameSessionKey(gameId=_partyGameId, contactId=_partyGameContactId) { return `${partyGameKey(gameId,contactId)}_session`; }
 function loadPartyGameState() { return safeLoadJSON(partyGameKey(), {}); }
 function savePartyGameState(data) { safeSaveJSON(partyGameKey(), data || {}); }
 function pickPartyContact(preferred) {
@@ -2376,14 +2377,15 @@ function pickPartyContact(preferred) {
 }
 function resetPartyGameSession() { safeRemoveItem(partyGameSessionKey()); }
 function partyGameEvent(from, text, options={}) {
-  if (!_partyGameContactId) return;
-  const g = partyGameMeta(), c = getContactById(_partyGameContactId);
-  let session = options.reset ? null : safeLoadJSON(partyGameSessionKey(), null);
-  const rows = state.chats[_partyGameContactId] || [];
+  const gameId=options.gameId||_partyGameId, contactId=String(options.contactId||_partyGameContactId||'');
+  if (!contactId) return;
+  const g = partyGameMeta(gameId), c = getContactById(contactId);
+  let session = options.reset ? null : safeLoadJSON(partyGameSessionKey(gameId,contactId), null);
+  const rows = state.chats[contactId] || [];
   let msg = session?.messageId ? rows.find(m => String(m.id) === String(session.messageId) && !m.deletedAt) : null;
   if (!msg) {
     session = { messageId:null, history:[], startedAt:Date.now() };
-    msg = addMessage(_partyGameContactId, 'me', '', { type:'game', gameId:g.id, gameTitle:g.title });
+    msg = addMessage(contactId, 'me', '', { type:'game', gameId:g.id, gameTitle:g.title });
     session.messageId = msg.id;
   }
   const speaker = from === 'me' ? (state.myName || '我') : (c?.name || '对方');
@@ -2392,11 +2394,11 @@ function partyGameEvent(from, text, options={}) {
   msg.gameTitle = g.title;
   msg.gameId = g.id;
   msg.modifiedAt = Date.now();
-  safeSaveJSON(partyGameSessionKey(), session);
+  safeSaveJSON(partyGameSessionKey(gameId,contactId), session);
   persist();
-  if (String(_partyGameContactId) === String(state.activeChatId)) renderMessages();
+  if (contactId === String(state.activeChatId)) renderMessages();
   renderChatList();
-  renderPartyGameChatPreview();
+  if (gameId===_partyGameId&&contactId===String(_partyGameContactId)) renderPartyGameChatPreview();
 }
 function renderPartyGameChatPreview() {
   const box = document.getElementById('partyGameChatPreview'); if (!box) return;
@@ -2428,8 +2430,9 @@ function renderDiceBluffGame(s) {
 }
 function renderGomokuGame(s) {
   if (!Array.isArray(s.board)) return `<div class="party-game-status">你执黑先手，对方由本机规则随机落子；会挡住明显的五连，但不会调用 AI 或 API。</div>${gameActions([{action:'gomoku-new',label:'开始对局'}])}`;
-  const cells=s.board.map((v,i)=>`<button class="gomoku-cell" data-game-action="gomoku-place" data-game-value="${i}" ${v||!s.active?'disabled':''}>${v?`<span class="gomoku-stone ${v===1?'black':'white'}"></span>`:''}</button>`).join('');
-  const result=s.winner===1?'你赢了':s.winner===2?`${getContactById(_partyGameContactId)?.name||'对方'}赢了`:s.active?'轮到你（黑棋）':'和棋';
+  const cells=s.board.map((v,i)=>`<button class="gomoku-cell" data-game-action="gomoku-place" data-game-value="${i}" ${v||!s.active||s.thinking?'disabled':''}>${v?`<span class="gomoku-stone ${v===1?'black':'white'}"></span>`:''}</button>`).join('');
+  const peer=getContactById(_partyGameContactId)?.name||'对方';
+  const result=s.winner===1?'你赢了':s.winner===2?`${peer}赢了`:s.thinking?`${peer}正在想…`:s.active?'轮到你（黑棋）':'和棋';
   return `<div class="party-game-status">${escapeHtml(result)}</div><div class="gomoku-board">${cells}</div>${!s.active?gameActions([{action:'gomoku-new',label:'再来一局'}]):''}`;
 }
 function renderCompatibilityGame(s) {
@@ -2444,6 +2447,7 @@ function renderPartyGame() {
   document.getElementById('partyGameHero').style.background = g.color;
   const s = loadPartyGameState();
   board.innerHTML = g.id === 'undercover' ? renderUndercoverGame(s) : g.id === 'heartcards' ? renderHeartCardsGame(s) : g.id === 'dicebluff' ? renderDiceBluffGame(s) : g.id === 'gomoku' ? renderGomokuGame(s) : renderCompatibilityGame(s);
+  if(g.id==='gomoku'&&s.active&&s.thinking&&s.turnToken) scheduleGomokuSystemMove(String(_partyGameContactId),s.turnToken,Math.max(0,Number(s.opponentMoveAt||Date.now())-Date.now()));
   renderPartyGameChatPreview();
 }
 function openPartyGame(gameId, preferredContactId=null) {
@@ -2500,6 +2504,23 @@ function gomokuSystemMove(board) {
   const scored=empty.map(i=>{const r=Math.floor(i/9),c=i%9;let score=8-(Math.abs(r-4)+Math.abs(c-4));for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const rr=r+dr,cc=c+dc;if(rr>=0&&rr<9&&cc>=0&&cc<9&&board[rr*9+cc])score+=4;}return{i,score:score+secureRandomInt(4)};}).sort((a,b)=>b.score-a.score);
   const top=scored.filter(x=>x.score>=scored[0].score-1);return top[secureRandomInt(top.length)].i;
 }
+function scheduleGomokuSystemMove(contactId, token, delayMs) {
+  clearTimeout(_gomokuTimers[contactId]);
+  _gomokuTimers[contactId]=setTimeout(()=>finishGomokuSystemMove(contactId,token),Math.max(0,Number(delayMs)||0));
+}
+function finishGomokuSystemMove(contactId, token) {
+  delete _gomokuTimers[contactId];
+  const key=partyGameKey('gomoku',contactId),s=safeLoadJSON(key,{}),c=getContactById(contactId);
+  if(!s.active||!s.thinking||s.turnToken!==token||!Array.isArray(s.board))return;
+  const j=gomokuSystemMove(s.board);
+  if(j==null){s.active=false;s.thinking=false;safeSaveJSON(key,s);return;}
+  s.board[j]=2;s.moves++;s.thinking=false;s.turn='me';delete s.opponentMoveAt;
+  if(gomokuWins(s.board,2)){s.active=false;s.winner=2;}else if(s.moves>=81)s.active=false;
+  safeSaveJSON(key,s);
+  partyGameEvent(String(c?.id||contactId),`白棋落在 ${String.fromCharCode(65+j%9)}${Math.floor(j/9)+1}`,{gameId:'gomoku',contactId});
+  if(s.winner===2)partyGameEvent(String(c?.id||contactId),'五子连线，这局我赢了',{gameId:'gomoku',contactId});
+  if(_partyGameId==='gomoku'&&String(_partyGameContactId)===String(contactId))renderPartyGame();
+}
 function handlePartyGameAction(action, value) {
   let s = loadPartyGameState(), c = getContactById(_partyGameContactId), fromThem = String(c?.id);
   if (action === 'undercover-new') startUndercoverRound();
@@ -2513,8 +2534,15 @@ function handlePartyGameAction(action, value) {
   else if (action === 'liar-challenge') { if(!s.bid)return;resolveLiarChallenge(s,'me');savePartyGameState(s);renderPartyGame(); }
   else if (action === 'compat-new') { let idx=secureRandomInt(COMPATIBILITY_QUESTIONS.length);if(idx===s.lastIndex)idx=(idx+1)%COMPATIBILITY_QUESTIONS.length;s={...s,question:COMPATIBILITY_QUESTIONS[idx],lastIndex:idx};savePartyGameState(s);partyGameEvent('me','发起了一题默契大考验',{reset:!(s.rounds||0)});renderPartyGame(); }
   else if (action === 'compat-pick') { const mine=Number(value),theirs=secureRandomInt(s.question.a.length),match=mine===theirs;s.rounds=(s.rounds||0)+1;if(match)s.matches=(s.matches||0)+1;partyGameEvent('me',`我的答案：${s.question.a[mine]}`);partyGameEvent(fromThem,`我的答案：${s.question.a[theirs]}。${match?'这次想到一起了':'这次不一样'}`);s.question=null;savePartyGameState(s);renderPartyGame(); }
-  else if (action === 'gomoku-new') { s={board:Array(81).fill(0),active:true,winner:0,moves:0};savePartyGameState(s);partyGameEvent('me','开始了一局五子棋（我执黑）',{reset:true});renderPartyGame(); }
-  else if (action === 'gomoku-place') { const i=Number(value);if(!s.active||s.board[i])return;s.board[i]=1;s.moves++;partyGameEvent('me',`黑棋落在 ${String.fromCharCode(65+i%9)}${Math.floor(i/9)+1}`);if(gomokuWins(s.board,1)){s.active=false;s.winner=1;partyGameEvent('me','五子连线，我赢了');}else if(s.moves>=81){s.active=false;}else{const j=gomokuSystemMove(s.board);s.board[j]=2;s.moves++;partyGameEvent(fromThem,`白棋落在 ${String.fromCharCode(65+j%9)}${Math.floor(j/9)+1}`);if(gomokuWins(s.board,2)){s.active=false;s.winner=2;partyGameEvent(fromThem,'五子连线，这局我赢了');}else if(s.moves>=81)s.active=false;}savePartyGameState(s);renderPartyGame(); }
+  else if (action === 'gomoku-new') { clearTimeout(_gomokuTimers[String(_partyGameContactId)]);s={board:Array(81).fill(0),active:true,winner:0,moves:0,thinking:false,turn:'me'};savePartyGameState(s);partyGameEvent('me','开始了一局五子棋（我执黑）',{reset:true});renderPartyGame(); }
+  else if (action === 'gomoku-place') {
+    const i=Number(value);if(!s.active||s.thinking||s.board[i])return;
+    s.board[i]=1;s.moves++;partyGameEvent('me',`黑棋落在 ${String.fromCharCode(65+i%9)}${Math.floor(i/9)+1}`);
+    if(gomokuWins(s.board,1)){s.active=false;s.winner=1;partyGameEvent('me','五子连线，我赢了');}
+    else if(s.moves>=81){s.active=false;}
+    else{s.thinking=true;s.turn='them';s.turnToken=`${Date.now()}-${secureRandomInt(1000000)}`;const delay=3000+secureRandomInt(2001);s.opponentMoveAt=Date.now()+delay;savePartyGameState(s);renderPartyGame();scheduleGomokuSystemMove(String(_partyGameContactId),s.turnToken,delay);return;}
+    savePartyGameState(s);renderPartyGame();
+  }
 }
 function sendPartyGameChat() {
   const input=document.getElementById('partyGameChatInput'),text=input?.value.trim();if(!text||!_partyGameContactId)return;
