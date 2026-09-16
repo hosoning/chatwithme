@@ -253,6 +253,8 @@ async function pickAvatarFromCards(cards, library, persona) {
   let settingsChatId = null;
   let wordCardContactId = null;
   let wordCardListType = 'custom';
+  let dictionaryContactId = null;
+  let dictionaryTagFilter = '';
   const intimateFollowupTimers = Object.create(null);
 
   function sleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Number(ms) || 0))); }
@@ -358,6 +360,20 @@ async function pickAvatarFromCards(cards, library, persona) {
       .wordcard-v2-row:last-child{border-bottom:none;}
       .wordcard-v2-delete{border:none;background:#f1f1f1;color:#999;width:26px;height:26px;border-radius:13px;font-size:17px;flex-shrink:0;}
       .wordcard-v2-empty{padding:34px 15px;text-align:center;color:#aaa;font-size:14px;}
+      .dictionary-v2-tools{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:grid;grid-template-columns:1fr 110px;gap:8px;}
+      .dictionary-v2-tools input,.dictionary-v2-tools select{border:none;background:#f5f5f5;border-radius:8px;padding:10px;font-size:14px;min-width:0;outline:none;user-select:text!important;-webkit-user-select:text!important;}
+      .dictionary-v2-add{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:grid;grid-template-columns:1fr 110px auto;gap:8px;}
+      .dictionary-v2-add input,.dictionary-v2-add select{border:none;background:#f5f5f5;border-radius:8px;padding:10px;font-size:14px;min-width:0;outline:none;user-select:text!important;-webkit-user-select:text!important;}
+      .dictionary-v2-add button{border:none;background:#07c160;color:#fff;border-radius:8px;padding:0 13px;font-size:14px;}
+      .dictionary-v2-summary{display:flex;justify-content:space-between;align-items:center;color:#888;font-size:12px;padding:2px 2px 10px;}
+      .dictionary-v2-reset{border:0;background:transparent;color:#576b95;font-size:12px;padding:2px 0;}
+      .dictionary-v2-list{background:#fff;border-radius:12px;overflow:hidden;}
+      .dictionary-v2-row{display:flex;align-items:center;gap:10px;min-height:48px;padding:9px 13px;border-bottom:.5px solid #ececec;}
+      .dictionary-v2-row:last-child{border-bottom:none;}
+      .dictionary-v2-term{flex:1;min-width:0;font-size:15px;word-break:break-word;}
+      .dictionary-v2-badge{font-size:11px;color:#888;background:#f2f2f2;border-radius:10px;padding:3px 7px;white-space:nowrap;}
+      .dictionary-v2-delete{border:0;background:#f1f1f1;color:#999;width:26px;height:26px;border-radius:50%;font-size:17px;flex-shrink:0;}
+      @media(max-width:390px){.dictionary-v2-add{grid-template-columns:1fr 94px}.dictionary-v2-add button{grid-column:1/-1;height:38px}.dictionary-v2-tools{grid-template-columns:1fr 94px}}
     `;
     document.head.appendChild(style);
   }
@@ -399,10 +415,20 @@ async function pickAvatarFromCards(cards, library, persona) {
         <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromChatWordCardsV2" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-title" id="wordCardV2Title">专属字卡</span><span style="width:25px"></span></div>
         <div class="settings-v2-editor"><div class="wordcard-v2-add"><input id="wordCardV2Input" placeholder="添加一条字卡"><button id="wordCardV2AddBtn">添加</button></div><div class="wordcard-v2-list" id="wordCardV2List"></div></div>
       </div>
+      <div class="page hidden" id="page-chat-dictionary-v2">
+        <div class="nav-bar"><svg class="icon-btn nav-back" id="backFromChatDictionaryV2" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-title">词典管理</span><span style="width:25px"></span></div>
+        <div class="settings-v2-editor">
+          <div class="dictionary-v2-tools"><input id="dictionarySearchV2" placeholder="搜索词语"><select id="dictionaryTagFilterV2"></select></div>
+          <div class="dictionary-v2-add"><input id="dictionaryAddTextV2" placeholder="添加词语"><select id="dictionaryAddTagV2"></select><button id="dictionaryAddBtnV2">添加</button></div>
+          <div class="dictionary-v2-summary"><span id="dictionaryCountV2"></span><button class="dictionary-v2-reset" id="dictionaryRestoreV2">恢复隐藏的内建词</button></div>
+          <div class="dictionary-v2-list" id="dictionaryListV2"></div>
+        </div>
+      </div>
     `);
     document.getElementById('backFromChatSettingsV2')?.addEventListener('click', () => popPage());
     document.getElementById('backFromChatSettingDetailV2')?.addEventListener('click', () => popPage());
     document.getElementById('backFromChatWordCardsV2')?.addEventListener('click', () => popPage());
+    document.getElementById('backFromChatDictionaryV2')?.addEventListener('click', () => popPage());
     document.getElementById('chatSettingsV2Body')?.addEventListener('click', handleSettingsClick);
     document.getElementById('chatSettingsV2Body')?.addEventListener('change', handleSettingsChange);
     document.getElementById('wordCardV2AddBtn')?.addEventListener('click', addWordCardV2);
@@ -419,6 +445,20 @@ async function pickAvatarFromCards(cards, library, persona) {
       }
       renderWordCardsV2();
       renderChatSettingsV2();
+    });
+    document.getElementById('dictionarySearchV2')?.addEventListener('input', renderDictionaryV2);
+    document.getElementById('dictionaryTagFilterV2')?.addEventListener('change', e => { dictionaryTagFilter = e.target.value; renderDictionaryV2(); });
+    document.getElementById('dictionaryAddBtnV2')?.addEventListener('click', addDictionaryTermV2);
+    document.getElementById('dictionaryAddTextV2')?.addEventListener('keydown', e => { if (e.key === 'Enter') addDictionaryTermV2(); });
+    document.getElementById('dictionaryListV2')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-delete-dictionary]');
+      if (!btn) return;
+      DictionaryBank.remove(btn.dataset.deleteDictionary);
+      renderDictionaryV2(); renderChatSettingsV2();
+    });
+    document.getElementById('dictionaryRestoreV2')?.addEventListener('click', () => {
+      if (!confirm('恢复所有被隐藏的内建词？你自己添加的词不会改变。')) return;
+      DictionaryBank.restoreBuiltins(); renderDictionaryV2(); renderChatSettingsV2();
     });
   }
 
@@ -453,6 +493,7 @@ async function pickAvatarFromCards(cards, library, persona) {
       if (!c) return;
       const customCount = WordCards.getContactList(c.id).length;
       const intimateCount = WordCards.getIntimateList(c.id).length;
+      const dictionaryCount = DictionaryBank.getAll().length;
       body.innerHTML = `
         <div class="settings-v2-profile">${avatarHtml(c.avatar, c.name, 52)}<div><div class="settings-v2-profile-name">${escapeHtml(c.name)}</div><div class="settings-v2-profile-sub">角色聊天设置</div></div></div>
         <div class="settings-v2-group">
@@ -461,6 +502,11 @@ async function pickAvatarFromCards(cards, library, persona) {
           <div class="settings-v2-row"><span>叠加专属字卡</span><label class="settings-v2-switch"><input id="wordCardModeSwitchV2" type="checkbox" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span></span></label></div>
           <div class="settings-v2-row" data-setting="intimate-wordcards"><span>亲密字卡</span><div class="settings-v2-right"><span>${intimateCount ? `${intimateCount} 条` : '未添加'}</span>${chevron()}</div></div>
           <div class="settings-v2-row"><span>只使用亲密字卡</span><label class="settings-v2-switch"><input id="intimateWordCardSwitchV2" type="checkbox" ${c.intimateWordCardsEnabled ? 'checked' : ''}><span></span></label></div>
+        </div>
+        <div class="settings-v2-group">
+          <div class="settings-v2-row"><span>词典造句</span><label class="settings-v2-switch"><input id="dictionaryEnabledSwitchV2" type="checkbox" ${c.dictionaryEnabled ? 'checked' : ''}><span></span></label></div>
+          <div class="settings-v2-row"><span>每次词量</span><select id="dictionaryRangeV2" style="border:0;background:transparent;color:#576b95;font-size:15px"><option value="1-4" ${(c.dictionaryRange||'1-4')==='1-4'?'selected':''}>1–4 个词</option><option value="1-8" ${c.dictionaryRange==='1-8'?'selected':''}>1–8 个词</option></select></div>
+          <div class="settings-v2-row" data-setting="dictionary"><span>词典管理</span><div class="settings-v2-right"><span>${dictionaryCount} 个词</span>${chevron()}</div></div>
         </div>
         <div class="settings-v2-group">
           <div class="settings-v2-row" data-setting="global-delay"><span>回复间隔</span><div class="settings-v2-right"><span>${formatDelay(getGlobalDelay())}</span>${chevron()}</div></div>
@@ -495,6 +541,14 @@ async function pickAvatarFromCards(cards, library, persona) {
       if (!e.target.checked) { clearTimeout(intimateFollowupTimers[settingsChatId]); delete intimateFollowupTimers[settingsChatId]; }
       persist();
     }
+    if (e.target.id === 'dictionaryEnabledSwitchV2' && !isGroupChat(settingsChatId)) {
+      const c = getContactById(settingsChatId);
+      if (c) { c.dictionaryEnabled = e.target.checked; persist(); }
+    }
+    if (e.target.id === 'dictionaryRangeV2' && !isGroupChat(settingsChatId)) {
+      const c = getContactById(settingsChatId);
+      if (c) { c.dictionaryRange = e.target.value === '1-8' ? '1-8' : '1-4'; persist(); }
+    }
   }
 
   function handleSettingsClick(e) {
@@ -504,6 +558,7 @@ async function pickAvatarFromCards(cards, library, persona) {
     if (action === 'persona') return openPersonaEditorV2();
     if (action === 'wordcards') return openWordCardsV2();
     if (action === 'intimate-wordcards') return openWordCardsV2('intimate');
+    if (action === 'dictionary') return openDictionaryV2();
     if (action === 'global-delay') return openDelayEditorV2();
     if (action === 'group-name') return openGroupNameEditorV2();
     if (action === 'clear-chat') {
@@ -586,6 +641,45 @@ async function pickAvatarFromCards(cards, library, persona) {
     renderWordCardsV2(); renderChatSettingsV2();
   }
 
+  function openDictionaryV2() {
+    if (isGroupChat(settingsChatId)) return;
+    dictionaryContactId = settingsChatId;
+    dictionaryTagFilter = '';
+    const tagFilter = document.getElementById('dictionaryTagFilterV2');
+    const tagOptions = DictionaryBank.getTags().map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(DictionaryBank.labelFor(tag))}</option>`).join('');
+    tagFilter.innerHTML = `<option value="">全部标签</option>${tagOptions}`;
+    document.getElementById('dictionaryAddTagV2').innerHTML = tagOptions;
+    document.getElementById('dictionaryAddTagV2').value = 'topic';
+    document.getElementById('dictionarySearchV2').value = '';
+    renderDictionaryV2();
+    pushPage('page-chat-dictionary-v2');
+  }
+  function renderDictionaryV2() {
+    const box = document.getElementById('dictionaryListV2');
+    if (!box) return;
+    const query = (document.getElementById('dictionarySearchV2')?.value || '').trim().toLocaleLowerCase();
+    const all = DictionaryBank.getAll(dictionaryTagFilter);
+    const filtered = query ? all.filter(item => `${item.text} ${DictionaryBank.labelFor(item.tag)} ${item.tag}`.toLocaleLowerCase().includes(query)) : all;
+    const visible = filtered.slice(0, 160);
+    document.getElementById('dictionaryCountV2').textContent = `${filtered.length} 个词${filtered.length > visible.length ? ` · 显示前 ${visible.length} 个，请用搜索缩小范围` : ''}`;
+    box.innerHTML = visible.length ? visible.map(item => `<div class="dictionary-v2-row"><div class="dictionary-v2-term">${escapeHtml(item.text)}</div><span class="dictionary-v2-badge">${escapeHtml(DictionaryBank.labelFor(item.tag))}</span><button class="dictionary-v2-delete" data-delete-dictionary="${escapeHtml(item.id)}">×</button></div>`).join('') : '<div class="wordcard-v2-empty">没有符合条件的词</div>';
+  }
+  function addDictionaryTermV2() {
+    const textInput = document.getElementById('dictionaryAddTextV2');
+    const tagInput = document.getElementById('dictionaryAddTagV2');
+    const text = textInput?.value.trim(), rawTag = tagInput?.value || 'topic';
+    if (!text) return;
+    if (!DictionaryBank.addCustom(text, rawTag)) { alert('这个标签下已经有相同词语'); return; }
+    textInput.value = '';
+    const tagFilter = document.getElementById('dictionaryTagFilterV2');
+    const tags = DictionaryBank.getTags();
+    tagFilter.innerHTML = `<option value="">全部标签</option>${tags.map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(DictionaryBank.labelFor(tag))}</option>`).join('')}`;
+    tagFilter.value = tags.includes(dictionaryTagFilter) ? dictionaryTagFilter : '';
+    tagInput.innerHTML = tags.map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(DictionaryBank.labelFor(tag))}</option>`).join('');
+    tagInput.value = tags.includes(rawTag) ? rawTag : 'topic';
+    renderDictionaryV2(); renderChatSettingsV2();
+  }
+
   function injectGlobalDelaySetting() {
     const saveBtn = document.getElementById('saveSettingsBtn');
     if (!saveBtn || document.getElementById('replyGlobalDelaySelect')) return;
@@ -655,7 +749,8 @@ async function pickAvatarFromCards(cards, library, persona) {
       try {
         await sleep(delayMs);
         if (!contact?.intimateWordCardsEnabled && shouldSendRedPacket(cards)) { const amount=randomRedPacketAmount(), note=pool[secureRandomInt(pool.length)]||'恭喜发财'; addMessage(chatId,fromId,note,{type:'redpacket',cards,shieldCards,shield,redpacket:{amount,note,status:'unclaimed',claimedBy:null}}); return; }
-        const picks = await interpretAndReply(text,cards,pool,persona);
+        const generated = contact?.dictionaryEnabled && !contact?.intimateWordCardsEnabled ? DictionaryBank.generate(contact.dictionaryRange || '1-4') : null;
+        const picks = generated ? [generated.text] : await interpretAndReply(text,cards,pool,persona);
         if (contact?.intimateWordCardsEnabled) {
           hideTypingIndicator();
           const intimatePicks = intimateBurstPicks(pool, 3, 5, picks);
@@ -665,7 +760,7 @@ async function pickAvatarFromCards(cards, library, persona) {
         }
         const safePicks = Array.isArray(picks)&&picks.length?picks:[(pool&&pool.length?pool[secureRandomInt(pool.length)]:'嗯')];
         const voiceFirst=nextReplyStartsWithVoice(chatId);
-        for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const useVoice=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(safePicks[i])&&((i%2===0)===voiceFirst); const voiceUrl=useVoice?await synthesizeVoice(safePicks[i]):null; addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl}); }
+        for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const useVoice=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(safePicks[i])&&((i%2===0)===voiceFirst); const voiceUrl=useVoice?await synthesizeVoice(safePicks[i]):null; addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl,...(generated?{dictionaryTerms:generated.terms}: {})}); }
         if(typeof maybeContactOrderFood==='function')maybeContactOrderFood(chatId,fromId,text);
       } finally { hideTypingIndicator(); }
     };
