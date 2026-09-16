@@ -30,10 +30,10 @@ firebase.messaging().onBackgroundMessage(payload => {
   });
 });
 
-const CACHE_NAME = 'tarot-wechat-v50';
+const CACHE_NAME = 'tarot-wechat-v51';
 const ASSETS = [
   './', './index.html',
-  './js/tarot.js', './js/wordcards.js', './js/ai.js', './js/cloud.js', './js/app.js',
+  './js/tarot.js', './js/wordcards.js', './js/dictionary.js', './js/ai.js', './js/cloud.js', './js/app.js',
   './manifest.json'
 ];
 self.addEventListener('install', e => {
