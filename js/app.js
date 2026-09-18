@@ -69,7 +69,7 @@ const STORE = {
   contacts: 'tarot_contacts_v2', groups: 'tarot_groups_v1', chats: 'tarot_chats_v2',
   moments: 'tarot_moments_v1', avatarLib: 'tarot_avatarlib_v1', myAvatar: 'tarot_my_avatar_v1',
   myName: 'tarot_my_name_v1', chatBg: 'tarot_chat_bg_v1', momentsCover: 'tarot_moments_cover_v1',
-  unread: 'tarot_unread_v1'
+  unread: 'tarot_unread_v1', privateBlog: 'tarot_private_blog_v1'
 };
 const STICKER_KEY = 'tarot_stickers_v1';
 const WALLET_KEY = 'tarot_wallet_v1';
@@ -109,6 +109,7 @@ const state = {
   chatBg: safeGetItem(STORE.chatBg, null) || null,
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   unread: safeLoadJSON(STORE.unread, {}),
+  privateBlog: safeLoadJSON(STORE.privateBlog, []),
   activeChatId: null,
   pendingBatch: {},
   batchTimer: {}
@@ -134,6 +135,7 @@ function persist() {
   safeSetItem(STORE.chatBg, state.chatBg || '');
   safeSetItem(STORE.momentsCover, state.momentsCover || '');
   safeSaveJSON(STORE.unread, state.unread);
+  safeSaveJSON(STORE.privateBlog, state.privateBlog);
 
   clearTimeout(_cloudSyncTimer);
   _cloudSyncTimer = setTimeout(() => {
@@ -142,7 +144,7 @@ function persist() {
       cloudUpload({
         contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
         avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
-        chatBg: state.chatBg, momentsCover: state.momentsCover,
+        chatBg: state.chatBg, momentsCover: state.momentsCover, privateBlog: state.privateBlog,
         wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers()
       });
     }
@@ -185,6 +187,7 @@ async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
   if (cloudData.groups) state.groups = overwrite ? cloudData.groups : mergeById(cloudData.groups, state.groups);
   if (cloudData.chats) state.chats = overwrite ? cloudData.chats : mergeChatHistory(state.chats, cloudData.chats);
   if (cloudData.moments) state.moments = overwrite ? cloudData.moments : mergeById(cloudData.moments, state.moments);
+  if (cloudData.privateBlog) state.privateBlog = overwrite ? cloudData.privateBlog : mergeById(cloudData.privateBlog, state.privateBlog);
   if (cloudData.avatarLibrary) state.avatarLibrary = overwrite ? cloudData.avatarLibrary : mergeById(cloudData.avatarLibrary, state.avatarLibrary);
   if (cloudData.myAvatar && (overwrite || !state.myAvatar)) state.myAvatar = cloudData.myAvatar;
   if (cloudData.myName && (overwrite || !state.myName || state.myName === '我')) state.myName = cloudData.myName;
@@ -197,6 +200,7 @@ async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
   safeSaveJSON(STORE.groups, state.groups);
   safeSaveJSON(STORE.chats, state.chats);
   safeSaveJSON(STORE.moments, state.moments);
+  safeSaveJSON(STORE.privateBlog, state.privateBlog);
   safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
   safeSetItem(STORE.myAvatar, state.myAvatar || '');
   safeSetItem(STORE.myName, state.myName || '');
@@ -2590,8 +2594,82 @@ const TEA_ORDER_PREFIX='tarot_food_order_v3_';
 let _teaDraft={cart:{},storeId:'mutea',branchName:'',method:'delivery',recipientName:'',recipientPhone:'',address:'',note:''},_teaCustomProductId=null,_teaTrackTimers=[];
 
 function teaOrderKey(storeId){return TEA_ORDER_PREFIX+(storeId||'mutea');}
-function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=`<div class="mini-programs-title">双人游戏</div><div class="mini-programs-grid">${PARTY_GAMES.map(g=>`<button class="mini-program-tile" data-party-game="${g.id}"><div class="mini-app-icon game" style="background:${g.color}">${g.icon}</div><span>${escapeHtml(g.title)}</span></button>`).join('')}</div><div class="mini-programs-title" style="margin-top:24px">外卖点单</div><div class="mini-programs-grid">${TEA_STORES.map(s=>`<button class="mini-program-tile" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><span>${escapeHtml(s.name)}</span></button>`).join('')}</div><div class="mini-program-tip">每个图标都是独立小程序，进度会分别保存</div>`;}
-function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>{renderMiniProgramStores();pushPage('page-miniprograms');});document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniProgramStoreList')?.addEventListener('click',e=>{const x=e.target.closest('[data-mini-store]'),g=e.target.closest('[data-party-game]');if(x)openTeaOrder(x.dataset.miniStore);else if(g)openPartyGame(g.dataset.partyGame);});}
+
+/* ============ 小程式：私人微博 ============ */
+let _privateBlogEditingId = null, _privateBlogMenuId = null, _privateBlogCommentingId = null, _privateBlogImage = '';
+function privateBlogPost(id) { return state.privateBlog.find(x => String(x.id) === String(id)); }
+function privateBlogTime(ts) { const d = new Date(Number(ts) || Date.now()); return d.toLocaleString([], { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+function privateBlogRoleOptions(selectedId = '') {
+  const preferred = state.contacts.find(c => c.name === '李泽言') || state.contacts[0];
+  const current = selectedId || preferred?.id || '';
+  const select = document.getElementById('privateBlogRole'); if (!select) return;
+  select.innerHTML = state.contacts.length ? state.contacts.map(c => `<option value="${escapeHtml(c.id)}" ${String(c.id)===String(current)?'selected':''}>${escapeHtml(c.name)}</option>`).join('') : '<option value="">请先新增角色</option>';
+}
+function renderPrivateBlog() {
+  const feed = document.getElementById('privateBlogFeed'); if (!feed) return;
+  const q = (document.getElementById('privateBlogSearch')?.value || '').trim().toLocaleLowerCase();
+  const posts = [...(state.privateBlog || [])].sort((a,b) => Number(b.createdAt)-Number(a.createdAt)).filter(p => !q || `${p.authorName||''} ${p.content||''} ${(p.comments||[]).map(c=>c.text).join(' ')}`.toLocaleLowerCase().includes(q));
+  if (!posts.length) { feed.innerHTML = `<div class="private-blog-empty"><b>${q?'没有找到纪录':'还没有纪录'}</b>${q?'换个关键词试试':'点右下角的 ＋，用李泽言或其他角色身份写下第一篇。'}</div>`; return; }
+  feed.innerHTML = posts.map(p => {
+    const comments = p.comments || [];
+    return `<article class="private-blog-post" data-private-blog-id="${escapeHtml(p.id)}"><header class="private-blog-head">${avatarHtml(p.authorAvatar,p.authorName,44)}<div class="private-blog-meta"><div class="private-blog-author">${escapeHtml(p.authorName||'角色')}</div><div class="private-blog-time">${escapeHtml(privateBlogTime(p.createdAt))}${p.updatedAt?' · 已编辑':''}</div></div><button class="private-blog-menu" data-private-blog-menu aria-label="更多">•••</button></header>${p.content?`<div class="private-blog-content">${escapeHtml(p.content)}</div>`:''}${p.image?`<img class="private-blog-image" src="${p.image}" alt="纪录图片">`:''}<div class="private-blog-actions"><button data-private-blog-comment>💬 留言${comments.length?` ${comments.length}`:''}</button><button class="${p.liked?'active':''}" data-private-blog-like>${p.liked?'♥ 已赞':'♡ 赞好'}</button><button data-private-blog-share>↗ 分享</button></div>${comments.length?`<div class="private-blog-comments">${comments.map(c=>`<div class="private-blog-comment"><b>${escapeHtml(c.name||state.myName||'我')}：</b>${escapeHtml(c.text)}<button data-private-blog-delete-comment="${escapeHtml(c.id)}" aria-label="删除留言">×</button></div>`).join('')}</div>`:''}${String(_privateBlogCommentingId)===String(p.id)?`<div class="private-blog-comment-box"><input maxlength="1000" data-private-blog-comment-input placeholder="以${escapeHtml(state.myName||'我')}的身份留言"><button data-private-blog-send-comment>发送</button></div>`:''}</article>`;
+  }).join('');
+}
+function openPrivateBlog() { _privateBlogCommentingId = null; renderPrivateBlog(); pushPage('page-privateblog'); }
+function openPrivateBlogEditor(id = null) {
+  const p = id ? privateBlogPost(id) : null; _privateBlogEditingId = p?.id || null; _privateBlogImage = p?.image || '';
+  privateBlogRoleOptions(p?.authorId || '');
+  document.getElementById('privateBlogEditorTitle').textContent = p ? '编辑纪录' : '写纪录';
+  document.getElementById('privateBlogPublish').textContent = p ? '保存' : '发布';
+  document.getElementById('privateBlogText').value = p?.content || '';
+  updatePrivateBlogImagePreview(); pushPage('page-privateblog-editor');
+}
+function updatePrivateBlogImagePreview() {
+  const wrap = document.getElementById('privateBlogImagePreview'), img = document.getElementById('privateBlogImage'); if (!wrap || !img) return;
+  wrap.classList.toggle('hidden', !_privateBlogImage); img.src = _privateBlogImage || '';
+}
+function savePrivateBlogPost() {
+  const content = document.getElementById('privateBlogText').value.trim(), authorId = document.getElementById('privateBlogRole').value;
+  const role = getContactById(authorId); if (!role) { alert('请先选择一个角色身份'); return; }
+  if (!content && !_privateBlogImage) { alert('请写一点内容或添加图片'); return; }
+  const now = Date.now(), old = _privateBlogEditingId ? privateBlogPost(_privateBlogEditingId) : null;
+  if (old) Object.assign(old, { authorId:String(role.id), authorName:role.name, authorAvatar:role.avatar||'', content, image:_privateBlogImage, updatedAt:now });
+  else state.privateBlog.unshift({ id:`private_blog_${now}_${secureRandomInt(100000)}`, authorId:String(role.id), authorName:role.name, authorAvatar:role.avatar||'', content, image:_privateBlogImage, createdAt:now, updatedAt:null, liked:false, comments:[] });
+  persist(); _privateBlogEditingId = null; popPage(); renderPrivateBlog();
+}
+function closePrivateBlogMenu() { document.getElementById('privateBlogActionSheet')?.classList.add('hidden'); _privateBlogMenuId = null; }
+async function sharePrivateBlogPost(p) {
+  const text = `${p.authorName||'角色'}\n${p.content||'[图片纪录]'}\n${privateBlogTime(p.createdAt)}`;
+  try { await navigator.clipboard.writeText(text); alert('纪录文字已复制，可自行贴到需要的地方'); }
+  catch (_) { prompt('复制这段纪录', text); }
+}
+function bindPrivateBlog() {
+  document.getElementById('backFromPrivateBlog')?.addEventListener('click', () => popPage());
+  document.getElementById('closePrivateBlog')?.addEventListener('click', () => popPage());
+  document.getElementById('backFromPrivateBlogEditor')?.addEventListener('click', () => popPage());
+  document.getElementById('privateBlogCompose')?.addEventListener('click', () => openPrivateBlogEditor());
+  document.getElementById('privateBlogPublish')?.addEventListener('click', savePrivateBlogPost);
+  document.getElementById('privateBlogSearch')?.addEventListener('input', renderPrivateBlog);
+  document.getElementById('privateBlogAddImage')?.addEventListener('click', () => document.getElementById('privateBlogImageInput').click());
+  document.getElementById('privateBlogRemoveImage')?.addEventListener('click', () => { _privateBlogImage=''; updatePrivateBlogImagePreview(); });
+  document.getElementById('privateBlogImageInput')?.addEventListener('change', e => { const file=e.target.files?.[0]; if(!file)return; const r=new FileReader(); r.onload=async ev=>{_privateBlogImage=await resizeImageDataUrl(ev.target.result,900,.70);updatePrivateBlogImagePreview();};r.readAsDataURL(file);e.target.value=''; });
+  document.getElementById('privateBlogFeed')?.addEventListener('click', e => {
+    const card=e.target.closest('[data-private-blog-id]'), p=card&&privateBlogPost(card.dataset.privateBlogId); if(!p)return;
+    if(e.target.closest('[data-private-blog-menu]')){_privateBlogMenuId=p.id;document.getElementById('privateBlogActionSheet').classList.remove('hidden');return;}
+    if(e.target.closest('[data-private-blog-like]')){p.liked=!p.liked;persist();renderPrivateBlog();return;}
+    if(e.target.closest('[data-private-blog-share]')){sharePrivateBlogPost(p);return;}
+    if(e.target.closest('[data-private-blog-comment]')){_privateBlogCommentingId=String(_privateBlogCommentingId)===String(p.id)?null:p.id;renderPrivateBlog();setTimeout(()=>document.querySelector(`[data-private-blog-id="${CSS.escape(String(p.id))}"] [data-private-blog-comment-input]`)?.focus(),0);return;}
+    const del=e.target.closest('[data-private-blog-delete-comment]');if(del){p.comments=(p.comments||[]).filter(c=>String(c.id)!==String(del.dataset.privateBlogDeleteComment));persist();renderPrivateBlog();return;}
+    if(e.target.closest('[data-private-blog-send-comment]')){const input=card.querySelector('[data-private-blog-comment-input]'),text=input.value.trim();if(!text)return;p.comments=p.comments||[];p.comments.push({id:`comment_${Date.now()}_${secureRandomInt(10000)}`,name:state.myName||'我',text,createdAt:Date.now()});persist();_privateBlogCommentingId=null;renderPrivateBlog();}
+  });
+  document.getElementById('privateBlogEditAction')?.addEventListener('click',()=>{const id=_privateBlogMenuId;closePrivateBlogMenu();if(id)openPrivateBlogEditor(id);});
+  document.getElementById('privateBlogDeleteAction')?.addEventListener('click',()=>{const id=_privateBlogMenuId;if(id&&confirm('删除这篇私人纪录？')){state.privateBlog=state.privateBlog.filter(p=>String(p.id)!==String(id));persist();renderPrivateBlog();}closePrivateBlogMenu();});
+  document.getElementById('privateBlogCancelAction')?.addEventListener('click',closePrivateBlogMenu);
+  document.getElementById('privateBlogActionSheet')?.addEventListener('click',e=>{if(e.target.id==='privateBlogActionSheet')closePrivateBlogMenu();});
+}
+
+function renderMiniProgramStores(){const box=document.getElementById('miniProgramStoreList');if(!box)return;box.innerHTML=`<div class="mini-programs-title">生活记录</div><div class="mini-programs-grid"><button class="mini-program-tile" data-private-blog><div class="mini-app-icon game" style="background:linear-gradient(145deg,#245d3b,#65a575)">记</div><span>私人微博</span></button></div><div class="mini-programs-title" style="margin-top:24px">双人游戏</div><div class="mini-programs-grid">${PARTY_GAMES.map(g=>`<button class="mini-program-tile" data-party-game="${g.id}"><div class="mini-app-icon game" style="background:${g.color}">${g.icon}</div><span>${escapeHtml(g.title)}</span></button>`).join('')}</div><div class="mini-programs-title" style="margin-top:24px">外卖点单</div><div class="mini-programs-grid">${TEA_STORES.map(s=>`<button class="mini-program-tile" data-mini-store="${s.id}"><div class="mini-app-icon food" style="background:${s.color}">${s.emoji}</div><span>${escapeHtml(s.name)}</span></button>`).join('')}</div><div class="mini-program-tip">每个图标都是独立小程序，进度会分别保存</div>`;}
+function bindMiniPrograms(){document.getElementById('rowMiniPrograms')?.addEventListener('click',()=>{renderMiniProgramStores();pushPage('page-miniprograms');});document.getElementById('backFromMiniPrograms')?.addEventListener('click',()=>popPage());document.getElementById('miniProgramStoreList')?.addEventListener('click',e=>{const x=e.target.closest('[data-mini-store]'),g=e.target.closest('[data-party-game]'),b=e.target.closest('[data-private-blog]');if(x)openTeaOrder(x.dataset.miniStore);else if(g)openPartyGame(g.dataset.partyGame);else if(b)openPrivateBlog();});}
 function teaCartItems(){return Object.values(_teaDraft.cart).flat();}
 function teaCartCount(){return teaCartItems().length;}
 function teaSubtotal(){return teaCartItems().reduce((sum,x)=>sum+(TEA_MENU.find(p=>p.id===x.productId)?.price||0)+(TEA_TOPPINGS[x.topping]?.price||0),0);}
@@ -2646,7 +2724,7 @@ function exportData() {
   const data = {
     contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
-    chatBg: state.chatBg, momentsCover: state.momentsCover,
+    chatBg: state.chatBg, momentsCover: state.momentsCover, privateBlog: state.privateBlog,
     wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2668,6 +2746,7 @@ function importData(file) {
       if (data.myName) state.myName = data.myName;
       if (data.chatBg) state.chatBg = data.chatBg;
       if (data.momentsCover) state.momentsCover = data.momentsCover;
+      if (data.privateBlog) state.privateBlog = data.privateBlog;
       if (data.wordCards) restoreWordCardData(data.wordCards);
       if (data.dictionary) DictionaryBank.restoreUserData(data.dictionary);
       if (data.stickers) saveStickers(data.stickers);
@@ -2738,7 +2817,8 @@ function cloudDataStats(data) {
   return {
     contacts: (data?.contacts || []).length,
     messages: Object.values(data?.chats || {}).reduce((n, list) => n + (list || []).filter(m => !m.deletedAt).length, 0),
-    moments: (data?.moments || []).length
+    moments: (data?.moments || []).length,
+    privateBlog: (data?.privateBlog || []).length
   };
 }
 function showCloudVerification(info, type = 'verified') {
@@ -2747,11 +2827,11 @@ function showCloudVerification(info, type = 'verified') {
   document.getElementById('cloudStatusIcon').textContent = type === 'error' ? '!' : '✓';
   document.getElementById('cloudStatusTitle').textContent = type === 'error' ? '云端验证失败' : '云端备份已验证';
   const stats = info.stats || {};
-  document.getElementById('cloudStatusDetail').textContent = type === 'error' ? (info.error || '无法回读核对') : `${new Date(info.updatedAt).toLocaleString()} · ${stats.contacts || 0} 个角色 · ${stats.messages || 0} 条消息 · ${stats.moments || 0} 条朋友圈 · 校验码 ${info.fingerprint || '—'}`;
+  document.getElementById('cloudStatusDetail').textContent = type === 'error' ? (info.error || '无法回读核对') : `${new Date(info.updatedAt).toLocaleString()} · ${stats.contacts || 0} 个角色 · ${stats.messages || 0} 条消息 · ${stats.moments || 0} 条朋友圈 · ${stats.privateBlog || 0} 篇私人纪录 · 校验码 ${info.fingerprint || '—'}`;
   loadSettingsSummaries();
 }
 function cloudPayload() {
-  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers() };
+  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, privateBlog: state.privateBlog, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers() };
 }
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
@@ -3066,6 +3146,7 @@ async function init() {
   safeStep('bindPostMoment', bindPostMoment);
   safeStep('bindWallet', bindWallet);
   safeStep('bindMiniPrograms', bindMiniPrograms);
+  safeStep('bindPrivateBlog', bindPrivateBlog);
   safeStep('bindPartyGames', bindPartyGames);
   safeStep('bindTeaOrder', bindTeaOrder);
   safeStep('resumeTeaOrderNotification', resumeTeaOrderNotification);
