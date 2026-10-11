@@ -194,17 +194,8 @@ async function recoverStateMirrorOnStartup() {
 }
 function saveStateToStorage() {
   const results = [
-    safeSaveJSON(STORE.contacts, state.contacts),
-    safeSaveJSON(STORE.groups, state.groups),
-    safeSaveJSON(STORE.chats, state.chats),
-    safeSaveJSON(STORE.moments, state.moments),
-    safeSaveJSON(STORE.avatarLib, state.avatarLibrary),
-    safeSetItem(STORE.myAvatar, state.myAvatar || ''),
     safeSetItem(STORE.myName, state.myName || '我'),
-    safeSetItem(STORE.chatBg, state.chatBg || ''),
-    safeSetItem(STORE.momentsCover, state.momentsCover || ''),
-    safeSaveJSON(STORE.unread, state.unread),
-    safeSaveJSON(STORE.privateBlog, state.privateBlog)
+    safeSaveJSON(STORE.unread, state.unread)
   ];
   return results.every(Boolean);
 }
@@ -215,9 +206,14 @@ function compactLegacyLocalStorageAfterMirror() {
   ].forEach(safeRemoveItem);
 }
 function persist() {
-  saveStateToStorage();
   saveStateMirror('persist')
-    .then(() => { if (window.__localStorageQuotaExceeded) compactLegacyLocalStorageAfterMirror(); })
+    .then(() => {
+      compactLegacyLocalStorageAfterMirror();
+      window.__localStorageQuotaExceeded = false;
+      saveStateToStorage();
+      const banner = document.getElementById('debugErrorBanner');
+      if (banner?.textContent?.includes('本机储存写入失败')) banner.style.display = 'none';
+    })
     .catch(e => console.warn('本机大容量镜像保存失败', e));
   scheduleRecoverySnapshot('persist');
 
