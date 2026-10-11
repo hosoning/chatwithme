@@ -314,10 +314,25 @@ async function loadRecoverySnapshots() {
   db.close();
   return list.sort((a, b) => Number(a.createdAt) - Number(b.createdAt));
 }
+function mergeChatsByContactName(namedChats = {}) {
+  if (!namedChats || typeof namedChats !== 'object') return;
+  const patchChats = {};
+  for (const [name, messages] of Object.entries(namedChats)) {
+    const contact = state.contacts.find(c => String(c.name || '').trim() === String(name || '').trim());
+    if (!contact || !Array.isArray(messages)) continue;
+    patchChats[String(contact.id)] = messages.map(m => {
+      const msg = { ...m, from: m.from === 'contact' ? String(contact.id) : m.from };
+      if (msg.redpacket?.claimedBy === 'contact') msg.redpacket = { ...msg.redpacket, claimedBy: String(contact.id) };
+      return msg;
+    });
+  }
+  if (Object.keys(patchChats).length) state.chats = mergeChatHistory(state.chats, patchChats);
+}
 function mergeBackupDataIntoState(data = {}, options = {}) {
   if (data.contacts) state.contacts = options.overwrite ? data.contacts : mergeById(data.contacts, state.contacts);
   if (data.groups) state.groups = options.overwrite ? data.groups : mergeById(data.groups, state.groups);
   if (data.chats) state.chats = options.overwrite ? data.chats : mergeChatHistory(state.chats, data.chats);
+  if (!options.overwrite && data.chatsByContactName) mergeChatsByContactName(data.chatsByContactName);
   if (data.moments) state.moments = options.overwrite ? data.moments : mergeById(data.moments, state.moments);
   if (data.privateBlog) state.privateBlog = options.overwrite ? data.privateBlog : mergeById(data.privateBlog, state.privateBlog);
   if (data.avatarLibrary) state.avatarLibrary = options.overwrite ? data.avatarLibrary : mergeById(data.avatarLibrary, state.avatarLibrary);
