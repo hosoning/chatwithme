@@ -747,12 +747,12 @@ svg { max-width:100%; max-height:100%; }
       <div class="settings-group-title">云端同步</div>
       <div class="settings-form-group"><div class="form-row"><label>启用云端同步</label><label class="switch"><input type="checkbox" id="cfgCloudEnabled"><span class="slider"></span></label></div>
       <div class="form-row col"><label>同步房间 ID</label><input id="cfgRoomId" placeholder="例如：my-tarot-room-001"></div></div>
-      <div class="settings-hint">同一房间 ID 会合并资料，不会用旧云端内容覆盖本机消息。</div>
+      <div class="settings-hint">同一房间 ID 会合并资料，不会用旧云端内容覆盖本机消息。导入备份也会恢复合并，不会把当前聊天盖掉。</div>
       <button class="settings-primary-btn" id="cloudUploadBtn">上传并验证</button>
       <button class="settings-secondary-btn" id="cloudDownloadBtn">从云端合并到本机</button>
       <div class="cloud-sync-status" id="cloudSyncStatus">尚未同步</div>
       <div class="settings-group-title">本机备份</div>
-      <div class="settings-menu-group"><button class="settings-menu-row" id="settingsExportBtn"><span class="settings-menu-icon export">↥</span><span class="settings-menu-copy"><b>导出备份文件</b><small>保存完整资料到文件</small></span></button><button class="settings-menu-row" id="settingsImportBtn"><span class="settings-menu-icon import">↧</span><span class="settings-menu-copy"><b>导入备份文件</b><small>从已有文件恢复</small></span></button></div>
+      <div class="settings-menu-group"><button class="settings-menu-row" id="settingsExportBtn"><span class="settings-menu-icon export">↥</span><span class="settings-menu-copy"><b>导出备份文件</b><small>保存完整资料到文件</small></span></button><button class="settings-menu-row" id="settingsImportBtn"><span class="settings-menu-icon import">↧</span><span class="settings-menu-copy"><b>导入备份文件</b><small>恢复合并，不覆盖当前聊天</small></span></button><button class="settings-menu-row" id="settingsRestoreSnapshotsBtn"><span class="settings-menu-icon cloud">↺</span><span class="settings-menu-copy"><b>从本机自动快照恢复</b><small>找回刷新前最近保存的聊天</small></span></button></div>
     </div>
   </div>
 
@@ -1127,11 +1127,11 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=53" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=53" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/dictionary.js?v=53" onerror="window.__scriptLoadError('js/dictionary.js 无法加载')"></script>
-<script src="js/ai.js?v=53" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=53" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=53" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=54" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=54" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/dictionary.js?v=54" onerror="window.__scriptLoadError('js/dictionary.js 无法加载')"></script>
+<script src="js/ai.js?v=54" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=54" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=54" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
