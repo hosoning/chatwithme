@@ -59,9 +59,19 @@ function safeLoadJSON(key, def) {
     return (parsed === null || parsed === undefined) ? def : parsed;
   } catch (e) { console.error(`读取[${key}]失败`, e); try { localStorage.removeItem(key); } catch(_) {} return def; }
 }
-function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } }
+function showStorageWarning(key, err) {
+  console.error(`保存[${key}]失败`, err);
+  try {
+    const banner = document.getElementById('debugErrorBanner');
+    if (banner) {
+      banner.style.display = 'block';
+      banner.textContent = `⚠️ 本机储存写入失败：${key}\n请先到「设置 → 云端与备份」导出/恢复合并，避免刷新后丢失最近聊天。\n${err?.message || err || ''}`;
+    }
+  } catch (_) {}
+}
+function safeSaveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { showStorageWarning(key, e); return false; } }
 function safeGetItem(key, def = null) { try { const v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
-function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (e) { console.error(e); } }
+function safeSetItem(key, val) { try { localStorage.setItem(key, val); return true; } catch (e) { showStorageWarning(key, e); return false; } }
 function safeRemoveItem(key) { try { localStorage.removeItem(key); } catch (e) {} }
 
 /* ============ 状态 ============ */
@@ -116,6 +126,8 @@ const state = {
 };
 
 let _cloudSyncTimer = null;
+let _recoverySnapshotTimer = null;
+let _lastRecoverySnapshotAt = 0;
 function chatsWithoutLocalCallAudio() {
   const clean = {};
   for (const [chatId, messages] of Object.entries(state.chats || {})) clean[chatId] = (messages || []).map(m => {
@@ -124,18 +136,33 @@ function chatsWithoutLocalCallAudio() {
   });
   return clean;
 }
+function stateBackupPayload() {
+  return {
+    contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
+    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
+    chatBg: state.chatBg, momentsCover: state.momentsCover, privateBlog: state.privateBlog,
+    wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers()
+  };
+}
+function saveStateToStorage() {
+  const results = [
+    safeSaveJSON(STORE.contacts, state.contacts),
+    safeSaveJSON(STORE.groups, state.groups),
+    safeSaveJSON(STORE.chats, state.chats),
+    safeSaveJSON(STORE.moments, state.moments),
+    safeSaveJSON(STORE.avatarLib, state.avatarLibrary),
+    safeSetItem(STORE.myAvatar, state.myAvatar || ''),
+    safeSetItem(STORE.myName, state.myName || '我'),
+    safeSetItem(STORE.chatBg, state.chatBg || ''),
+    safeSetItem(STORE.momentsCover, state.momentsCover || ''),
+    safeSaveJSON(STORE.unread, state.unread),
+    safeSaveJSON(STORE.privateBlog, state.privateBlog)
+  ];
+  return results.every(Boolean);
+}
 function persist() {
-  safeSaveJSON(STORE.contacts, state.contacts);
-  safeSaveJSON(STORE.groups, state.groups);
-  safeSaveJSON(STORE.chats, state.chats);
-  safeSaveJSON(STORE.moments, state.moments);
-  safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
-  safeSetItem(STORE.myAvatar, state.myAvatar || '');
-  safeSetItem(STORE.myName, state.myName || '我');
-  safeSetItem(STORE.chatBg, state.chatBg || '');
-  safeSetItem(STORE.momentsCover, state.momentsCover || '');
-  safeSaveJSON(STORE.unread, state.unread);
-  safeSaveJSON(STORE.privateBlog, state.privateBlog);
+  saveStateToStorage();
+  scheduleRecoverySnapshot('persist');
 
   clearTimeout(_cloudSyncTimer);
   _cloudSyncTimer = setTimeout(() => {
@@ -174,8 +201,81 @@ function mergeChatHistory(localChats = {}, cloudChats = {}) {
 }
 function mergeById(cloudItems = [], localItems = []) {
   const merged = new Map();
-  for (const item of [...(cloudItems || []), ...(localItems || [])]) merged.set(String(item?.id ?? JSON.stringify(item)), item);
+  for (const item of [...(cloudItems || []), ...(localItems || [])]) {
+    const key = String(item?.id ?? JSON.stringify(item));
+    const old = merged.get(key);
+    if (!old) { merged.set(key, item); continue; }
+    const oldRev = Number(old.updatedAt || old.modifiedAt || old.ts || old.createdAt || 0);
+    const newRev = Number(item?.updatedAt || item?.modifiedAt || item?.ts || item?.createdAt || 0);
+    merged.set(key, newRev >= oldRev ? { ...old, ...item } : { ...item, ...old });
+  }
   return [...merged.values()];
+}
+
+const RECOVERY_DB_NAME = 'tarot_recovery_snapshots_v1';
+const RECOVERY_DB_STORE = 'snapshots';
+function openRecoveryDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('当前浏览器不支持本机快照')); return; }
+    const req = indexedDB.open(RECOVERY_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(RECOVERY_DB_STORE)) db.createObjectStore(RECOVERY_DB_STORE, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('无法打开本机快照'));
+  });
+}
+async function saveRecoverySnapshot(reason = 'auto') {
+  const now = Date.now();
+  _lastRecoverySnapshotAt = now;
+  const db = await openRecoveryDb();
+  const snapshot = { id: now, reason, createdAt: now, data: stateBackupPayload(), stats: cloudDataStats(stateBackupPayload()) };
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(RECOVERY_DB_STORE, 'readwrite');
+    const store = tx.objectStore(RECOVERY_DB_STORE);
+    store.put(snapshot);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      const keys = (req.result || []).map(Number).sort((a, b) => b - a);
+      for (const key of keys.slice(18)) store.delete(key);
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('本机快照保存失败'));
+  });
+  db.close();
+  safeSaveJSON('tarot_last_recovery_snapshot_v1', { updatedAt: now, stats: snapshot.stats });
+}
+function scheduleRecoverySnapshot(reason = 'auto') {
+  clearTimeout(_recoverySnapshotTimer);
+  const wait = Date.now() - _lastRecoverySnapshotAt > 8000 ? 350 : 8000;
+  _recoverySnapshotTimer = setTimeout(() => saveRecoverySnapshot(reason).catch(e => console.warn('本机快照保存失败', e)), wait);
+}
+async function loadRecoverySnapshots() {
+  const db = await openRecoveryDb();
+  const list = await new Promise((resolve, reject) => {
+    const req = db.transaction(RECOVERY_DB_STORE, 'readonly').objectStore(RECOVERY_DB_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error || new Error('本机快照读取失败'));
+  });
+  db.close();
+  return list.sort((a, b) => Number(a.createdAt) - Number(b.createdAt));
+}
+function mergeBackupDataIntoState(data = {}, options = {}) {
+  if (data.contacts) state.contacts = options.overwrite ? data.contacts : mergeById(data.contacts, state.contacts);
+  if (data.groups) state.groups = options.overwrite ? data.groups : mergeById(data.groups, state.groups);
+  if (data.chats) state.chats = options.overwrite ? data.chats : mergeChatHistory(state.chats, data.chats);
+  if (data.moments) state.moments = options.overwrite ? data.moments : mergeById(data.moments, state.moments);
+  if (data.privateBlog) state.privateBlog = options.overwrite ? data.privateBlog : mergeById(data.privateBlog, state.privateBlog);
+  if (data.avatarLibrary) state.avatarLibrary = options.overwrite ? data.avatarLibrary : mergeById(data.avatarLibrary, state.avatarLibrary);
+  if (data.myAvatar && (options.overwrite || !state.myAvatar)) state.myAvatar = data.myAvatar;
+  if (data.myName && (options.overwrite || !state.myName || state.myName === '我')) state.myName = data.myName;
+  if (data.chatBg && (options.overwrite || !state.chatBg)) state.chatBg = data.chatBg;
+  if (data.momentsCover && (options.overwrite || !state.momentsCover)) state.momentsCover = data.momentsCover;
+  if (data.wordCards) restoreWordCardData(data.wordCards);
+  if (data.dictionary) DictionaryBank.restoreUserData(data.dictionary, !options.overwrite);
+  if (data.stickers) saveStickers(data.stickers);
+  if (data.aiConfig) saveAIConfig(data.aiConfig);
 }
 
 async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
@@ -183,29 +283,9 @@ async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
   if (!cfg.enabled) return;
   const cloudData = downloadedData || await cloudDownload();
   if (!cloudData) return;
-  if (cloudData.contacts) state.contacts = overwrite ? cloudData.contacts : mergeById(cloudData.contacts, state.contacts);
-  if (cloudData.groups) state.groups = overwrite ? cloudData.groups : mergeById(cloudData.groups, state.groups);
-  if (cloudData.chats) state.chats = overwrite ? cloudData.chats : mergeChatHistory(state.chats, cloudData.chats);
-  if (cloudData.moments) state.moments = overwrite ? cloudData.moments : mergeById(cloudData.moments, state.moments);
-  if (cloudData.privateBlog) state.privateBlog = overwrite ? cloudData.privateBlog : mergeById(cloudData.privateBlog, state.privateBlog);
-  if (cloudData.avatarLibrary) state.avatarLibrary = overwrite ? cloudData.avatarLibrary : mergeById(cloudData.avatarLibrary, state.avatarLibrary);
-  if (cloudData.myAvatar && (overwrite || !state.myAvatar)) state.myAvatar = cloudData.myAvatar;
-  if (cloudData.myName && (overwrite || !state.myName || state.myName === '我')) state.myName = cloudData.myName;
-  if (cloudData.chatBg && (overwrite || !state.chatBg)) state.chatBg = cloudData.chatBg;
-  if (cloudData.momentsCover && (overwrite || !state.momentsCover)) state.momentsCover = cloudData.momentsCover;
-  if (cloudData.wordCards) restoreWordCardData(cloudData.wordCards);
-  if (cloudData.dictionary) DictionaryBank.restoreUserData(cloudData.dictionary, !overwrite);
-  if (cloudData.stickers) saveStickers(cloudData.stickers);
-  safeSaveJSON(STORE.contacts, state.contacts);
-  safeSaveJSON(STORE.groups, state.groups);
-  safeSaveJSON(STORE.chats, state.chats);
-  safeSaveJSON(STORE.moments, state.moments);
-  safeSaveJSON(STORE.privateBlog, state.privateBlog);
-  safeSaveJSON(STORE.avatarLib, state.avatarLibrary);
-  safeSetItem(STORE.myAvatar, state.myAvatar || '');
-  safeSetItem(STORE.myName, state.myName || '');
-  safeSetItem(STORE.chatBg, state.chatBg || '');
-  safeSetItem(STORE.momentsCover, state.momentsCover || '');
+  mergeBackupDataIntoState(cloudData, { overwrite });
+  saveStateToStorage();
+  scheduleRecoverySnapshot('cloud-merge');
 }
 
 function hashColor(str) {
@@ -2721,47 +2801,51 @@ function renderTeaTracking(order){
 
 /* ============ 导出 / 导入 ============ */
 function exportData() {
-  const data = {
-    contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
-    avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
-    chatBg: state.chatBg, momentsCover: state.momentsCover, privateBlog: state.privateBlog,
-    wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString()
-  };
+  const data = { ...stateBackupPayload(), aiConfig: getAIConfig(), exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = `塔罗对话备份_${Date.now()}.json`; a.click();
   URL.revokeObjectURL(url);
+}
+function refreshAfterDataMerge() {
+  renderChatList(); renderContactList(); renderMoments(); renderMomentsProfile();
+  if (state.activeChatId) renderMessages();
+  loadSettingsSummaries();
 }
 function importData(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (data.contacts) state.contacts = data.contacts;
-      if (data.groups) state.groups = data.groups;
-      if (data.chats) state.chats = data.chats;
-      if (data.moments) state.moments = data.moments;
-      if (data.avatarLibrary) state.avatarLibrary = data.avatarLibrary;
-      if (data.myAvatar) state.myAvatar = data.myAvatar;
-      if (data.myName) state.myName = data.myName;
-      if (data.chatBg) state.chatBg = data.chatBg;
-      if (data.momentsCover) state.momentsCover = data.momentsCover;
-      if (data.privateBlog) state.privateBlog = data.privateBlog;
-      if (data.wordCards) restoreWordCardData(data.wordCards);
-      if (data.dictionary) DictionaryBank.restoreUserData(data.dictionary);
-      if (data.stickers) saveStickers(data.stickers);
-      if (data.aiConfig) saveAIConfig(data.aiConfig);
+      mergeBackupDataIntoState(data);
       persist();
-      alert('导入成功，即将刷新页面'); location.reload();
+      refreshAfterDataMerge();
+      const stats = cloudDataStats(stateBackupPayload());
+      alert(`已恢复合并：${stats.contacts || 0} 个角色，${stats.messages || 0} 条消息。没有覆盖本机现有聊天。`);
     } catch (err) { alert('文件格式有误: ' + err.message); }
   };
   reader.readAsText(file);
+}
+async function restoreFromRecoverySnapshots() {
+  try {
+    const snapshots = await loadRecoverySnapshots();
+    if (!snapshots.length) { setCloudSyncStatus('本机还没有可用自动快照', 'error'); return; }
+    const before = cloudDataStats(stateBackupPayload());
+    for (const snap of snapshots) mergeBackupDataIntoState(snap.data || {});
+    persist();
+    refreshAfterDataMerge();
+    const after = cloudDataStats(stateBackupPayload());
+    setCloudSyncStatus(`已从 ${snapshots.length} 个本机快照恢复合并 · 消息 ${before.messages || 0} → ${after.messages || 0}`, 'success');
+  } catch (e) {
+    setCloudSyncStatus(`本机快照恢复失败：${e?.message || e}`, 'error');
+  }
 }
 function bindExportImport() {
   document.getElementById('rowExport')?.addEventListener('click', exportData);
   document.getElementById('settingsExportBtn')?.addEventListener('click', exportData);
   document.getElementById('rowImport')?.addEventListener('click', () => document.getElementById('importFileInput').click());
   document.getElementById('settingsImportBtn')?.addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('settingsRestoreSnapshotsBtn')?.addEventListener('click', restoreFromRecoverySnapshots);
   document.getElementById('importFileInput')?.addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
 }
 
@@ -2831,7 +2915,7 @@ function showCloudVerification(info, type = 'verified') {
   loadSettingsSummaries();
 }
 function cloudPayload() {
-  return { contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments, privateBlog: state.privateBlog, avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName, chatBg: state.chatBg, momentsCover: state.momentsCover, wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers() };
+  return stateBackupPayload();
 }
 function bindCloudSync() {
   document.getElementById('cloudUploadBtn')?.addEventListener('click', async () => {
@@ -2865,7 +2949,7 @@ function bindCloudSync() {
     const cloudData = await cloudDownload();
     if (!cloudData) { setCloudSyncStatus(`下载失败：${window.__lastCloudError || '云端没有资料'}`, 'error'); return; }
     await tryCloudLoadOnStartup(false, cloudData);
-    renderChatList(); renderContactList(); renderMoments();
+    refreshAfterDataMerge();
     const meta = window.__lastCloudDownloadMeta, info = { updatedAt: meta?.updatedAt || Date.now(), fingerprint: meta?.fingerprint, stats: cloudDataStats(cloudData) };
     const verified = meta?.fingerprint === meta?.calculatedFingerprint;
     if (verified) { safeSaveJSON('tarot_cloud_verified_v1', info); showCloudVerification(info); }
@@ -3101,6 +3185,7 @@ async function migrateInlineVoiceAudio() {
   if (changed) persist();
 }
 async function init() {
+  await safeStepAsync('startupRecoverySnapshot', () => saveRecoverySnapshot('startup-before-cloud'));
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
   await safeStepAsync('migrateInlineVoiceAudio', migrateInlineVoiceAudio);
   await safeStepAsync('migrateOversizedAvatars', migrateOversizedAvatars);
