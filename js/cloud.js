@@ -166,7 +166,14 @@ function mergeCloudChats(remoteChats = {}, localChats = {}) {
 }
 function mergeCloudItems(remoteItems = [], localItems = []) {
   const byId = new Map();
-  for (const item of [...(remoteItems || []), ...(localItems || [])]) byId.set(String(item?.id ?? JSON.stringify(item)), item);
+  for (const item of [...(remoteItems || []), ...(localItems || [])]) {
+    const key = String(item?.id ?? JSON.stringify(item));
+    const old = byId.get(key);
+    if (!old) { byId.set(key, item); continue; }
+    const oldRev = Number(old.updatedAt || old.modifiedAt || old.ts || old.createdAt || 0);
+    const newRev = Number(item?.updatedAt || item?.modifiedAt || item?.ts || item?.createdAt || 0);
+    byId.set(key, newRev >= oldRev ? { ...old, ...item } : { ...item, ...old });
+  }
   return [...byId.values()];
 }
 
@@ -189,7 +196,9 @@ async function cloudUpload(fullDataObj) {
         contacts: mergeCloudItems(remote.contacts, fullDataObj.contacts),
         groups: mergeCloudItems(remote.groups, fullDataObj.groups),
         moments: mergeCloudItems(remote.moments, fullDataObj.moments),
+        privateBlog: mergeCloudItems(remote.privateBlog, fullDataObj.privateBlog),
         avatarLibrary: mergeCloudItems(remote.avatarLibrary, fullDataObj.avatarLibrary),
+        stickers: mergeCloudItems(remote.stickers, fullDataObj.stickers),
         chats: mergeCloudChats(remote.chats, fullDataObj.chats)
       };
       // Store structured data. The legacy JSON string hit Firebase's per-string size limit
