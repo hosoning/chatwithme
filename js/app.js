@@ -61,6 +61,7 @@ function safeLoadJSON(key, def) {
 }
 function showStorageWarning(key, err) {
   console.error(`保存[${key}]失败`, err);
+  window.__localStorageQuotaExceeded = true;
   try {
     const banner = document.getElementById('debugErrorBanner');
     if (banner) {
@@ -128,6 +129,8 @@ const state = {
 let _cloudSyncTimer = null;
 let _recoverySnapshotTimer = null;
 let _lastRecoverySnapshotAt = 0;
+const STATE_MIRROR_DB_NAME = 'tarot_state_mirror_v1';
+const STATE_MIRROR_DB_STORE = 'state';
 function chatsWithoutLocalCallAudio() {
   const clean = {};
   for (const [chatId, messages] of Object.entries(state.chats || {})) clean[chatId] = (messages || []).map(m => {
@@ -141,8 +144,53 @@ function stateBackupPayload() {
     contacts: state.contacts, groups: state.groups, chats: chatsWithoutLocalCallAudio(), moments: state.moments,
     avatarLibrary: state.avatarLibrary, myAvatar: state.myAvatar, myName: state.myName,
     chatBg: state.chatBg, momentsCover: state.momentsCover, privateBlog: state.privateBlog,
-    wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers()
+    unread: state.unread, wordCards: collectWordCardData(), dictionary: DictionaryBank.exportUserData(), stickers: getStickers()
   };
+}
+function openStateMirrorDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('当前浏览器不支持 IndexedDB')); return; }
+    const req = indexedDB.open(STATE_MIRROR_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STATE_MIRROR_DB_STORE)) db.createObjectStore(STATE_MIRROR_DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('无法打开本机大容量储存'));
+  });
+}
+async function saveStateMirror(reason = 'auto') {
+  const db = await openStateMirrorDb();
+  const data = stateBackupPayload();
+  const payload = { reason, updatedAt: Date.now(), data, stats: cloudDataStats(data) };
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STATE_MIRROR_DB_STORE, 'readwrite');
+    tx.objectStore(STATE_MIRROR_DB_STORE).put(payload, 'latest');
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('本机大容量储存写入失败'));
+  });
+  db.close();
+  return payload;
+}
+async function loadStateMirror() {
+  const db = await openStateMirrorDb();
+  const payload = await new Promise((resolve, reject) => {
+    const req = db.transaction(STATE_MIRROR_DB_STORE, 'readonly').objectStore(STATE_MIRROR_DB_STORE).get('latest');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error || new Error('本机大容量储存读取失败'));
+  });
+  db.close();
+  return payload;
+}
+async function recoverStateMirrorOnStartup() {
+  const mirror = await loadStateMirror();
+  if (!mirror?.data) return;
+  const current = cloudDataStats(stateBackupPayload());
+  const saved = mirror.stats || cloudDataStats(mirror.data);
+  if ((saved.messages || 0) >= (current.messages || 0)) {
+    mergeBackupDataIntoState(mirror.data);
+    saveStateToStorage();
+  }
 }
 function saveStateToStorage() {
   const results = [
@@ -160,8 +208,17 @@ function saveStateToStorage() {
   ];
   return results.every(Boolean);
 }
+function compactLegacyLocalStorageAfterMirror() {
+  [
+    STORE.contacts, STORE.groups, STORE.chats, STORE.moments, STORE.avatarLib, STORE.privateBlog,
+    STORE.myAvatar, STORE.chatBg, STORE.momentsCover, STICKER_KEY
+  ].forEach(safeRemoveItem);
+}
 function persist() {
   saveStateToStorage();
+  saveStateMirror('persist')
+    .then(() => { if (window.__localStorageQuotaExceeded) compactLegacyLocalStorageAfterMirror(); })
+    .catch(e => console.warn('本机大容量镜像保存失败', e));
   scheduleRecoverySnapshot('persist');
 
   clearTimeout(_cloudSyncTimer);
@@ -244,7 +301,7 @@ async function saveRecoverySnapshot(reason = 'auto') {
     tx.onerror = () => reject(tx.error || new Error('本机快照保存失败'));
   });
   db.close();
-  safeSaveJSON('tarot_last_recovery_snapshot_v1', { updatedAt: now, stats: snapshot.stats });
+  try { localStorage.setItem('tarot_last_recovery_snapshot_v1', JSON.stringify({ updatedAt: now, stats: snapshot.stats })); } catch (_) {}
 }
 function scheduleRecoverySnapshot(reason = 'auto') {
   clearTimeout(_recoverySnapshotTimer);
@@ -276,6 +333,7 @@ function mergeBackupDataIntoState(data = {}, options = {}) {
   if (data.dictionary) DictionaryBank.restoreUserData(data.dictionary, !options.overwrite);
   if (data.stickers) saveStickers(data.stickers);
   if (data.aiConfig) saveAIConfig(data.aiConfig);
+  if (data.unread) state.unread = { ...(data.unread || {}), ...(state.unread || {}) };
 }
 
 async function tryCloudLoadOnStartup(overwrite = false, downloadedData = null) {
@@ -2855,6 +2913,14 @@ async function previewRecoverableData() {
   setCloudSyncStatus('正在只读检查本机、自动快照、云端与语音缓存…');
   try {
     const current = cloudDataStats(stateBackupPayload());
+    let mirrorInfo = '暂无大容量镜像（v56 更新后才会开始生成）';
+    try {
+      const mirror = await loadStateMirror();
+      if (mirror?.data) {
+        const stats = mirror.stats || cloudDataStats(mirror.data);
+        mirrorInfo = `${stats.messages || 0} 条消息 · ${stats.contacts || 0} 个角色 · ${mirror.updatedAt ? new Date(mirror.updatedAt).toLocaleString() : '无时间'}`;
+      }
+    } catch (e) { mirrorInfo = `读取失败：${e?.message || e}`; }
     let snapshotCount = 0, snapshotMessages = 0, snapshotLatest = 0;
     try {
       const snapshots = await loadRecoverySnapshots();
@@ -2878,7 +2944,7 @@ async function previewRecoverableData() {
     const snapText = snapshotCount
       ? `${snapshotCount} 个快照 · 合并后约 ${snapshotMessages} 条消息 · 最新 ${new Date(snapshotLatest).toLocaleString()}`
       : '暂无自动快照（v54 更新后才会开始生成）';
-    setCloudSyncStatus(`只读检查完成\n当前本机：${current.messages || 0} 条消息 · ${current.contacts || 0} 个角色\n本机自动快照：${snapText}\n云端：${cloudInfo}\n语音缓存：${voiceInfo}\n\n这一步没有写入、没有上传、没有覆盖。`, 'success');
+    setCloudSyncStatus(`只读检查完成\n当前本机：${current.messages || 0} 条消息 · ${current.contacts || 0} 个角色\n本机大容量镜像：${mirrorInfo}\n本机自动快照：${snapText}\n云端：${cloudInfo}\n语音缓存：${voiceInfo}\n\n这一步没有写入、没有上传、没有覆盖。`, 'success');
   } catch (e) {
     setCloudSyncStatus(`只读检查失败：${e?.message || e}`, 'error');
   }
@@ -3229,6 +3295,7 @@ async function migrateInlineVoiceAudio() {
   if (changed) persist();
 }
 async function init() {
+  await safeStepAsync('recoverStateMirrorOnStartup', recoverStateMirrorOnStartup);
   await safeStepAsync('startupRecoverySnapshot', () => saveRecoverySnapshot('startup-before-cloud'));
   await safeStepAsync('tryCloudLoadOnStartup', tryCloudLoadOnStartup);
   await safeStepAsync('migrateInlineVoiceAudio', migrateInlineVoiceAudio);
