@@ -2840,12 +2840,56 @@ async function restoreFromRecoverySnapshots() {
     setCloudSyncStatus(`本机快照恢复失败：${e?.message || e}`, 'error');
   }
 }
+async function countStoredVoiceBlobs() {
+  if (typeof openVoiceDb !== 'function') return null;
+  const db = await openVoiceDb();
+  const count = await new Promise((resolve, reject) => {
+    const req = db.transaction(VOICE_DB_STORE, 'readonly').objectStore(VOICE_DB_STORE).count();
+    req.onsuccess = () => resolve(req.result || 0);
+    req.onerror = () => reject(req.error || new Error('语音储存读取失败'));
+  });
+  db.close();
+  return count;
+}
+async function previewRecoverableData() {
+  setCloudSyncStatus('正在只读检查本机、自动快照、云端与语音缓存…');
+  try {
+    const current = cloudDataStats(stateBackupPayload());
+    let snapshotCount = 0, snapshotMessages = 0, snapshotLatest = 0;
+    try {
+      const snapshots = await loadRecoverySnapshots();
+      snapshotCount = snapshots.length;
+      snapshotLatest = snapshots.reduce((n, s) => Math.max(n, Number(s.createdAt || 0)), 0);
+      const merged = {};
+      for (const snap of snapshots) Object.assign(merged, { chats: mergeChatHistory(merged.chats || {}, snap.data?.chats || {}) });
+      snapshotMessages = cloudDataStats({ chats: merged.chats || {} }).messages || 0;
+    } catch (_) {}
+    const cfg = getCloudConfig();
+    let cloudInfo = '云端未启用或未填写房间 ID';
+    if (cfg.enabled && cfg.roomId) {
+      const cloudData = await cloudDownload();
+      if (cloudData) {
+        const stats = cloudDataStats(cloudData), meta = window.__lastCloudDownloadMeta;
+        cloudInfo = `${stats.messages || 0} 条消息 · ${stats.contacts || 0} 个角色 · ${meta?.updatedAt ? new Date(meta.updatedAt).toLocaleString() : '无时间'}`;
+      } else cloudInfo = `读取失败：${window.__lastCloudError || '云端没有资料'}`;
+    }
+    let voiceInfo = '无法读取';
+    try { voiceInfo = `${await countStoredVoiceBlobs()} 条本机语音音频`; } catch (e) { voiceInfo = `语音缓存读取失败：${e?.message || e}`; }
+    const snapText = snapshotCount
+      ? `${snapshotCount} 个快照 · 合并后约 ${snapshotMessages} 条消息 · 最新 ${new Date(snapshotLatest).toLocaleString()}`
+      : '暂无自动快照（v54 更新后才会开始生成）';
+    setCloudSyncStatus(`只读检查完成\n当前本机：${current.messages || 0} 条消息 · ${current.contacts || 0} 个角色\n本机自动快照：${snapText}\n云端：${cloudInfo}\n语音缓存：${voiceInfo}\n\n这一步没有写入、没有上传、没有覆盖。`, 'success');
+  } catch (e) {
+    setCloudSyncStatus(`只读检查失败：${e?.message || e}`, 'error');
+  }
+}
 function bindExportImport() {
   document.getElementById('rowExport')?.addEventListener('click', exportData);
   document.getElementById('settingsExportBtn')?.addEventListener('click', exportData);
   document.getElementById('rowImport')?.addEventListener('click', () => document.getElementById('importFileInput').click());
   document.getElementById('settingsImportBtn')?.addEventListener('click', () => document.getElementById('importFileInput').click());
   document.getElementById('settingsRestoreSnapshotsBtn')?.addEventListener('click', restoreFromRecoverySnapshots);
+  document.getElementById('recoveryPreviewBtn')?.addEventListener('click', previewRecoverableData);
   document.getElementById('importFileInput')?.addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); });
 }
 
