@@ -91,8 +91,8 @@ const TEA_RECIPIENT_PHONE_KEY = 'tarot_delivery_phone_v1';
 const TEA_BRANCH_PREFIX = 'tarot_food_branch_v1_';
 const AUTO_MESSAGE_NEXT_KEY = 'tarot_auto_message_next_v1';
 
-function getStickers() { return safeLoadJSON(STICKER_KEY, []); }
-function saveStickers(list) { safeSaveJSON(STICKER_KEY, list); }
+function getStickers() { return state?.stickers || []; }
+function saveStickers(list) { state.stickers = Array.isArray(list) ? list : []; }
 function getWallet() {
   const w = safeLoadJSON(WALLET_KEY, { balance: 9999, transactions: [], rechargeToday: { date:'', amount:0 } });
   if (!(w.balance >= 0)) { w.balance = 0; saveWallet(w); }
@@ -121,6 +121,7 @@ const state = {
   momentsCover: safeGetItem(STORE.momentsCover, null) || null,
   unread: safeLoadJSON(STORE.unread, {}),
   privateBlog: safeLoadJSON(STORE.privateBlog, []),
+  stickers: safeLoadJSON(STICKER_KEY, []),
   activeChatId: null,
   pendingBatch: {},
   batchTimer: {}
@@ -650,6 +651,7 @@ function renderChatList() {
       if (last.type === 'redpacket') lastText = '[红包]';
       else if (last.type === 'options') lastText = '[选项]';
       else if (last.type === 'image') lastText = '[图片]';
+      else if (last.type === 'sticker') lastText = '[表情]';
       else if (last.type === 'location') lastText = '[位置]';
       else if (last.type === 'call') lastText = `[${last.callType === 'video' ? '视频通话' : '语音通话'}]`;
       else lastText = escapeHtml(last.text);
@@ -881,6 +883,8 @@ function renderMessages() {
       </div>`;
     } else if (m.type === 'image') {
       bubbleHtml = `<div class="bubble image"><img src="${m.image}" alt=""></div>`;
+    } else if (m.type === 'sticker') {
+      bubbleHtml = `<div class="bubble sticker"><img src="${m.sticker}" alt="表情"></div>`;
     } else if (m.type === 'location') {
       bubbleHtml = `<div class="bubble location" data-location="${m.id}">
         <div class="mini-map">${locationPreviewHtml(m.latitude, m.longitude)}</div>
@@ -1026,6 +1030,7 @@ function messageSummary(msg) {
   if (!msg) return '';
   if (msg.voiceUrl) return msg.text && msg.text !== '[语音]' ? msg.text : '[语音]';
   if (msg.type === 'image') return '[图片]';
+  if (msg.type === 'sticker') return '[表情]';
   if (msg.type === 'location') return `[位置] ${msg.text || ''}`.trim();
   if (msg.type === 'redpacket') return `[红包] ${msg.redpacket?.note || ''}`.trim();
   if (msg.type === 'call') return `[${msg.callType === 'video' ? '视频通话' : '语音通话'}]`;
@@ -1207,6 +1212,29 @@ function sendImageMessage(dataUrl) {
   const chatId = state.activeChatId; if (!chatId) return;
   addMessage(chatId, 'me', '[图片]', { type: 'image', image: dataUrl });
 }
+function queueReplyForChat(chatId, text) {
+  state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
+  state.pendingBatch[chatId].push(text);
+  clearTimeout(state.batchTimer[chatId]);
+  state.batchTimer[chatId] = setTimeout(() => {
+    if (isGroupChat(chatId)) processGroupBatch(chatId);
+    else processSingleBatch(chatId);
+  }, 900);
+}
+function sendStickerMessage(dataUrl) {
+  const chatId = state.activeChatId; if (!chatId) return;
+  addMessage(chatId, 'me', '[表情]', { type: 'sticker', sticker: dataUrl });
+  queueReplyForChat(chatId, '(发来一个表情包，请像聊天里看到表情包一样自然回应，不要解释图片内容)');
+}
+function maybeSendContactSticker(chatId, fromId, force = false) {
+  const stickers = getStickers();
+  if (!stickers.length) return false;
+  if (!force && secureRandomInt(100) >= 24) return false;
+  const s = stickers[secureRandomInt(stickers.length)];
+  if (!s?.dataUrl) return false;
+  addMessage(chatId, fromId, '[表情]', { type: 'sticker', sticker: s.dataUrl });
+  return true;
+}
 function lastMessageOf(chatId) {
   const msgs = state.chats[chatId] || [];
   return msgs[msgs.length - 1];
@@ -1232,13 +1260,7 @@ function handleSend(text) {
     setTimeout(() => contactShareLocation(chatId, chatId), 1200);
   }
 
-  state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
-  state.pendingBatch[chatId].push(quote ? `(引用${quote.senderName}的消息「${quote.text}」并回复) ${text.trim()}` : text.trim());
-  clearTimeout(state.batchTimer[chatId]);
-  state.batchTimer[chatId] = setTimeout(() => {
-    if (isGroupChat(chatId)) processGroupBatch(chatId);
-    else processSingleBatch(chatId);
-  }, 900);
+  queueReplyForChat(chatId, quote ? `(引用${quote.senderName}的消息「${quote.text}」并回复) ${text.trim()}` : text.trim());
 }
 async function sendVoiceMessage(dataUrl, durationSec, transcript = '') {
   const chatId = state.activeChatId;
@@ -1247,13 +1269,7 @@ async function sendVoiceMessage(dataUrl, durationSec, transcript = '') {
   let voiceUrl = dataUrl;
   try { voiceUrl = await persistVoiceDataUrl(dataUrl); } catch (e) { console.warn('录音独立储存失败，使用内嵌音频', e); }
   addMessage(chatId, 'me', '[语音]', { voiceUrl, durationSec, voiceTranscript: cleanTranscript, voiceTranscriptVisible: false });
-  state.pendingBatch[chatId] = state.pendingBatch[chatId] || [];
-  state.pendingBatch[chatId].push(cleanTranscript ? `(发来一条语音消息，转写内容：${cleanTranscript})` : '(发来一条语音消息，未能取得转写内容)');
-  clearTimeout(state.batchTimer[chatId]);
-  state.batchTimer[chatId] = setTimeout(() => {
-    if (isGroupChat(chatId)) processGroupBatch(chatId);
-    else processSingleBatch(chatId);
-  }, 900);
+  queueReplyForChat(chatId, cleanTranscript ? `(发来一条语音消息，转写内容：${cleanTranscript})` : '(发来一条语音消息，未能取得转写内容)');
 }
 
 function showTypingIndicator(chatId, contact) {
@@ -1298,6 +1314,7 @@ async function replyWithTarot(chatId, fromId, text, persona) {
       addMessage(chatId, fromId, picks[i], { cards, shieldCards, shield, voiceUrl });
       if (i < picks.length - 1) showTypingIndicator(chatId, contact);
     }
+    maybeSendContactSticker(chatId, fromId, String(text || '').includes('表情包'));
   } finally {
     hideTypingIndicator();
   }
@@ -2168,25 +2185,37 @@ function bindPlusPanel() {
 function renderStickerGrid() {
   const grid = document.getElementById('stickerGrid'); if (!grid) return;
   const stickers = getStickers();
-  grid.innerHTML = stickers.map(s => `<div class="avatar-lib-item" data-sticker-id="${s.id}"><img src="${s.dataUrl}"><div class="del-x" data-del-sticker="${s.id}">×</div></div>`).join('') || '<div style="grid-column:1/-1;color:#999;text-align:center;padding:24px;font-size:13px;">还没有表情包，点下方按钮添加</div>';
+  grid.innerHTML = [
+    '<button class="sticker-add-tile" id="stickerAddTile" type="button">＋</button>',
+    ...stickers.map(s => `<div class="sticker-tile" data-sticker-id="${s.id}"><img src="${s.dataUrl}" alt=""><button class="del-x" data-del-sticker="${s.id}" type="button">×</button></div>`)
+  ].join('');
 }
 function bindStickerPicker() {
-  document.getElementById('stickerAddBtn')?.addEventListener('click', () => document.getElementById('stickerFileInput').click());
+  const openFile = () => document.getElementById('stickerFileInput')?.click();
+  document.getElementById('stickerAddBtn')?.addEventListener('click', openFile);
   document.getElementById('stickerFileInput')?.addEventListener('change', e => {
     const files = [...e.target.files]; let remaining = files.length;
+    if (!files.length) return;
     files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => { const stickers = getStickers(); stickers.push({ id: Date.now()+Math.random(), dataUrl: ev.target.result }); saveStickers(stickers); remaining--; if (remaining===0) renderStickerGrid(); };
-      reader.readAsDataURL(file);
+      readImageFileCompressed(file, 520, 0.86).then(dataUrl => {
+        const stickers = getStickers();
+        stickers.push({ id: Date.now()+Math.random(), dataUrl });
+        saveStickers(stickers);
+        persist();
+      }).finally(() => { remaining--; if (remaining===0) renderStickerGrid(); });
     });
     e.target.value = '';
   });
   document.getElementById('stickerPickerClose')?.addEventListener('click', () => document.getElementById('stickerPickerSheet').classList.add('hidden'));
+  document.getElementById('stickerPickerSheet')?.addEventListener('click', e => {
+    if (e.target.id === 'stickerPickerSheet') document.getElementById('stickerPickerSheet')?.classList.add('hidden');
+  });
   document.getElementById('stickerGrid')?.addEventListener('click', e => {
+    if (e.target.closest('#stickerAddTile')) { openFile(); return; }
     const del = e.target.closest('[data-del-sticker]');
-    if (del) { const stickers = getStickers().filter(s => String(s.id) !== del.dataset.delSticker); saveStickers(stickers); renderStickerGrid(); return; }
+    if (del) { const stickers = getStickers().filter(s => String(s.id) !== del.dataset.delSticker); saveStickers(stickers); persist(); renderStickerGrid(); return; }
     const item = e.target.closest('[data-sticker-id]');
-    if (item) { const s = getStickers().find(x => String(x.id) === item.dataset.stickerId); if (s) { sendImageMessage(s.dataUrl); document.getElementById('stickerPickerSheet').classList.add('hidden'); } }
+    if (item) { const s = getStickers().find(x => String(x.id) === item.dataset.stickerId); if (s) { sendStickerMessage(s.dataUrl); document.getElementById('stickerPickerSheet').classList.add('hidden'); } }
   });
 }
 
