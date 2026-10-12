@@ -761,6 +761,7 @@ async function pickAvatarFromCards(cards, library, persona) {
         const safePicks = Array.isArray(picks)&&picks.length?picks:[(pool&&pool.length?pool[secureRandomInt(pool.length)]:'嗯')];
         const voiceFirst=nextReplyStartsWithVoice(chatId);
         for(let i=0;i<safePicks.length;i++){ if(i>0){showTypingIndicator(chatId,contact);await sleep(delayMs);} const useVoice=contactVoiceReplyEnabled(contact)&&!/[()（）]/.test(safePicks[i])&&((i%2===0)===voiceFirst); const voiceUrl=useVoice?await synthesizeVoice(safePicks[i]):null; addMessage(chatId,fromId,safePicks[i],{cards,shieldCards,shield,voiceUrl,...(generated?{dictionaryTerms:generated.terms}: {})}); }
+        if(typeof maybeSendContactSticker==='function')maybeSendContactSticker(chatId,fromId,String(text||'').includes('表情包'));
         if(typeof maybeContactOrderFood==='function')maybeContactOrderFood(chatId,fromId,text);
       } finally { hideTypingIndicator(); }
     };
