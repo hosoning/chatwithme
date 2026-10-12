@@ -68,6 +68,10 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .bubble.image { padding:0; box-shadow:none; }
 .bubble.image::before { display:none; }
 .bubble.image img { max-width:220px; max-height:280px; border-radius:6px; display:block; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+.msg-row.me .bubble.sticker, .msg-row:not(.me) .bubble.sticker { background:transparent !important; }
+.bubble.sticker { padding:0; box-shadow:none; }
+.bubble.sticker::before { display:none; }
+.bubble.sticker img { max-width:136px; max-height:136px; border-radius:6px; display:block; object-fit:contain; }
 
 .bubble.location { padding:0 !important; overflow:hidden; width:230px; cursor:pointer; }
 .msg-row.me .bubble.location, .msg-row:not(.me) .bubble.location { background:#fff !important; }
@@ -229,6 +233,7 @@ body { font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; back
 .avatar-lib-item img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:7px; display:block; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
 .avatar-lib-item input { width:100%; margin-top:5px; font-size:11.5px; border:1px solid #e5e5e5; border-radius:5px; padding:4px 6px; user-select:text !important; -webkit-user-select:text !important; -webkit-touch-callout:default !important; }
 .avatar-lib-item .del-x { position:absolute; top:3px; right:3px; width:20px; height:20px; background:rgba(0,0,0,.6); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; touch-action:manipulation; }
+.sticker-drawer{align-items:flex-end;background:transparent!important;backdrop-filter:none!important;justify-content:flex-end}.sticker-sheet{width:100%!important;max-height:43vh!important;border-radius:14px 14px 0 0!important;padding:10px 12px calc(14px + env(safe-area-inset-bottom))!important;box-shadow:0 -4px 18px rgba(0,0,0,.08)!important}.sticker-sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.sticker-sheet-title{font-size:13px;color:#777}.sticker-sheet-add{border:0;background:#f3f3f3;border-radius:15px;color:#333;font-size:13px;padding:6px 11px}.sticker-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;overflow-y:auto;max-height:30vh;padding:4px 0 8px}.sticker-tile,.sticker-add-tile{position:relative;width:100%;aspect-ratio:1;border:0;background:#f7f7f7;border-radius:8px;display:flex;align-items:center;justify-content:center}.sticker-tile img{width:100%;height:100%;object-fit:cover;border-radius:8px;display:block}.sticker-add-tile{border:1.5px dashed #bdbdbd;color:#555;font-size:34px;font-weight:200}.sticker-tile .del-x{position:absolute;right:-5px;top:-5px;width:20px;height:20px;border:0;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:13px;line-height:20px}
 
 .menu-row { padding:16px 4px; text-align:center; font-size:16.5px; border-bottom:1px solid #f2f2f2; color:#0a0a0a; touch-action:manipulation; cursor:pointer; }
 .menu-row:active { background:#f7f7f7; }
@@ -999,12 +1004,11 @@ svg { max-width:100%; max-height:100%; }
   </div>
 
   <!-- 表情包选择 -->
-  <div class="mask hidden" id="stickerPickerSheet">
-    <div class="sheet">
-      <div class="sheet-title">表情包</div>
+  <div class="mask sticker-drawer hidden" id="stickerPickerSheet">
+    <div class="sheet sticker-sheet">
+      <div class="sticker-sheet-head"><div class="sticker-sheet-title">单个贴图</div><button class="sticker-sheet-add" id="stickerAddBtn" type="button">＋ 添加</button></div>
       <input type="file" id="stickerFileInput" accept="image/*" multiple class="hidden">
-      <div class="avatar-grid" id="stickerGrid" style="padding:0;"></div>
-      <div class="menu-row" id="stickerAddBtn" style="border-bottom:none;margin-top:10px;">+ 添加新的表情包</div>
+      <div class="sticker-grid" id="stickerGrid"></div>
       <div class="sheet-close" id="stickerPickerClose">关闭</div>
     </div>
   </div>
@@ -1128,11 +1132,11 @@ svg { max-width:100%; max-height:100%; }
   </div>
 </div>
 
-<script src="js/tarot.js?v=58" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
-<script src="js/wordcards.js?v=58" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
-<script src="js/dictionary.js?v=58" onerror="window.__scriptLoadError('js/dictionary.js 无法加载')"></script>
-<script src="js/ai.js?v=58" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
-<script src="js/cloud.js?v=58" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
-<script src="js/app.js?v=58" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/tarot.js?v=59" onerror="window.__scriptLoadError('js/tarot.js 无法加载')"></script>
+<script src="js/wordcards.js?v=59" onerror="window.__scriptLoadError('js/wordcards.js 无法加载')"></script>
+<script src="js/dictionary.js?v=59" onerror="window.__scriptLoadError('js/dictionary.js 无法加载')"></script>
+<script src="js/ai.js?v=59" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
+<script src="js/cloud.js?v=59" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
+<script src="js/app.js?v=59" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
 </body>
 </html>
