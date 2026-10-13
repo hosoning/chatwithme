@@ -846,9 +846,12 @@ function externalMapUrl(lat,lng,label){return `https://maps.apple.com/?ll=${enco
 function locationPreviewHtml(lat,lng){if(!Number.isFinite(Number(lat))||!Number.isFinite(Number(lng)))return '<div class="location-map-fallback">旧版位置</div>';return `<img class="location-map-frame" src="${staticMapUrl(lat,lng)}" loading="lazy" alt="位置地图"><div class="location-map-shield"></div>`;}
 
 
-function renderMessages() {
+function renderMessages(options = {}) {
   const box = document.getElementById('msgList');
   if (!box) return;
+  const preserveScroll = Boolean(options.preserveScroll);
+  const previousScrollTop = box.scrollTop;
+  const previousScrollHeight = box.scrollHeight;
   const chatId = state.activeChatId;
   const msgs = (state.chats[chatId] || []).filter(m => !m.deletedAt);
   const group = isGroupChat(chatId);
@@ -920,7 +923,11 @@ function renderMessages() {
     </div>`;
   }).join('');
   box.classList.toggle('message-selecting', multiSelectMode);
-  if (!multiSelectMode && pendingSearchMessageId == null) box.scrollTop = box.scrollHeight;
+  if (preserveScroll) {
+    box.scrollTop = Math.max(0, previousScrollTop + (box.scrollHeight - previousScrollHeight));
+  } else if (!multiSelectMode && pendingSearchMessageId == null) {
+    box.scrollTop = box.scrollHeight;
+  }
   if (pendingSearchMessageId != null) {
     const target = [...box.querySelectorAll('.msg-row')].find(row => String(row.dataset.id) === String(pendingSearchMessageId));
     target?.scrollIntoView({ block:'center', behavior:'smooth' });
@@ -977,7 +984,7 @@ function bindMsgListDelegation() {
         if (!msg.voiceTranscript) msg.voiceTranscript = msg.from === 'me' ? '' : (msg.text || '');
         msg.voiceTranscriptVisible = !msg.voiceTranscriptVisible;
         persist();
-        renderMessages();
+        renderMessages({ preserveScroll: true });
       }
       return;
     }
@@ -1071,7 +1078,7 @@ function showActiveVoiceTranscript() {
     }
     msg.voiceTranscriptVisible = true;
   }
-  msg.modifiedAt = Date.now(); persist(); closeMessageActionSheet(); renderMessages();
+  msg.modifiedAt = Date.now(); persist(); closeMessageActionSheet(); renderMessages({ preserveScroll: true });
 }
 function deleteActiveMessage() {
   const msg = getActiveActionMessage();
