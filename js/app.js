@@ -877,6 +877,16 @@ function renderMessages(options = {}) {
       bubbleHtml = `<div class="bubble chat-record-bubble" data-chatrecord="${m.id}"><div class="chat-record-title">聊天记录</div>${preview}<div class="chat-record-footer">${(m.records || []).length} 条消息 · 点击查看</div></div>`;
     } else if (m.type === 'redpacket') {
       bubbleHtml = `<div class="bubble redpacket ${m.redpacket.status}" data-redpacket="${m.id}"><div class="rp-main"><div class="rp-envelope"><span>¥</span></div><div class="rp-text"><div class="rp-note">${escapeHtml(m.redpacket.note)}</div><div class="rp-status">${m.redpacket.status==='claimed'?'红包已被领取':'领取红包'}</div></div></div><div class="rp-footer">微信红包</div></div>`;
+    } else if (m.type === 'purchaseRequest') {
+      const request = m.purchaseRequest || {};
+      const status = String(request.status || 'pending').toLowerCase();
+      const statusText = status === 'passed' ? 'Passed' : status === 'failed' ? 'Failed' : 'Pending';
+      const price = Number(request.price || 0);
+      bubbleHtml = `<div class="bubble purchase-request" data-purchase="${m.id}">
+        <div class="purchase-card-top"><div class="purchase-card-icon">${status === 'failed' ? '×' : '✓'}</div><div><div class="purchase-card-title">Shopping Request</div><div class="purchase-card-sub">NO.${String(m.id).replace(/\D/g,'').slice(-8) || '00000000'}</div></div></div>
+        <div class="purchase-card-body"><div class="purchase-card-item">${escapeHtml(request.item || m.text || 'Untitled item')}</div><div class="purchase-card-meta">HK$ ${price.toFixed(2)}</div></div>
+        <div class="purchase-card-foot"><span class="purchase-status ${status}">${statusText}</span><span>Tap to view</span></div>
+      </div>`;
     } else if (m.type === 'options') {
       bubbleHtml = `<div class="bubble options">
         <div class="options-title">请选择</div>
@@ -996,6 +1006,8 @@ function bindMsgListDelegation() {
     }
     const recordEl = e.target.closest('[data-chatrecord]');
     if (recordEl) { openChatRecordViewer(recordEl.dataset.chatrecord); return; }
+    const purchaseEl = e.target.closest('[data-purchase]');
+    if (purchaseEl) { openPurchaseDetail(purchaseEl.dataset.purchase); return; }
     const rpEl = e.target.closest('[data-redpacket]');
     if (rpEl) { openRedPacketDetail(rpEl.dataset.redpacket); return; }
     const locEl = e.target.closest('[data-location]');
@@ -1040,6 +1052,7 @@ function messageSummary(msg) {
   if (msg.type === 'sticker') return '[表情]';
   if (msg.type === 'location') return `[位置] ${msg.text || ''}`.trim();
   if (msg.type === 'redpacket') return `[红包] ${msg.redpacket?.note || ''}`.trim();
+  if (msg.type === 'purchaseRequest') return `[Shopping Request] ${msg.purchaseRequest?.item || msg.text || ''}`.trim();
   if (msg.type === 'call') return `[${msg.callType === 'video' ? '视频通话' : '语音通话'}]`;
   return String(msg.text || '').slice(0, 160);
 }
@@ -2170,6 +2183,7 @@ function bindPlusPanel() {
     if (action === 'photo') document.getElementById('sendPhotoFileInput').click();
     else if (action === 'camera') document.getElementById('sendCameraFileInput').click();
     else if (action === 'redpacket') openSendRedPacket();
+    else if (action === 'purchase') openPurchaseRequest();
     else if (action === 'options') openSendOptions();
     else if (action === 'sticker') { renderStickerGrid(); document.getElementById('stickerPickerSheet').classList.remove('hidden'); }
     else if (action === 'location') openLocationPicker();
@@ -2187,6 +2201,62 @@ function bindPlusPanel() {
   document.getElementById('sendCameraFileInput')?.addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader(); reader.onload = ev => sendImageMessage(ev.target.result); reader.readAsDataURL(file); e.target.value = '';
+  });
+}
+
+function openPurchaseRequest() {
+  ['purchaseItemInput','purchasePriceInput','purchaseReasonInput','purchaseCommentInput'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('purchaseRequestSheet')?.classList.remove('hidden');
+}
+function purchaseStatusText(status) {
+  const s = String(status || 'pending').toLowerCase();
+  return s === 'passed' ? 'Passed' : s === 'failed' ? 'Failed' : 'Pending';
+}
+function renderPurchaseDetail(msg) {
+  const request = msg.purchaseRequest || {};
+  const status = String(request.status || 'pending').toLowerCase();
+  const price = Number(request.price || 0);
+  const sender = msg.from === 'me' ? { name: state.myName || 'Me', avatar: state.myAvatar } : getContactById(msg.from);
+  const approver = request.approverId ? getContactById(request.approverId) : null;
+  const stamp = purchaseStatusText(status);
+  document.getElementById('purchaseDetailStatus').textContent = stamp.toUpperCase();
+  document.getElementById('purchaseDetailPaper').innerHTML = `<div class="purchase-paper-top"><div><small>Do you really want to buy it?</small><h3>购物申请</h3><div style="font-size:12px;color:#aaa;letter-spacing:.24em;margin-top:6px;">SHOPPING REQUEST</div></div><div class="purchase-stamp ${status}">${stamp}</div></div>
+    <div class="purchase-field"><span>Item</span><b>${escapeHtml(request.item || msg.text || 'Untitled item')}</b></div>
+    <div class="purchase-field"><span>Price</span><b>HK$ ${price.toFixed(2)}</b></div>
+    <div class="purchase-field"><span>Applicant</span><b>${escapeHtml(sender?.name || 'Me')}</b></div>
+    <div class="purchase-field"><span>Reason</span><b>${escapeHtml(request.reason || '-')}</b></div>`;
+  const approverAvatar = approver?.avatar ? `style="background-image:url('${approver.avatar}')"` : '';
+  document.getElementById('purchaseApprovalBlock').innerHTML = `<div class="purchase-approval-title">Approval group</div><div class="purchase-approver"><div class="purchase-approver-avatar" ${approverAvatar}>${approver?.avatar ? '' : escapeHtml((approver?.name || 'A').slice(0,1))}</div><div><b>${escapeHtml(approver?.name || 'Approver')}</b><span class="purchase-status ${status}" style="margin-left:8px">${stamp}</span><div class="purchase-comment">${escapeHtml(request.comment || 'No comment')}</div></div></div>`;
+  document.getElementById('purchasePassBtn').onclick = () => updatePurchaseStatus(msg.id, 'passed');
+  document.getElementById('purchaseFailBtn').onclick = () => updatePurchaseStatus(msg.id, 'failed');
+}
+function openPurchaseDetail(msgId) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
+  if (!msg?.purchaseRequest) return;
+  renderPurchaseDetail(msg);
+  document.getElementById('purchaseDetailSheet')?.classList.remove('hidden');
+}
+function updatePurchaseStatus(msgId, status) {
+  const msg = (state.chats[state.activeChatId] || []).find(m => String(m.id) === String(msgId));
+  if (!msg?.purchaseRequest) return;
+  msg.purchaseRequest.status = status;
+  persist();
+  renderMessages({ preserveScroll: true });
+  renderPurchaseDetail(msg);
+}
+function bindPurchaseRequest() {
+  document.getElementById('purchaseCancel')?.addEventListener('click', () => document.getElementById('purchaseRequestSheet')?.classList.add('hidden'));
+  document.getElementById('purchaseDetailClose')?.addEventListener('click', () => document.getElementById('purchaseDetailSheet')?.classList.add('hidden'));
+  document.getElementById('purchaseSend')?.addEventListener('click', () => {
+    const item = document.getElementById('purchaseItemInput')?.value.trim();
+    const price = Number(document.getElementById('purchasePriceInput')?.value || 0);
+    const reason = document.getElementById('purchaseReasonInput')?.value.trim();
+    const comment = document.getElementById('purchaseCommentInput')?.value.trim();
+    if (!item) { alert('Please enter an item'); return; }
+    const chatId = state.activeChatId;
+    const approverId = isGroupChat(chatId) ? (getGroupById(String(chatId).slice(2))?.memberIds?.[0] || null) : chatId;
+    addMessage(chatId, 'me', item, { type: 'purchaseRequest', purchaseRequest: { item, price: Number.isFinite(price) ? price : 0, reason, comment, status: 'pending', approverId, createdAt: Date.now() } });
+    document.getElementById('purchaseRequestSheet')?.classList.add('hidden');
   });
 }
 function renderStickerGrid() {
@@ -3377,6 +3447,7 @@ async function init() {
   safeStep('bindSettingsSave', bindSettingsSave);
   safeStep('bindInputBar', bindInputBar);
   safeStep('bindRedPacket', bindRedPacket);
+  safeStep('bindPurchaseRequest', bindPurchaseRequest);
   safeStep('bindSendOptions', bindSendOptions);
   safeStep('bindAvatarLib', bindAvatarLib);
   safeStep('bindMyAvatarUpload', bindMyAvatarUpload);
