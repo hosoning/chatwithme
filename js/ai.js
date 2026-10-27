@@ -352,6 +352,17 @@ async function pickAvatarFromCards(cards, library, persona) {
       .settings-v2-card label{display:block;color:#777;font-size:13px;margin-bottom:8px;}
       .settings-v2-card textarea,.settings-v2-card input,.settings-v2-card select{width:100%;border:none;background:#f7f7f7;border-radius:9px;padding:11px 12px;font-size:15px;outline:none;user-select:text!important;-webkit-user-select:text!important;}
       .settings-v2-save{border:none;background:#07c160;color:#fff;width:100%;height:46px;border-radius:10px;font-size:16px;font-weight:500;}
+      .avatar-v2-current{display:flex;align-items:center;gap:13px;}
+      .avatar-v2-current .avatar{width:64px!important;height:64px!important;}
+      .avatar-v2-current-copy{min-width:0;flex:1;}
+      .avatar-v2-current-copy b{display:block;font-size:16px;color:#111;margin-bottom:4px;}
+      .avatar-v2-current-copy span{display:block;font-size:12px;color:#999;line-height:1.4;}
+      .avatar-v2-upload{display:block;width:100%;height:46px;border:0;border-radius:10px;background:#07c160;color:#fff;font-size:16px;margin-bottom:14px;}
+      .avatar-v2-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+      .avatar-v2-choice{border:0;background:transparent;padding:0;position:relative;aspect-ratio:1;}
+      .avatar-v2-choice img{display:block;width:100%;height:100%;object-fit:cover;border-radius:8px;}
+      .avatar-v2-choice.selected:after{content:'✓';position:absolute;right:4px;bottom:4px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#07c160;color:#fff;font-size:14px;box-shadow:0 0 0 2px #fff;}
+      .avatar-v2-empty{color:#999;font-size:13px;line-height:1.55;}
       .wordcard-v2-add{display:flex;gap:8px;background:#fff;border-radius:12px;padding:10px;margin-bottom:12px;}
       .wordcard-v2-add input{flex:1;border:none;background:#f5f5f5;border-radius:8px;padding:10px;font-size:15px;user-select:text!important;-webkit-user-select:text!important;outline:none;}
       .wordcard-v2-add button{border:none;background:#07c160;color:#fff;border-radius:8px;padding:0 14px;font-size:14px;}
@@ -497,6 +508,7 @@ async function pickAvatarFromCards(cards, library, persona) {
       body.innerHTML = `
         <div class="settings-v2-profile">${avatarHtml(c.avatar, c.name, 52)}<div><div class="settings-v2-profile-name">${escapeHtml(c.name)}</div><div class="settings-v2-profile-sub">角色聊天设置</div></div></div>
         <div class="settings-v2-group">
+          <div class="settings-v2-row" data-setting="avatar"><span>头像</span><div class="settings-v2-right"><span>${c.avatar ? '已设置' : '未设置'}</span>${chevron()}</div></div>
           <div class="settings-v2-row" data-setting="persona"><span>角色设定</span><div class="settings-v2-right"><span class="settings-v2-value">${escapeHtml(c.persona || '未设置')}</span>${chevron()}</div></div>
           <div class="settings-v2-row" data-setting="wordcards"><span>专属字卡</span><div class="settings-v2-right"><span>${customCount ? `${customCount} 条` : '未添加'}</span>${chevron()}</div></div>
           <div class="settings-v2-row"><span>叠加专属字卡</span><label class="settings-v2-switch"><input id="wordCardModeSwitchV2" type="checkbox" ${c.wordCardMode === 'custom' ? 'checked' : ''}><span></span></label></div>
@@ -555,6 +567,7 @@ async function pickAvatarFromCards(cards, library, persona) {
     const row = e.target.closest('[data-setting]');
     if (!row || !settingsChatId) return;
     const action = row.dataset.setting;
+    if (action === 'avatar') return openAvatarEditorV2();
     if (action === 'persona') return openPersonaEditorV2();
     if (action === 'wordcards') return openWordCardsV2();
     if (action === 'intimate-wordcards') return openWordCardsV2('intimate');
@@ -584,6 +597,48 @@ async function pickAvatarFromCards(cards, library, persona) {
       renderChatList(); renderContactList();
       switchTab('chat', 'page-chatlist');
     }
+  }
+
+  function openAvatarEditorV2(shouldPush = true) {
+    const c = getContactById(settingsChatId);
+    if (!c) return;
+    document.getElementById('chatSettingDetailTitleV2').textContent = '头像';
+    const body = document.getElementById('chatSettingDetailBodyV2');
+    const library = Array.isArray(state.avatarLibrary) ? state.avatarLibrary : [];
+    body.innerHTML = `
+      <div class="settings-v2-card avatar-v2-current">
+        ${avatarHtml(c.avatar, c.name, 64)}
+        <div class="avatar-v2-current-copy"><b>${escapeHtml(c.name)}</b><span>上传照片，或从头像库中选择</span></div>
+      </div>
+      <button class="avatar-v2-upload" id="avatarUploadV2" type="button">从相册选择</button>
+      <input class="hidden" id="avatarFileV2" type="file" accept="image/*">
+      <div class="settings-v2-card">
+        <label>头像库</label>
+        ${library.length ? `<div class="avatar-v2-grid">${library.map(a => `<button class="avatar-v2-choice${a.dataUrl === c.avatar ? ' selected' : ''}" type="button" data-avatar-v2="${escapeHtml(String(a.id))}" aria-label="选择头像"><img src="${a.dataUrl}" alt=""></button>`).join('')}</div>` : '<div class="avatar-v2-empty">头像库还是空的。可以直接从相册选择；之后也能在「我 → 头像库管理」添加更多头像。</div>'}
+      </div>`;
+
+    const applyAvatar = dataUrl => {
+      if (!dataUrl) return;
+      directSetContactAvatar(c.id, dataUrl);
+      renderChatSettingsV2();
+      openAvatarEditorV2(false);
+    };
+    const fileInput = body.querySelector('#avatarFileV2');
+    body.querySelector('#avatarUploadV2')?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', async e => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      try { applyAvatar(await readImageFileCompressed(file)); }
+      catch (err) { console.error('角色头像读取失败', err); alert('这张图片读取失败，请换一张再试。'); }
+    });
+    body.querySelector('.avatar-v2-grid')?.addEventListener('click', e => {
+      const choice = e.target.closest('[data-avatar-v2]');
+      if (!choice) return;
+      const picked = library.find(a => String(a.id) === choice.dataset.avatarV2);
+      if (picked?.dataUrl) applyAvatar(picked.dataUrl);
+    });
+    if (shouldPush) pushPage('page-chat-setting-detail-v2');
   }
 
   function openPersonaEditorV2() {
