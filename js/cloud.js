@@ -177,7 +177,115 @@ function mergeCloudItems(remoteItems = [], localItems = []) {
   return [...byId.values()];
 }
 
-async function cloudUpload(fullDataObj) {
+const CLOUD_V3_ROOT = 'tarot_rooms_v3';
+const CLOUD_CHUNK_TARGET = 480000;
+let _cloudUploadRunning = null;
+let _cloudUploadPending = null;
+
+function cleanCloudData(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+function cloudChatKey(chatId) {
+  return encodeURIComponent(String(chatId)).replace(/\./g, '%2E');
+}
+async function writeCloudValue(ref, value) {
+  const json = JSON.stringify(cleanCloudData(value));
+  const parts = [];
+  for (let i = 0; i < json.length; i += CLOUD_CHUNK_TARGET) parts.push(json.slice(i, i + CLOUD_CHUNK_TARGET));
+  if (!parts.length) parts.push('null');
+  await ref.child('meta').set({ format: 'json-parts', parts: parts.length, length: json.length });
+  for (let i = 0; i < parts.length; i++) {
+    await ref.child(`chunks/${String(i).padStart(5, '0')}`).set(parts[i]);
+  }
+}
+function readCloudValue(node, fallback = null) {
+  if (!node) return fallback;
+  const chunks = node.chunks || {};
+  if (node.meta?.format === 'json-parts') {
+    try { return JSON.parse(Object.keys(chunks).sort().map(key => chunks[key] || '').join('')); }
+    catch (_) { return fallback; }
+  }
+  const oldArray = Object.keys(chunks).sort().flatMap(key => Array.isArray(chunks[key]) ? chunks[key] : []);
+  return oldArray.length ? oldArray : fallback;
+}
+async function writeCloudArray(ref, items) {
+  await writeCloudValue(ref, items || []);
+}
+function readCloudArray(node) {
+  const value = readCloudValue(node, []);
+  return Array.isArray(value) ? value : [];
+}
+async function writeCloudGeneration(ref, data, receipt) {
+  const core = { ...data };
+  delete core.chats;
+  delete core.moments;
+  delete core.privateBlog;
+  delete core.avatarLibrary;
+  delete core.stickers;
+  await writeCloudValue(ref.child('core'), core);
+  await writeCloudArray(ref.child('collections/moments'), data.moments || []);
+  await writeCloudArray(ref.child('collections/privateBlog'), data.privateBlog || []);
+  await writeCloudArray(ref.child('collections/avatarLibrary'), data.avatarLibrary || []);
+  await writeCloudArray(ref.child('collections/stickers'), data.stickers || []);
+  for (const [chatId, messages] of Object.entries(data.chats || {})) {
+    const chatRef = ref.child(`chats/${cloudChatKey(chatId)}`);
+    await chatRef.child('id').set(String(chatId));
+    await writeCloudArray(chatRef, messages || []);
+  }
+  await ref.child('manifest').set({
+    schemaVersion: 3,
+    fingerprint: receipt.fingerprint,
+    updatedAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+function readCloudGeneration(value) {
+  if (!value?.manifest || !value?.core) return null;
+  const core = readCloudValue(value.core, value.core || {});
+  const data = {
+    ...(core || {}),
+    moments: readCloudArray(value.collections?.moments),
+    privateBlog: readCloudArray(value.collections?.privateBlog),
+    avatarLibrary: readCloudArray(value.collections?.avatarLibrary),
+    stickers: readCloudArray(value.collections?.stickers),
+    chats: {}
+  };
+  for (const chat of Object.values(value.chats || {})) {
+    if (chat?.id == null) continue;
+    data.chats[String(chat.id)] = readCloudArray(chat);
+  }
+  return { data, manifest: value.manifest };
+}
+async function downloadCloudRoom(key) {
+  const v3Root = _fbDb.ref(`${CLOUD_V3_ROOT}/${key}`);
+  const current = (await v3Root.child('current').once('value')).val();
+  if (current) {
+    const generation = (await v3Root.child(`generations/${current}`).once('value')).val();
+    const parsed = readCloudGeneration(generation);
+    if (parsed) return { ...parsed, schemaVersion: 3 };
+  }
+  const legacy = (await _fbDb.ref('tarot_rooms/' + key).once('value')).val();
+  if (!legacy?.data) return null;
+  const data = typeof legacy.data === 'string' ? JSON.parse(legacy.data) : legacy.data;
+  return {
+    data,
+    schemaVersion: Number(legacy.schemaVersion || 1),
+    manifest: { updatedAt: Number(legacy.updatedAt || 0), fingerprint: legacy.fingerprint || cloudFingerprint(data) }
+  };
+}
+function mergeCloudPayload(remote = {}, local = {}) {
+  return {
+    ...remote, ...local,
+    contacts: mergeCloudItems(remote.contacts, local.contacts),
+    groups: mergeCloudItems(remote.groups, local.groups),
+    moments: mergeCloudItems(remote.moments, local.moments),
+    privateBlog: mergeCloudItems(remote.privateBlog, local.privateBlog),
+    avatarLibrary: mergeCloudItems(remote.avatarLibrary, local.avatarLibrary),
+    stickers: mergeCloudItems(remote.stickers, local.stickers),
+    chats: mergeCloudChats(remote.chats, local.chats)
+  };
+}
+
+async function cloudUploadNow(fullDataObj) {
   const cfg = getCloudConfig();
   if (!cfg.enabled || !cfg.roomId) return false;
   const db = initFirebase();
@@ -185,32 +293,45 @@ async function cloudUpload(fullDataObj) {
   try {
     await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
-    let receipt = null;
-    await db.ref('tarot_rooms/' + key).transaction(current => {
-      let remote = {};
-      try {
-        remote = typeof current?.data === 'string' ? JSON.parse(current.data) : (current?.data || {});
-      } catch (_) {}
-      const merged = {
-        ...remote, ...fullDataObj,
-        contacts: mergeCloudItems(remote.contacts, fullDataObj.contacts),
-        groups: mergeCloudItems(remote.groups, fullDataObj.groups),
-        moments: mergeCloudItems(remote.moments, fullDataObj.moments),
-        privateBlog: mergeCloudItems(remote.privateBlog, fullDataObj.privateBlog),
-        avatarLibrary: mergeCloudItems(remote.avatarLibrary, fullDataObj.avatarLibrary),
-        stickers: mergeCloudItems(remote.stickers, fullDataObj.stickers),
-        chats: mergeCloudChats(remote.chats, fullDataObj.chats)
-      };
-      // Store structured data. The legacy JSON string hit Firebase's per-string size limit
-      // once avatars, stickers, and image messages accumulated.
-      const cleanData = JSON.parse(JSON.stringify(merged));
-      receipt = { fingerprint: cloudFingerprint(cleanData), updatedAt: Date.now() };
-      return { schemaVersion: 2, data: cleanData, fingerprint: receipt.fingerprint, updatedAt: firebase.database.ServerValue.TIMESTAMP };
+    const existing = await downloadCloudRoom(key);
+    const cleanData = cleanCloudData(mergeCloudPayload(existing?.data || {}, fullDataObj || {}));
+    const receipt = { fingerprint: cloudFingerprint(cleanData), updatedAt: Date.now() };
+    const generationId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const root = db.ref(`${CLOUD_V3_ROOT}/${key}`);
+    await writeCloudGeneration(root.child(`generations/${generationId}`), cleanData, receipt);
+    await root.update({
+      current: generationId,
+      schemaVersion: 3,
+      fingerprint: receipt.fingerprint,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
     });
+    root.child('generations').once('value').then(snapshot => {
+      const generations = snapshot.val() || {};
+      return Promise.all(Object.keys(generations)
+        .filter(id => id !== generationId)
+        .map(id => root.child(`generations/${id}`).remove()));
+    }).catch(() => {});
     window.__lastCloudReceipt = receipt;
     window.__lastCloudError = '';
     return true;
   } catch (e) { window.__lastCloudError = e?.message || String(e); console.error('云端上传失败', e); return false; }
+}
+
+async function cloudUpload(fullDataObj) {
+  _cloudUploadPending = fullDataObj;
+  if (_cloudUploadRunning) return _cloudUploadRunning;
+  _cloudUploadRunning = (async () => {
+    let ok = true;
+    while (_cloudUploadPending) {
+      const next = _cloudUploadPending;
+      _cloudUploadPending = null;
+      ok = await cloudUploadNow(next);
+      if (!ok) _cloudUploadPending = null;
+    }
+    return ok;
+  })();
+  try { return await _cloudUploadRunning; }
+  finally { _cloudUploadRunning = null; }
 }
 
 async function cloudDownload() {
@@ -221,15 +342,14 @@ async function cloudDownload() {
   try {
     await ensureFirebaseAuth();
     const key = sanitizeRoomId(cfg.roomId);
-    const snapshot = await db.ref('tarot_rooms/' + key).once('value');
-    const val = snapshot.val();
-    if (!val || !val.data) { window.__lastCloudError = '云端还没有资料'; return null; }
+    const room = await downloadCloudRoom(key);
+    if (!room?.data) { window.__lastCloudError = '云端还没有资料'; return null; }
     window.__lastCloudError = '';
-    const data = typeof val.data === 'string' ? JSON.parse(val.data) : val.data;
+    const data = room.data;
     window.__lastCloudDownloadMeta = {
-      schemaVersion: Number(val.schemaVersion || 1),
-      updatedAt: Number(val.updatedAt || 0),
-      fingerprint: val.fingerprint || cloudFingerprint(data),
+      schemaVersion: Number(room.schemaVersion || 1),
+      updatedAt: Number(room.manifest?.updatedAt || 0),
+      fingerprint: room.manifest?.fingerprint || cloudFingerprint(data),
       calculatedFingerprint: cloudFingerprint(data)
     };
     return data;
