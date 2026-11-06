@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f2f2f7">
 <title>WeChat</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon/wechat-app-icon-192.png">
@@ -414,6 +415,8 @@ svg { max-width:100%; max-height:100%; }
 @keyframes momentIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 .moment-item:first-child { animation:momentIn .3s ease both; }
 </style>
+<link rel="stylesheet" href="css/ios27.css?v=64">
+<script>try{var g=localStorage.getItem('ios27Glass');if(g)document.documentElement.dataset.glass=g;}catch(e){}</script>
 <script>
 (function() {
   function showLoadError(msg) {
@@ -685,6 +688,15 @@ svg { max-width:100%; max-height:100%; }
       <div class="settings-menu-group">
         <button class="settings-menu-row" data-settings-page="page-settings-behavior" data-settings-keywords="通知 主动消息 朋友圈 头像 红包"><span class="settings-menu-icon notify">●</span><span class="settings-menu-copy"><b>通知与主动功能</b><small id="settingsBehaviorSummary">消息、朋友圈与红包</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
         <button class="settings-menu-row" data-settings-page="page-settings-cloud" data-settings-keywords="云端 同步 备份 导入 导出"><span class="settings-menu-icon cloud">☁</span><span class="settings-menu-copy"><b>云端与备份</b><small id="settingsCloudSummary">检查同步状态</small></span><svg class="chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      </div>
+      <div class="settings-section-label">外观</div>
+      <div class="settings-menu-group ios27-glass-card">
+        <div class="ios27-segment" id="ios27GlassSegment">
+          <button type="button" data-glass="clear">清透</button>
+          <button type="button" data-glass="default">默认</button>
+          <button type="button" data-glass="tinted">着色</button>
+        </div>
+        <p class="ios27-glass-hint">iOS 27 Liquid Glass：清透更通透，着色对比更高、更易读。</p>
       </div>
       <div class="settings-search-empty hidden" id="settingsSearchEmpty">没有找到相关设置</div>
     </div>
@@ -1167,5 +1179,6 @@ svg { max-width:100%; max-height:100%; }
 <script src="js/ai.js?v=62" onerror="window.__scriptLoadError('js/ai.js 无法加载')"></script>
 <script src="js/cloud.js?v=63" onerror="window.__scriptLoadError('js/cloud.js 无法加载')"></script>
 <script src="js/app.js?v=62" onerror="window.__scriptLoadError('js/app.js 无法加载')"></script>
+<script src="js/ios27.js?v=64"></script>
 </body>
 </html>
